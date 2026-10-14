@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioWiki · BioFut</title>
+<meta name="description" content="A enciclopédia do BioFut: personagens, bordões e melhores momentos do grupo, com as citações conferidas na conversa.">
+<meta property="og:title" content="BioWiki · BioFut">
+<meta property="og:description" content="A enciclopédia do BioFut: personagens, bordões e melhores momentos do grupo, com as citações conferidas na conversa.">
+<meta property="og:image" content="https://biofut.h-brain.org/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0c0d0c">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+/* BioWiki: the site's look (site.css) plus a reading column, the sidebar and the WhatsApp-style chat */
+main.wiki{display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px;align-items:start}
+#side{position:sticky;top:84px;max-height:calc(100vh - 100px);overflow-y:auto;font-size:15px;scrollbar-width:thin}
+#side .in{width:100%;margin-bottom:14px}
+#side a{display:block;padding:5px 10px;border-radius:8px;color:var(--mut);cursor:pointer}
+#side a:hover,#side a.on{background:var(--card2);color:var(--ink)}
+#side a.on{box-shadow:inset 3px 0 var(--acc)}
+#side h4{font:600 12px var(--cond);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:18px 10px 4px}
+#side summary{font:600 13px var(--cond);letter-spacing:.14em;text-transform:uppercase;color:var(--acc);cursor:pointer;padding:6px 10px;list-style:none}
+#side .who{font-size:14px;color:var(--mut);padding:0 10px 10px;border-bottom:1px solid var(--line);margin-bottom:10px}
+#side .who a{display:inline;padding:0;color:var(--acc)}
+article{max-width:760px;font-size:17px;line-height:1.7}
+article h1{font-size:clamp(36px,6vw,56px);font-weight:800;margin:6px 0 10px}
+article h2{font-size:26px;margin:36px 0 12px;clear:both}
+article h3{font-size:20px;margin:26px 0 8px}
+article p{margin:0 0 1em}
+article a{color:var(--acc);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--acc) 35%,transparent);text-underline-offset:3px}
+article a:hover{text-decoration-color:var(--acc)}
+article a.missing{color:var(--dim);text-decoration-style:dotted}
+article a.locked{color:var(--mut);cursor:pointer}
+article blockquote{display:flow-root;margin:22px 0;padding:16px 20px;border-left:3px solid var(--acc);background:var(--card);border-radius:0 12px 12px 0;font-size:18px}
+article blockquote p:last-child{margin:0;color:var(--mut);font-size:15px}
+article ul,article ol{padding-left:22px}
+article .meta{font:600 13px var(--cond);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-bottom:22px;display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center}
+.refs-h{clear:both}
+.banner{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between;font-size:15px;background:var(--acc-soft);border:1px solid color-mix(in srgb,var(--acc) 30%,transparent);border-radius:var(--r);padding:12px 16px;margin:10px 0 22px}
+figure.lead{float:right;width:min(300px,45%);margin:6px 0 16px 24px}
+figure.lead,.gallery figure{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:8px;box-shadow:var(--shadow)}
+figure img,.gallery img{width:100%;border-radius:8px;cursor:zoom-in}
+figcaption{font-size:13px;line-height:1.4;color:var(--mut);padding:8px 4px 2px}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;clear:both}
+.gallery figure{margin:0}
+.refs{font-size:14px;color:var(--mut)} .refs li{margin:4px 0}
+sup a{text-decoration:none!important;font:700 11px var(--cond)}
+article a[data-ref]{cursor:pointer}
+#graph{width:100%;height:max(440px,calc(100vh - 260px));border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
+.legend{flex-wrap:wrap;margin:6px 0 12px} .legend i{border-radius:50%}
+.bits{list-style:none;padding:0;clear:both;display:grid;gap:12px}
+.bits li{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow);line-height:1.5}
+.bits b{display:block;font:700 19px/1.2 var(--cond);text-transform:uppercase;letter-spacing:.03em}
+.bits q{display:block;margin:8px 0 6px;font-size:17px}
+.bits small{font-size:13px;color:var(--mut)}
+.bits .n{float:right;font:800 30px/1 var(--cond);color:var(--acc);margin-left:12px}
+.fb-list{font-size:15px} .fb-list li{margin:10px 0}
+.rate{display:flex;align-items:center;gap:2px;margin-top:10px;font:600 13px var(--cond);color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.rate button{background:none;border:0;padding:0 2px;font-size:22px;line-height:1;cursor:pointer;filter:grayscale(1);opacity:.35}
+.rate button.on,.rate:hover button{filter:none;opacity:1} .rate button:hover~button{filter:grayscale(1);opacity:.35}
+.rate small{margin-left:8px;text-transform:none;letter-spacing:0}
+.votes{display:inline-flex;gap:6px;margin-left:8px;vertical-align:middle}
+.votes button{background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:1px 9px;cursor:pointer;font-size:13px;color:inherit}
+.votes button.on{border-color:var(--acc);color:var(--acc);font-weight:700}
+figcaption .btn{margin-top:6px}
+.wa-msg.hit{box-shadow:0 0 0 2px #25d366,0 0 18px #25d36688}
+dialog.box{width:min(440px,calc(100vw - 32px))}
+dialog.box h3{margin-bottom:6px}
+dialog.box textarea{width:100%;padding:10px;margin:6px 0 10px;border:1px solid var(--line2);border-radius:10px;background:var(--bg2);font:inherit;resize:vertical}
+dialog.box .row{justify-content:flex-end}
+dialog.box .err{color:var(--loss);min-height:1.2em;font-size:14px}
+dialog.wa{padding:0;border:0;border-radius:14px;width:min(480px,calc(100vw - 32px));max-height:85vh;display:none;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px #0008}
+dialog.wa[open]{display:flex}
+.wa-top{background:#008069;color:#fff;padding:10px 14px;font:15px system-ui,sans-serif;display:flex;align-items:center;gap:10px}
+.wa-top b{display:block} .wa-top small{opacity:.8} .wa-top .x{margin-left:auto}
+.wa-top button{background:none;border:0;color:#fff;font-size:20px;cursor:pointer;padding:2px 6px}
+.wa-av{width:36px;height:36px;border-radius:50%;background:#dfe5e7;color:#008069;display:grid;place-items:center;font-weight:bold}
+.wa-body{--wa-bg:#0b141a;--wa-in:#202c33;--wa-ink:#e9edef;--wa-t:#8696a0;background:var(--wa-bg);padding:10px 14px;overflow-y:auto;font:14.2px/1.35 system-ui,sans-serif;color:var(--wa-ink)}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .wa-body{--wa-bg:#efeae2;--wa-in:#fff;--wa-ink:#111b21;--wa-t:#667781}}
+:root[data-theme="light"] .wa-body{--wa-bg:#efeae2;--wa-in:#fff;--wa-ink:#111b21;--wa-t:#667781}
+.wa-day{text-align:center;margin:4px 0 10px} .wa-day span{background:var(--wa-in);color:var(--wa-t);font-size:12px;padding:4px 10px;border-radius:7px}
+.wa-msg{background:var(--wa-in);border-radius:0 8px 8px 8px;padding:5px 8px 4px;margin:2px 0;max-width:85%;width:fit-content;box-shadow:0 1px .5px #0002;white-space:pre-wrap;overflow-wrap:anywhere}
+.wa-msg.first{margin-top:8px} .wa-msg .n{display:block;font-size:12.8px;font-weight:600}
+.wa-msg .t{float:right;font-size:11px;color:var(--wa-t);margin:6px 0 -4px 10px}
+.wa-msg img{display:block;max-width:100%;max-height:360px;border-radius:6px;margin:2px 0 4px;cursor:zoom-in}
+.wa-pic{display:block;background:#0001;border-radius:6px;padding:8px;margin:2px 0 4px;font-style:italic;color:var(--wa-t)}
+.wa-pic i{display:block;font-style:normal;font-size:12px;margin-top:4px}
+@media (max-width:820px){main.wiki{grid-template-columns:minmax(0,1fr);gap:8px}#side{position:static;max-height:none}
+  figure.lead{float:none;width:100%;margin:0 0 16px}}
+</style>
+</head>
+<body>
+<script src="/site.js"></script>
+<dialog class="wa" id="wa"></dialog>
+<dialog class="box" id="report"><form method="dialog" id="reportForm">
+  <h3>Reportar erro</h3>
+  <p id="rWhat" class="muted" style="font-size:14px;margin:0 0 8px"></p>
+  <label>O que está errado?<textarea id="rText" rows="5" maxlength="2000" required placeholder="Ex.: não foi o Dan, foi o Matte; essa conversa não tem nada a ver com o verbete"></textarea></label>
+  <div class="err" id="rErr"></div>
+  <div class="row"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn pri" value="ok">Enviar</button></div>
+</form></dialog>
+<main class="wiki"><aside id="side"><input class="in" id="q" placeholder="Buscar verbete…" list="titles" aria-label="Buscar verbete"><datalist id="titles"></datalist><div id="nav2"></div></aside>
+<article id="view"><div class="skel"></div></article></main>
+<footer><div><span>BioWiki · a história do BioFut contada pelo próprio grupo</span><a class="link" href="/#/">Voltar ao BioFut</a></div></footer>
+<script>
+const COLORS = { pessoa: '#3b82f6', personagem: '#e11d48', saga: '#f59e0b', meme: '#a855f7', tema: '#10b981', evento: '#f97316', lugar: '#64748b' };
+let DATA, USER, PLAYERS = new Set(), bySlug = {}, byName = {}, locked = {}, FB = [], VOTES = {};  // FB: the reports, VOTES: key -> [sum, how many, mine] (members)
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const img = f => '/wiki/media/' + encodeURIComponent(f);
+const fmtDate = d => new Date(d).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+const firstLine = id => DATA.chats[id].text.split('\n')[0].replace(/^\d\d:\d\d /, '').slice(0, 90);
+const post = (action, body) => fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  .then(async r => ({ ok: r.ok, ...(await r.json().catch(() => ({}))) }));
+
+// [ref:c2024-07-01-06] -> footnote number, in the order of the page's reference list
+const cite = (md, refs) => md.replace(/\[ref:([^\]]+)\]/g, (_, ids) => (ids.match(/c\d{4}-\d\d-\d\d-\d\d/g) || [])
+  .filter(id => refs.includes(id)).map(id => `<sup><a data-ref="${id}">[${refs.indexOf(id) + 1}]</a></sup>`).join(''));
+
+const hue = n => [...n].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+function media(t, next) {  // next() -> the real file of this [foto], or '' when the export lacks it
+  return t.replace(/\[foto(?:: ([^|\]]*)(?: \| texto na imagem: ([^\]]*))?)?\]/g, (_, c, ocr) => {
+    const f = next();
+    return f ? `<img src="${img(f)}" alt="${c || 'foto'}" loading="lazy" data-full>` :
+      `<span class="wa-pic">📷 ${c || 'foto'}${ocr ? `<i>texto na imagem: ${ocr}</i>` : ''}</span>`;
+  }).replace(/\[figurinha\]/g, '🃏 <i>figurinha</i>').replace(/\[áudio\]/g, '🎤 <i>áudio</i>').replace(/\[vídeo\]/g, '🎬 <i>vídeo</i>')
+    .replace(/\[documento\]/g, '📄 <i>documento</i>');
+}
+const words = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]{3,}/g) || [];
+function chat(id, quote) {
+  const c = DATA.chats[id], msgs = [];
+  c.text.trimEnd().split('\n').forEach(l => {
+    const m = l.match(/^(\d\d:\d\d) ([^:]{1,40}): (.*)$/);
+    if (m) msgs.push({ t: m[1], who: m[2], text: m[3] }); else if (msgs.length) msgs[msgs.length - 1].text += '\n' + l;
+  });
+  let n = 0;
+  const next = () => (c.imgs || [])[n++] || '';
+  const html = msgs.map((m, i) => { const first = !i || msgs[i - 1].who !== m.who;
+    return `<div class="wa-msg${first ? ' first' : ''}">${first ? `<span class="n" style="color:hsl(${hue(m.who)} 55% 45%)">${esc(m.who)}</span>` : ''}` +
+      `${media(esc(m.text), next)}<span class="t">${m.t}</span></div>`; }).join('');
+  const d = $('wa');
+  d.innerHTML = `<div class="wa-top"><span class="wa-av">B</span><div><b>BioFut</b><small>${msgs.length} mensagens</small></div>` +
+    `<button class="x" title="Esta conversa não sustenta o verbete? Reporte" data-report="${id}">⚑</button><button title="Fechar" data-close>×</button></div>` +
+    `<div class="wa-body"><div class="wa-day"><span>${fmtDate(c.date)}</span></div>${html}</div>`;
+  d.querySelector('[data-close]').onclick = () => d.close();
+  d.showModal();
+  if (!quote) return;
+  const q = new Set(words(quote));  // ponytail: the message sharing most words with the quote (quotes are trimmed, not verbatim)
+  let best, top = 0;
+  d.querySelectorAll('.wa-msg').forEach(el => { const n = words(el.textContent).filter(w => q.has(w)).length; if (n > top) [best, top] = [el, n]; });
+  if (best && top >= Math.min(2, q.size)) { best.classList.add('hit'); best.scrollIntoView({ block: 'center' }); }
+}
+
+function links(md) {
+  return md.replace(/\{\{Cita[çc][ãa]o\|([^|}]+)\|([^}]+)\}\}/gi, '> *“$1”*\n>\n> — $2\n').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, t, label) => {
+    const k = t.trim().toLowerCase(), s = byName[k] || (k === 'biofut' ? DATA.humor : '');
+    if (s) return `<a href="#/p/${s}">${esc(label || t)}</a>`;
+    if (locked[k]) return `<a class="locked" data-login title="Verbete só para membros">${esc(label || t)} 🔒</a>`;
+    return `<a class="missing" title="verbete ainda não existe">${esc(label || t)}</a>`;
+  });
+}
+
+function nav() {
+  const groups = {};
+  DATA.pages.forEach(p => (groups[p.type] ??= []).push(p));
+  $('nav2').innerHTML = (USER ? `<div class="who">Logado como <b>${esc(USER)}</b> · <a href="#" id="out">sair</a></div>` : '') +
+    '<a href="#/">🕸️ Mapa da BioWiki</a><a href="#/p/' + DATA.humor + '">😂 Humor BioFut</a><a href="#/top">🏆 As 20 mais engraçadas</a>' +
+    (USER ? '<a href="#/relatos">⚑ Erros reportados</a>' : '<a data-login>🔒 Entrar para ver tudo</a>') +
+    `<details id="all"><summary>Todos os ${DATA.pages.length} verbetes</summary>` +
+    Object.keys(COLORS).filter(t => groups[t]).map(t => `<h4>${t}s</h4>` +
+      groups[t].sort((a, b) => a.title.localeCompare(b.title)).map(p => `<a href="#/p/${p.slug}">${esc(p.title)}</a>`).join('')).join('') +
+    (DATA.locked?.length ? `<h4>só para membros</h4><a data-login>🔒 ${DATA.locked.length} verbetes fechados</a>` : '') + '</details>';
+  $('all').open = matchMedia('(min-width: 821px)').matches;
+  $('titles').innerHTML = DATA.pages.map(p => `<option value="${esc(p.title)}">`).join('');
+  if (USER) $('out').onclick = async e => { e.preventDefault(); await post('logout', {}); location.reload(); };
+}
+
+const laughs = n => '😂'.repeat(Math.max(1, n - 6));  // Claude's 1-10 score: 7 -> 😂, 9 -> 😂😂😂
+function bitList(ids, ranked) {
+  return '<ul class="bits">' + ids.filter(i => DATA.bits?.[i]).map((i, k) => { const b = DATA.bits[i];
+    return `<li>${ranked ? `<span class="n">${k + 1}</span>` : ''}<b>${esc(b.title)}</b>` + (b.quote ? `<q>${esc(b.quote)}</q>${b.who ? `<small>— ${esc(b.who)}</small><br>` : ''}` : '') +
+      `<small>${fmtDate(b.day)} · ${laughs(b.score)}` + (b.cited ? ` · voltou ao chat em ${b.cited} ${b.cited > 1 ? 'dias' : 'dia'}` : '') +
+      (b.ref && DATA.chats[b.ref] ? ` · <a data-ref="${b.ref}" data-q="${esc(b.quote || '')}">ver na conversa</a>` : '') + '</small>' + rate(i) + '</li>'; }).join('') + '</ul>';
+}
+function rate(i) {
+  if (!USER) return '';
+  const [s, n, me] = VOTES['b:' + i] || [0, 0, 0];
+  return `<div class="rate" data-bit="${esc(i)}">Quão engraçado? ${[1, 2, 3, 4, 5].map(v => `<button class="${v <= me ? 'on' : ''}" data-v="${v}" title="${v} de 5">😂</button>`).join('')}` +
+    (n ? `<small>média ${(s / n).toFixed(1).replace('.', ',')} · ${n} ${n > 1 ? 'notas' : 'nota'}</small>` : '') + '</div>';
+}
+const fun = i => { const [s, n] = VOTES['b:' + i] || [0, 0]; return (s + 3 * DATA.bits[i].score / 2) / (n + 3); };  // the AI's 1-10 counts as 3 votes of 0.5-5
+
+const where = x => x.page.startsWith('site:') ? `<a href="/#/${esc(x.page.slice(5))}">${esc(x.page.slice(5))} (site)</a>` : `<a href="#/p/${esc(x.page)}">${esc(bySlug[x.page]?.title || x.page)}</a>`;
+function votes(id) {
+  const [s, n, me] = VOTES['f:' + id] || [0, 0, 0];
+  return `<span class="votes" data-fb="${id}"><button class="${me > 0 ? 'on' : ''}" data-v="1" title="Concordo">👍 ${(n + s) / 2}</button><button class="${me < 0 ? 'on' : ''}" data-v="-1" title="Discordo">👎 ${(n - s) / 2}</button></span>`;
+}
+const fbItem = (x, all) => `<li><b>${esc(x.user)}</b>${all ? ' em ' + where(x) : ''}` +
+  (x.ref && DATA.chats[x.ref] ? ` (conversa <a data-ref="${esc(x.ref)}">${esc(fmtDate(DATA.chats[x.ref].date))}</a>)` : x.ref ? ` (${esc(x.ref)})` : '') + ` · <small>${esc(x.ts.slice(0, 10))}</small>` +
+  (x.file ? `<br>📷 sugeriu esta foto como a principal: <img src="${img(x.file)}" alt="" loading="lazy" data-full style="max-width:140px;vertical-align:top;border-radius:6px">` : '') +
+  (x.text ? `<br>${esc(x.text)}` : '') + votes(x.id) + '</li>';
+const fbList = slug => { const xs = FB.filter(x => x.page === slug).slice(-8).reverse(); return xs.length ? '<ul class="fb-list">' + xs.map(x => fbItem(x)).join('') + '</ul>' : ''; };
+
+const figure = (x, cls, btn = '') => `<figure class="${cls}"><img src="${img(x.file)}" alt="" loading="lazy" data-full><figcaption>${esc(x.legenda)}${btn}</figcaption></figure>`;
+const toJpeg = f => new Promise((ok, no) => {  // a phone photo -> a JPEG of at most 1600 px, under the server's 1.5 MB
+  const im = new Image();
+  im.onload = () => { const k = Math.min(1, 1600 / Math.max(im.width, im.height)), c = document.createElement('canvas');
+    c.width = im.width * k; c.height = im.height * k; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .85)); };
+  im.onerror = no; im.src = URL.createObjectURL(f);
+});
+
+function page(slug) {
+  const p = bySlug[slug];
+  if (!p) {
+    const l = DATA.locked?.find(x => x.slug === slug);
+    if (!l) return home();
+    $('view').innerHTML = `<div class="kicker">BioWiki</div><h1>${esc(l.title)}</h1><div class="banner">🔒 Este verbete é só para membros do BioFut. <button class="btn pri sm" data-login>Entrar com WhatsApp</button></div>`;
+    return;
+  }
+  const back = DATA.pages.filter(o => o.links.includes(slug)).map(o => `<a href="#/p/${o.slug}">${esc(o.title)}</a>`);
+  const [lead, ...rest] = p.photos || [];
+  const player = [p.title, ...p.aliases].find(n => PLAYERS.has(n));  // the same person on the site: stats, card, duels
+  $('view').innerHTML = `<div class="kicker">BioWiki · ${p.type}</div><h1>${esc(p.title)}</h1><div class="meta">` +
+    (p.years.length ? `<span>${p.years.join(', ')}</span>` : '') + (p.aliases.length ? `<span>também: ${esc(p.aliases.slice(0, 6).join(', '))}</span>` : '') +
+    (USER && !p.public ? '<span>🔒 só membros</span>' : '') +
+    (player ? `<a class="pill" href="/#/jogador/${encodeURIComponent(player)}">Números e carta no BioFut →</a>` : '') + `</div>` +
+    (lead ? figure(lead, 'lead', USER ? '<br><button class="btn sm" data-upload>📷 Tenho uma foto melhor</button>' : '') :
+      USER ? '<p><button class="btn sm" data-upload>📷 Mandar uma foto para este verbete</button></p>' : '') +
+    DOMPurify.sanitize(marked.parse(links(cite(p.md.replace(/^# .*\n/, ''), p.refs)))) +
+    (p.bits?.length ? '<h2 class="refs-h">Melhores momentos</h2>' + bitList(p.bits) : '') +
+    (rest.length ? `<h2 class="refs-h">Galeria</h2><div class="gallery">${rest.map(x => figure(x, '', USER ?
+      `<br><button class="btn sm" data-lead="${esc(x.file)}">⭐ ${p.type === 'pessoa' ? 'Esta é uma foto de perfil melhor' : 'Usar como foto principal'}</button>` : '')).join('')}</div>` : '') +
+    (p.refs.length && !p.bits?.length ? '<h2 class="refs-h">Referências</h2><ol class="refs">' + p.refs.map(id => `<li><a data-ref="${id}">Conversa de ${fmtDate(DATA.chats[id].date)}</a> — ${esc(firstLine(id))}</li>`).join('') + '</ol>' : '') +
+    (!USER ? '<div class="banner" style="clear:both"><span>Versão pública. Membros veem as conversas de onde cada fato saiu, todas as fotos e os verbetes fechados.</span><button class="btn pri sm" data-login>Entrar com WhatsApp</button></div>' : '') +
+    (LET_PAGES.has(slug) ? LETREIRO : '') +
+    (back.length ? `<h3 style="clear:both">Páginas que linkam aqui</h3><p>${back.join(' · ')}</p>` : '') +
+    (USER ? `<div style="margin-top:28px;clear:both"><button class="btn sm" data-report="">⚑ Algo errado neste verbete? Reporte</button><div id="fbl">${fbList(slug)}</div></div>` : '');
+  document.title = p.title + ' · BioWiki';
+  window.scrollTo(0, 0);
+  if (LET_PAGES.has(slug)) letreiro();
+}
+
+// The giant 'baita pnc' message as a toy: FIGlet fonts via figlet.js (MIT), loaded only when this page opens.
+const LET_PAGES = new Set(['baita-pnc', 'victor']), FIG = 'https://cdn.jsdelivr.net/npm/figlet@1.7.0';
+const FONTS = ['3-D', 'Larry 3D', '3D-ASCII', 'ANSI Shadow', 'Isometric1', 'Delta Corps Priest 1', 'Doom', 'Bloody', 'Slant', 'Big', 'Banner3', 'Standard'];
+const LETREIRO = '<h2 class="refs-h" style="clear:both">Letreiro</h2><p class="muted">Faça o seu baita letreiro, copie e mande no grupo (vai entre <code>```</code> para o WhatsApp não bagunçar).</p>' +
+  `<div class="row"><input class="in" id="ltT" value="BAITA PNC" maxlength="30" aria-label="Texto"><select class="in" id="ltF" aria-label="Fonte">${FONTS.map(f => `<option>${f}</option>`).join('')}</select>` +
+  '<button class="btn sm" id="ltC">Copiar</button></div><pre id="ltO" style="overflow-x:auto;font-size:11px;line-height:1.15;padding:10px 0">carregando…</pre>';
+function letreiro() {
+  letreiro.p ||= new Promise((ok, no) => { const s = document.createElement('script'); s.src = FIG + '/lib/figlet.js'; s.onload = ok; s.onerror = no; document.head.append(s); })
+    .then(() => figlet.defaults({ fontPath: FIG + '/fonts' }));
+  const go = () => letreiro.p.then(() => figlet.text($('ltT').value || ' ', { font: $('ltF').value, width: 400 },
+    (e, s) => $('ltO') && ($('ltO').textContent = e ? 'Essa fonte não carregou.' : s)), () => $('ltO').textContent = 'O gerador não carregou.');
+  $('ltT').oninput = $('ltF').onchange = go;
+  $('ltC').onclick = () => navigator.clipboard.writeText('```\n' + $('ltO').textContent + '\n```').then(() => $('ltC').textContent = 'Copiado ✓');
+  go();
+}
+
+function relatos() {
+  $('view').innerHTML = `<div class="kicker">BioWiki</div><h1>Erros reportados</h1><div class="meta">${FB.length} relatos, da wiki e do site</div>` +
+    '<p class="muted">Concorda ou não? Vote: quem cuida da wiki corrige primeiro o que tem mais 👍.</p>' +
+    '<ul class="fb-list">' + FB.slice().reverse().map(x => fbItem(x, true)).join('') + '</ul>';
+}
+
+function home() {
+  document.title = 'BioWiki · BioFut';
+  $('view').innerHTML = `<div class="kicker">${DATA.pages.length} verbetes · escritos a partir de ${DATA.span}</div><h1>BioWiki</h1>` +
+    '<p class="muted">Quem é quem, as sagas e os memes do BioFut. Cada nó é um verbete; as linhas ligam os que se citam. Clique para abrir.</p>' +
+    (!USER ? `<div class="banner"><span>Versão pública. ${DATA.locked.length} verbetes, as conversas de onde cada fato saiu e as fotos são só para membros.</span><button class="btn pri sm" data-login>Entrar com WhatsApp</button></div>` : '') +
+    '<div class="legend">' + Object.entries(COLORS).map(([t, c]) => `<span><i style="background:${c}"></i>${t}</span>`).join('') + '</div><div id="graph"></div>' +
+    '<div class="banner"><span>📜 Você nunca deleta as mensagens do celular e tem um backup com conversas de antes de 2022-08-09? Fale com o Gab, isso nos ajudará a investigar o antigo testamento da biofut wiki e aumentar nosso conhecimento sobre o que acontecia naqueles dias tenebrosos.</span></div>';
+  const deg = {};
+  DATA.edges.forEach(([a, b]) => { deg[a] = (deg[a] || 0) + 1; deg[b] = (deg[b] || 0) + 1; });
+  const nodes = DATA.pages.map(p => ({ id: p.slug, label: p.title, color: COLORS[p.type] || '#888', value: 1 + (deg[p.slug] || 0), shape: 'dot',
+    font: { color: getComputedStyle(document.body).color, face: 'Barlow' } }));
+  const net = new vis.Network($('graph'), { nodes, edges: DATA.edges.map(([from, to]) => ({ from, to })) }, {
+    physics: { solver: 'forceAtlas2Based', stabilization: { iterations: 200 } }, edges: { color: { opacity: 0.25 }, smooth: false },
+    nodes: { scaling: { min: 6, max: 40, label: { enabled: true, min: 11, max: 16 } } }, interaction: { hover: true } });
+  net.on('click', e => { if (e.nodes[0]) location.hash = '#/p/' + e.nodes[0]; });
+}
+
+function funniest() {  // not top(): that name is window.top, redeclaring it kills the whole script
+  const ids = Object.keys(DATA.bits || {}).sort((a, b) => fun(b) - fun(a) || DATA.bits[b].cited - DATA.bits[a].cited).slice(0, 20);
+  $('view').innerHTML = '<div class="kicker">Ranking</div><h1>As 20 mais engraçadas</h1><p class="muted">Quem manda são as notas de 1 a 5 😂 dos membros. ' +
+    'Antes delas vale a nota de uma IA (Claude), dada só com a piada e quantas vezes ela voltou ao chat; ela pesa como 3 votos, então muitas notas dos membros passam por cima. ' +
+    'No empate ganha a mais repetida. A wiki tem vagas limitadas: cada piada nova que entra empurra uma mais fraca pra fora.</p>' + bitList(ids, true);
+  window.scrollTo(0, 0);
+}
+
+function route() {
+  const q = location.hash.match(/^#\/q\/(.+)$/), s = q && byName[decodeURIComponent(q[1]).toLowerCase()];
+  if (q) return s ? location.replace('#/p/' + s) : home();
+  document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === location.hash));
+  if (location.hash === '#/top') return funniest();
+  const m = location.hash.match(/^#\/p\/(.+)$/);
+  if (location.hash === '#/relatos' && USER) return relatos();
+  m ? page(decodeURIComponent(m[1])) : home();
+}
+
+let reportRef = '';
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('a[data-ref]')) { e.preventDefault(); const a = t.closest('a[data-ref]'); return chat(a.dataset.ref, a.dataset.q); }
+  const vb = t.closest('[data-bit] button, [data-fb] button');
+  if (vb && USER) {  // a vote; clicking your own vote again takes it back
+    const box = vb.parentElement, key = box.dataset.bit ? 'b:' + box.dataset.bit : 'f:' + box.dataset.fb, v = +vb.dataset.v;
+    return post('vote', { key, v: (VOTES[key] || [])[2] === v ? 0 : v }).then(r => {
+      if (!r.ok) return alert(r.error || 'não deu');
+      VOTES[key] = r.votes;
+      box.outerHTML = box.dataset.bit ? rate(box.dataset.bit) : votes(box.dataset.fb);
+    });
+  }
+  const here = bySlug[decodeURIComponent((location.hash.match(/^#\/p\/(.+)$/) || [])[1] || '')];
+  const sendPhoto = body => post('wiki_feedback', { page: here.slug, title: here.title, player: [here.title, ...here.aliases].find(n => PLAYERS.has(n)) || '', ...body })
+    .then(r => alert(r.ok ? 'Valeu! A foto foi para a revisão: o Gab ou o Conselho aprova.' : r.error || 'não deu'));
+  if (t.closest('[data-lead]') && here && USER && confirm('Sugerir esta foto como a principal do verbete?')) return sendPhoto({ file: t.closest('[data-lead]').dataset.lead });
+  if (t.closest('[data-upload]') && here && USER) {
+    const inp = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
+    inp.onchange = async () => { if (inp.files[0]) sendPhoto({ photo: await toJpeg(inp.files[0]), text: prompt('Quer dizer algo sobre a foto? (opcional)') || '' }); };
+    return inp.click();
+  }
+  if (t.closest('[data-login]')) { e.preventDefault(); return location.href = '/entrar?next=' + encodeURIComponent('/wiki' + location.hash); }
+  if (t.closest('[data-report]') && USER) {
+    reportRef = t.closest('[data-report]').dataset.report;
+    const p = bySlug[(location.hash.match(/^#\/p\/(.+)$/) || [])[1]];
+    $('rWhat').textContent = (p ? `Verbete: ${p.title}` : '') + (reportRef ? ` · conversa de ${fmtDate(DATA.chats[reportRef].date)}` : '');
+    $('rErr').textContent = ''; $('rText').value = '';
+    return $('report').showModal();
+  }
+  if (t.matches('img[data-full]')) window.open(t.src, '_blank');
+  if (t.id === 'wa') t.close();
+});
+$('reportForm').addEventListener('submit', async e => {
+  if (e.submitter?.value !== 'ok') return;
+  e.preventDefault();
+  const slug = (location.hash.match(/^#\/p\/(.+)$/) || [])[1] || '';
+  const row = { page: decodeURIComponent(slug), ref: reportRef, text: $('rText').value.trim() };
+  const r = await post('wiki_feedback', row);
+  if (!r.ok) return $('rErr').textContent = r.error || 'não deu';
+  FB.push({ ...row, id: r.id, user: USER, ts: new Date().toISOString() });
+  $('report').close();
+  if ($('fbl')) $('fbl').innerHTML = fbList(row.page);
+  alert('Valeu! O relato foi salvo.');
+});
+$('q').addEventListener('change', e => { const s = byName[e.target.value.toLowerCase()]; BF.ev('busca', e.target.value); if (s) { location.hash = '#/p/' + s; e.target.value = ''; } });
+window.addEventListener('hashchange', route);
+
+(async () => {
+  [DATA, { user: USER }] = await Promise.all([fetch('/api/wiki').then(r => r.json()), BF.me]);
+  fetch('/api/data').then(r => r.json()).then(d => {  // who also plays: person pages link to their stats (cached 5 min)
+    PLAYERS = new Set(d.games.flatMap(g => g.teams.flatMap(t => t.players.map(p => p[0]))));
+    if (/^#\/p\//.test(location.hash)) route();
+  }).catch(() => {});
+  if (!DATA.member) USER = null;  // a cookie from before a PIN change: show what the server sent
+  if (USER) [FB, VOTES] = await Promise.all(['/api/wiki_feedback', '/api/votes'].map(u => fetch(u).then(r => r.json()))).catch(() => [[], {}]);
+  if (!Array.isArray(FB)) FB = [];
+  bySlug = Object.fromEntries(DATA.pages.map(p => [p.slug, p]));
+  // titles before aliases: 'Bruno M' is a page of its own and also an alias of BioFut King (10-10 bug)
+  for (const k of ['title', 'aliases']) {
+    DATA.pages.forEach(p => [p[k]].flat().forEach(n => byName[n.toLowerCase()] ??= p.slug));
+    (DATA.locked || []).forEach(p => [p[k]].flat().forEach(n => locked[n.toLowerCase()] ??= p.slug));
+  }
+  nav(); route();
+})();
+</script>
+</body>
+</html>

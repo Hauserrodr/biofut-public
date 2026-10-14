@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar no BioFut</title>
+<meta name="description" content="Entre no BioFut com o seu número do WhatsApp: o bot manda um código e você digita aqui.">
+<meta property="og:title" content="Entrar no BioFut">
+<meta property="og:description" content="Entre no BioFut com o seu número do WhatsApp: o bot manda um código e você digita aqui.">
+<meta property="og:image" content="https://biofut.h-brain.org/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<style>
+main.login { max-width: 480px; }
+main.login h1 { font-size: clamp(36px, 9vw, 54px); margin: 6px 0 12px; }
+main.login .card { margin: 18px 0; }
+.meta { color: var(--mut); font-size: 14px; }
+label { display: block; font: 600 13px var(--cond); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin-bottom: 8px; }
+#phone { width: 100%; height: 54px; font-size: 22px; letter-spacing: .03em; }
+#phone:user-invalid { border-color: var(--loss); }
+#go { width: 100%; height: 48px; margin-top: 14px; }
+.err { color: var(--loss); font-size: 14px; min-height: 1.2em; margin-top: 8px; }
+.code { font: 800 56px/1 var(--cond); letter-spacing: .2em; text-align: center; margin: 16px 0; color: var(--acc); font-variant-numeric: tabular-nums; }
+.note { border-left: 3px solid var(--acc); padding-left: 12px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<script src="/site.js"></script>
+<main class="login">
+  <div class="kicker">Membros do grupo</div>
+  <h1>Entrar no BioFut</h1>
+  <p class="meta">Quem está no grupo do BioFut no WhatsApp pode entrar com o próprio número.</p>
+  <div class="card pad note" id="why" hidden></div>
+
+  <form class="card pad" id="phoneForm" novalidate>
+    <label for="phone">Seu número de WhatsApp</label>
+    <input class="in" id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(51) 99999-9999" maxlength="22" required>
+    <p class="meta" style="margin:6px 0 0">Com DDD. Número de fora do Brasil: comece com + e o código do país.</p>
+    <div class="err" id="err" role="alert"></div>
+    <label class="meta" style="display:block;margin:10px 0"><input type="checkbox" id="keep"> Manter logado mesmo se a internet mudar de IP</label>
+    <p class="meta" id="keepWhy" style="margin:0 0 10px">No seu celular ou no seu computador isso é seguro e evita entrar de novo. <b>Não marque</b> em computador de lan house, faculdade ou de outra pessoa.</p>
+    <button class="btn pri" id="go">Mandar pedido pelo WhatsApp</button>
+  </form>
+
+  <div class="card pad" id="wait" hidden>
+    <p style="margin-top:0">Mandamos o código pelo WhatsApp, numa mensagem do <b>[ESQUIZOFUT]</b>. Digite aqui:</p>
+    <form class="row" id="codeForm" style="display:flex;gap:8px;align-items:center">
+      <input class="in code" id="codeIn" inputmode="numeric" pattern="\d{4}" maxlength="4" required style="width:4.5em;height:auto;margin:8px 0" autocomplete="one-time-code"><button class="btn pri">Entrar</button></form>
+    <p class="meta" id="waitMsg">O código vale 10 minutos.</p>
+    <a class="link" href="" id="again">Usar outro número</a>
+  </div>
+
+  <div class="card pad" id="ok" hidden><b id="okMsg"></b><p class="meta" style="margin-bottom:0" id="okNext">Levando você de volta…</p>
+    <div id="ask" hidden><p style="margin:12px 0 6px">Este navegador é seu? <b>Manter logado</b> aqui mesmo se a internet mudar de IP?</p>
+      <p class="meta" style="margin:0 0 10px">Assim você não precisa entrar de novo toda vez. Diga não em computador de lan house, faculdade ou de outra pessoa.</p>
+      <div class="row" style="display:flex;gap:8px"><button class="btn pri" id="askYes">Sim, é meu</button><button class="btn" id="askNo">Não</button></div></div></div>
+
+  <p class="meta note">Depois de entrar, este navegador fica lembrado. Você só precisa entrar de novo se usar <b>outro navegador</b>
+    ou se a sua internet mudar de <b>IP</b> (no celular isso acontece quando troca do Wi-Fi para o 4G, ou de rede).</p>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const post = (action, body) => fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  .then(async r => ({ ok: r.ok, ...(await r.json().catch(() => ({}))) }), () => ({ ok: false, error: 'sem conexão' }));
+const next = (n => /^\/(?![\/\\])/.test(n || '') ? n : '/wiki')(new URLSearchParams(location.search).get('next'));
+
+// same rule as valid_phone() in server.py: Brazilian mobile ([+55] DDD 9XXXX-XXXX) or +country code and 8-15 digits
+function validPhone(raw) {
+  const d = raw.replace(/[\s().-]/g, '');
+  const br = d.match(/^(?:\+?55)?([1-9]{2}9\d{8})$/);
+  return br ? '55' + br[1] : /^\+(?!55)[1-9]\d{7,14}$/.test(d) ? d.slice(1) : null;
+}
+// (51) 90000-0003 as you type; a number starting with + is left alone
+function mask(v) {
+  if (v.trim().startsWith('+')) return '+' + v.replace(/[^\d ]/g, '');
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  return d.length <= 2 ? d : d.length <= 7 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+const phone = $('phone');
+phone.addEventListener('input', () => {
+  phone.value = mask(phone.value);
+  phone.setCustomValidity(validPhone(phone.value) ? '' : 'número inválido');
+  $('go').disabled = !validPhone(phone.value);
+  $('err').textContent = '';
+});
+$('go').disabled = true;
+
+$('phoneForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!validPhone(phone.value)) return $('err').textContent = 'Número inválido: (DDD) 9XXXX-XXXX, ou + código do país.';
+  $('go').disabled = true;
+  const r = await post('login/start', { phone: phone.value });
+  $('go').disabled = false;
+  if (!r.ok) return $('err').textContent = r.error || 'não deu, tente de novo';
+  $('phoneForm').hidden = true; $('wait').hidden = false; $('codeIn').focus();
+  const keep = $('keep').checked, say = m => $('waitMsg').textContent = m[0].toUpperCase() + m.slice(1) + '.';
+  $('codeForm').onsubmit = async e => {
+    e.preventDefault();
+    const c = await post('login/code', { id: r.id, code: $('codeIn').value.trim() });
+    if (!c.ok) return say(c.error || 'não deu');
+    const s = await post('login/status', { id: r.id, keep });
+    if (s.approved) {
+      $('wait').hidden = true; $('ok').hidden = false; $('okMsg').textContent = `Pronto, ${s.user}! Você entrou.`;
+      if (keep) return setTimeout(() => location.href = next, 1500);
+      $('okNext').hidden = true; $('ask').hidden = false;  // not ticked: ask outright, a missed checkbox meant a new login per IP
+      $('askYes').onclick = async () => { const k = await post('login/keep', {}); remember(k.ok); location.href = next; };
+      $('askNo').onclick = () => { remember(false); location.href = next; };
+      return;
+    }
+    say(s.error || 'não deu, tente de novo');
+  };
+});
+
+// this browser's last answer, else: a phone is the member's own; a desktop may not be
+const remember = v => { try { localStorage.bfKeep = v ? '1' : '0'; } catch {} };
+let saved = null; try { saved = localStorage.bfKeep; } catch {}
+$('keep').checked = saved ? saved === '1' : /Mobi|Android/i.test(navigator.userAgent);
+$('keep').onchange = e => remember(e.target.checked);
+BF.me.then(me => {
+  const w = $('why');
+  if (me.user) { w.hidden = false; w.innerHTML = 'Você já está dentro como <b></b>. <a>Voltar</a>'; w.querySelector('b').textContent = me.user; w.querySelector('a').href = next; }
+  else if (me.why === 'ip') { w.hidden = false; w.textContent = 'Sua internet mudou de IP desde o último acesso, então por segurança é preciso entrar de novo.'; }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>BioFut Painel</title>
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<style>
+main.adm h1 { font-size: clamp(36px, 7vw, 56px); margin: 6px 0 18px; }
+.meta { color: var(--mut); font-size: 14px; }
+[hidden] { display: none !important; }
+.rev { margin: 12px 0; } .rev h3 { margin: 0 0 6px; text-transform: none; letter-spacing: 0; font: 600 17px var(--body); }
+.rev table { font-size: 14px; width: auto; } .rev td, .rev th { padding: 4px 8px; text-align: left; position: static; }
+textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; min-height: 220px; background: var(--bg2); color: var(--ink); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; }
+img.sumula { max-width: 100%; max-height: 520px; border-radius: 8px; display: block; margin: 8px 0; }
+.add { background: color-mix(in srgb, var(--win) 18%, transparent); } .drop { background: color-mix(in srgb, var(--loss) 18%, transparent); text-decoration: line-through; }
+.op { margin: 8px 0; } .op div { padding: 3px 8px; border-radius: 6px; margin: 2px 0; font-size: 14px; }
+details summary { cursor: pointer; color: var(--mut); font-size: 14px; }
+.err { color: var(--loss); font-size: 14px; }
+.btn.no { color: var(--loss); border-color: var(--loss); }
+.hb { display: grid; grid-template-columns: minmax(0, max-content) 1fr max-content; gap: 6px 12px; align-items: center; font-size: 14px; margin-top: 12px; }
+.hb div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.hb i { display: block; height: 12px; border-radius: 4px; background: var(--acc); min-width: 2px; }
+.hb span { color: var(--mut); font-variant-numeric: tabular-nums; }
+.feed { font-size: 14px; } .feed td { white-space: normal; text-align: left; vertical-align: top; } .feed tr.bad td { color: var(--loss); }
+</style>
+</head>
+<body>
+<script src="/site.js"></script>
+<main class="adm">
+  <div class="kicker" id="who">Gab e Conselho</div><h1>Painel</h1>
+  <div class="row" id="bar" hidden><div class="seg" id="tabs"><button data-tab="rev" class="on">Revisão</button><button data-tab="pes">Pessoas</button><button data-tab="ati" data-only="admin">Atividade</button><button data-tab="pla">Planilha</button><button data-tab="ide" data-only="admin">Ideias</button></div>
+    <button class="btn sm" id="reload">Atualizar</button></div>
+  <div id="view" style="margin-top:18px"><p class="meta">Carregando…</p></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const when = t => new Date(t * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+let ITEMS = [], ROLE = null;  // ROLE from /api/me: admin = Gab (his WhatsApp login), conselho = data only (server.py CONSELHO)
+
+function wikiView(p) {
+  const t = i => p.bits?.[i] ? `${esc(p.bits[i].title)}${p.bits[i].quote ? ` <i>“${esc(p.bits[i].quote)}”</i>` : ''}` : esc(i);
+  return (p.ops || []).map(o => `<div class="op"><b>${esc(o.title || o.page)}</b>` +
+    (o.add || []).map(i => `<div class="add">+ ${t(i)}</div>`).join('') + (o.drop || []).map(i => `<div class="drop">− ${esc(o.drop_titles?.[i] || i)}</div>`).join('') + '</div>').join('');
+}
+function sumulaView(p) {
+  return (p.image ? `<img class="sumula" src="/api/review_media/${esc(p.image)}" alt="foto da súmula">` : '') +
+    `<p>Data: <b>${esc(p.date)}</b>${p.notes ? ` · ${esc(p.notes)}` : ''}</p>` + (p.games || []).map(g =>
+    `<p><b>${esc(g.team_a)} ${g.score_a} × ${g.score_b} ${esc(g.team_b)}</b></p><table><tr><th>Time</th><th>Jogador</th><th>G</th><th>A</th><th>GC</th></tr>` +
+    ['a', 'b'].flatMap(s => (g['players_' + s] || []).map(x => `<tr><td>${esc(g['team_' + s])}</td><td>${esc(x.name)}${x.captain ? ' (C)' : ''}${x.written ? ` <i class="meta">escrito “${esc(x.written)}”</i>` : ''}</td><td>${x.goals || 0}</td><td>${x.assists || 0}</td><td>${x.own_goals || 0}</td></tr>`)).join('') +
+    '</table>').join('');
+}
+function tabelaView(p) {  // + new game, ~ changed, - gone from the sheet
+  return '<p>Mudanças na planilha em relação ao que o site mostra:</p>' + (p.diff || []).map(d =>
+    `<div class="${d[0] === '+' ? 'add' : d[0] === '-' ? 'drop' : ''}">${esc(d)}</div>`).join('');
+}
+function listasView(p) {
+  const f = p.flake || {};
+  return `<p>${(p.people || []).length} pessoas · ${f.games} listas · ${f.cancelled} canceladas (flake ${Math.round((f.rate || 0) * 100)}%)</p>` +
+    Object.entries(p.trophies || {}).map(([k, v]) => `<div class="op"><b>${esc(k)}</b>: ${v.slice(0, 3).map(x => `${esc(x.name)} (${esc(x.n)})`).join(', ')}</div>`).join('');
+}
+const fotoView = p => `<img class="sumula" src="/wiki/media/${esc(p.file)}" alt="foto sugerida"><p>Verbete <a href="/wiki#/p/${esc(p.page)}">${esc(p.page)}</a>` +
+  (p.player ? ` · vira também a foto do jogador <b>${esc(p.player)}</b> no site` : '') + '</p>';
+const jogoView = p => `<p><b>${esc(p.placar)}</b> · ${esc(p.date)} · jogo ${esc(p.n)}</p><p>${esc(p.user)}: ${esc(p.text || 'sem comentário')}</p>` +
+  (p.fotos || []).map(f => `<img class="sumula" src="/wiki/media/${esc(f)}" alt="súmula da noite">`).join('') +
+  '<p class="meta">Aprovar = conferido: a correção vai na planilha, e a tabela do site atualiza sozinha.</p>';
+const VIEWS = { wiki: wikiView, sumula: sumulaView, tabela: tabelaView, listas: listasView, foto: fotoView, jogo: jogoView };
+
+function render() {
+  const pend = ITEMS.filter(x => x.status === 'pending');
+  $('view').innerHTML = `<p class="meta">${pend.length} esperando. Sem decisão em 6 h, o item entra sozinho. Editar = mudar o JSON e liberar já.</p>` +
+    ITEMS.map(x => `<div class="card pad rev"><h3>#${x.id} ${esc(x.title)}</h3><div class="meta">${x.kind} · chegou ${when(x.created)} · ` +
+      (x.status === 'pending' ? (x.held ? ({ foto: 'foto', jogo: 'relato' }[x.kind] || 'sem nenhum gol') + ': só sai com alguém aprovando' : `entra sozinho às ${when(x.created + 6 * 3600)}`) : `${x.status}${x.decided ? ' em ' + esc(x.decided.replace('T', ' ').slice(0, 16)) : ''}`) + '</div>' +
+      (VIEWS[x.kind] ? VIEWS[x.kind](x.payload) : '') +
+      (x.status === 'pending' ? `<details><summary>Editar JSON</summary><textarea id="j${x.id}">${esc(JSON.stringify(x.payload, null, 1))}</textarea></details>` +
+        `<div class="row" style="margin-top:10px"><button class="btn pri sm" data-act="approve" data-id="${x.id}">Aprovar</button><button class="btn sm" data-act="edit" data-id="${x.id}">Salvar edição e liberar</button>` +
+        `<button class="btn sm no" data-act="reject" data-id="${x.id}">Rejeitar</button></div><div class="err" id="e${x.id}"></div>` : '') +
+      (x.sheet ? `<div class="meta">planilha: ${esc(x.sheet)}</div>` : '') + '</div>').join('');
+}
+
+// ---------- Pessoas: phones.py's questions (who a list name was, same player?, number switches) + claims; answers -> data/quem.json ----------
+async function pessoas(q) {
+  q = q || await fetch('/api/quem').then(r => r.json()).catch(() => null);
+  if (!q || q.error) { $('view').innerHTML = `<p class="err">${esc(q?.error || 'Não consegui ler.')}</p>`; return; }
+  const btn = (data, label, on) => `<button class="btn sm${on ? ' pri' : ''}" ${data}>${label}</button>`, day = ts => `${ts.slice(8, 10)}/${ts.slice(5, 7)}`;
+  $('view').innerHTML =
+    (q.asks.length ? `<div class="card pad rev"><h3>Quem diz ser quem</h3><p class="meta">Números que nenhuma lista conhece e que dizem ter um nome na tabela. Confirme só quem você sabe que é.</p>` +
+      q.asks.map(a => `<div class="op"><b>${esc(a.login)}</b> diz que é <b>${esc(a.name)}</b> <span class="meta">${esc(day(a.ts))}</span>` +
+        (a.known ? ' <span class="err">esse nome já tem um número: confira antes</span>' : '') +
+        `<div class="row" style="margin-top:6px">${btn(`data-ask="${esc(a.pk)}" data-ok="1"`, 'É ele')}${btn(`data-ask="${esc(a.pk)}" data-ok=""`, 'Não é')}</div></div>`).join('') + '</div>' : '') +
+    `<div class="card pad rev"><h3>Quem era? · ${q.items.filter(x => !x.answer).length} sem resposta</h3><p class="meta">Nomes que alguém pôs na lista e que podem ser de mais de uma pessoa. Quem pôs também vê a pergunta na página dele; vale a última resposta.</p>` +
+      q.items.map(it => `<div class="op"><b>${esc(it.by)}</b> pôs “${esc(it.wrote)}” na lista de ${esc(it.date)}; na tabela: <b>${esc(it.name)}</b>` +
+        (it.answer ? ` <span class="meta">· ${esc(it.answer.by)}: ${esc(it.answer.choice)}</span>` : '') +
+        `<div class="row" style="margin-top:6px">${it.options.map(o => btn(`data-qid="${esc(it.id)}" data-c="${esc(o)}"`, o === 'Sombra' ? 'Convidado (Sombra)' : esc(o), it.answer?.choice === o)).join('')}</div></div>`).join('') + '</div>' +
+    (q.suggest.length ? `<div class="card pad rev"><h3>Mesmo jogador?</h3><p class="meta">Um sobrenome sozinho e um nome completo que nunca jogaram juntos. Se for a mesma pessoa, a tabela junta os dois.</p>` +
+      q.suggest.map(s => `<div class="op"><b>${esc(s.name)}</b> e <b>${esc(s.to)}</b>` + (s.answer ? ` <span class="meta">· ${esc(s.answer.by)}: ${s.answer.ok ? 'mesmo' : 'outro'}</span>` : '') +
+        `<div class="row" style="margin-top:6px">${btn(`data-merge="${esc(s.name)}" data-to="${esc(s.to)}" data-ok="1"`, 'Mesmo jogador', s.answer?.ok)}${btn(`data-merge="${esc(s.name)}" data-to="${esc(s.to)}" data-ok=""`, 'Outro', s.answer && !s.answer.ok)}</div></div>`).join('') + '</div>' : '') +
+    (q.switches ? `<div class="card pad rev"><h3>Trocas de número</h3><p class="meta">Mesmo nome, número novo (só os 4 últimos dígitos). “Juntos”: os dois números escreveram no grupo por 30+ dias ao mesmo tempo, então talvez sejam duas pessoas com um nome.</p>` +
+      `<table><tr><th>Quem</th><th>De</th><th>Para</th><th>Quando</th><th></th></tr>${q.switches.map(s => `<tr><td>${esc(s.name)}</td><td>…${esc(s.old)}</td><td>…${esc(s.new)}</td><td>${esc(s.date)}</td><td>${s.at_once ? 'juntos' : ''}</td></tr>`).join('')}</table></div>` : '');
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-qid],[data-merge],[data-ask]');
+  if (!b) return;
+  const d = b.dataset, body = d.qid ? { id: d.qid, choice: d.c } : d.merge ? { merge: d.merge, to: d.to, ok: !!d.ok } : { ask: d.ask, ok: !!d.ok };
+  const j = await fetch('/api/quem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()).catch(() => ({ error: 'sem conexão' }));
+  if (j.error) alert(j.error); else pessoas(j);
+});
+
+// ---------- Atividade: data/events.jsonl (page views, clicks, every POST, JS errors). No IPs: vid is a daily hash, members their name ----------
+let EV = [], TAB = 'rev', FILTER = '', SHOW = 'acoes';
+const uniq = xs => new Set(xs.filter(Boolean)).size;
+const count = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x); if (k) m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+const hbars = rows => rows.length ? '<div class="hb">' + rows.map(([k, n]) => `<div title="${esc(k)}">${esc(k)}</div><i style="width:${(100 * n / rows[0][1]).toFixed(1)}%"></i><span>${n}</span>`).join('') + '</div>'
+  : '<p class="meta">Nada ainda.</p>';
+const bad = x => x.ev === 'js_error' || x.code >= 400;
+const page = p => { try { return decodeURIComponent(p || '') } catch (e) { return p } };
+const brDay = (ago = 0) => new Date(Date.now() - 3 * 3600e3 - ago * 864e5).toISOString().slice(0, 10);  // the server writes Brasília time
+
+function feed() {
+  const f = FILTER.toLowerCase(), keep = { tudo: () => true, acoes: x => !['view', 'click'].includes(x.ev), erros: bad }[SHOW];
+  const xs = EV.filter(x => keep(x) && (!f || JSON.stringify(x).toLowerCase().includes(f))).slice(-300).reverse();
+  return '<table class="feed"><thead><tr><th class="l">Quando</th><th class="l">Quem</th><th class="l">O quê</th><th class="l">Onde</th><th class="l">Detalhe</th></tr></thead><tbody>' +
+    xs.map(x => `<tr class="${bad(x) ? 'bad' : ''}"><td class="l">${x.ts.slice(8, 10)}/${x.ts.slice(5, 7)} ${x.ts.slice(11, 16)}</td>` +
+      `<td class="l">${x.user ? `<b>${esc(x.user)}</b>` : `<span class="meta">${esc(x.vid)}</span>`}${x.mob ? ' 📱' : ''}</td>` +
+      `<td class="l">${esc(x.ev)}${x.code ? ` <b>${x.code}</b>` : ''}</td><td class="l">${esc(page(x.p))}</td>` +
+      `<td class="l">${esc([typeof x.d === 'object' ? JSON.stringify(x.d) : x.d, x.err].filter(Boolean).join(' · '))}</td></tr>`).join('') +
+    '</tbody></table>' + (xs.length ? '' : '<p class="meta" style="padding:0 12px">Nada com esse filtro.</p>');
+}
+
+function activity() {
+  const T = EV.filter(x => x.ts.startsWith(brDay())), week = EV.filter(x => x.ts >= brDay(6));
+  const per = [...Array(14)].map((_, i) => { const d = brDay(13 - i), xs = EV.filter(x => x.ts.startsWith(d)); return [d, uniq(xs.map(x => x.vid)), uniq(xs.map(x => x.user))]; });
+  const max = Math.max(1, ...per.map(p => p[1])), acts = x => !['view', 'click', 'js_error'].includes(x.ev);
+  const kp = [[uniq(T.map(x => x.vid)), 'Visitantes hoje'], [uniq(T.map(x => x.user)), 'Membros hoje'], [T.filter(x => x.ev === 'view').length, 'Páginas vistas'],
+    [T.filter(acts).length, 'Ações'], [T.filter(bad).length, 'Erros'], [Math.round(100 * uniq(T.filter(x => x.mob).map(x => x.vid)) / (uniq(T.map(x => x.vid)) || 1)) + '%', 'No celular']];
+  $('view').innerHTML = `<div class="kpis">${kp.map(([v, l]) => `<div><b class="num">${v}</b><span>${l}</span></div>`).join('')}</div>
+  <div class="card pad" style="margin-top:14px"><div class="sec-h" style="margin-bottom:4px"><h3>Últimos 14 dias</h3><div class="legend"><span><i></i>Visitantes</span><span><i class="a"></i>Membros logados</span></div></div>
+  <div class="bars">${per.map(([d, v, m]) => `<div class="b"><em class="num">${v}</em><div class="stack" style="height:${Math.max(4, 120 * v / max)}px">
+    <i style="height:${(100 * Math.max(0, v - m) / (v || 1)).toFixed(1)}%"></i><i class="a" style="height:${(100 * Math.min(m, v) / (v || 1)).toFixed(1)}%"></i></div><small>${d.slice(8)}/${d.slice(5, 7)}</small></div>`).join('')}</div></div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card pad"><h3>Páginas · 7 dias</h3>${hbars(count(week.filter(x => x.ev === 'view'), x => page(x.p)).slice(0, 12))}</div>
+    <div class="card pad"><h3>Cliques · 7 dias</h3>${hbars(count(week.filter(x => x.ev === 'click'), x => x.d).slice(0, 12))}</div>
+    <div class="card pad"><h3>Ações · 7 dias</h3>${hbars(count(week.filter(acts), x => x.ev + (x.code ? ' (falhou)' : '')).slice(0, 12))}</div>
+    <div class="card pad"><h3>Quem usou · 7 dias</h3>${hbars(count(week, x => x.user).slice(0, 12))}</div>
+    <div class="card pad"><h3>De onde vieram · 7 dias</h3>${hbars(count(week.filter(x => x.ev === 'view'), x => x.d).slice(0, 8))}</div>
+    <div class="card pad"><h3>Erros · 7 dias</h3>${hbars(count(week.filter(bad), x => x.ev === 'js_error' ? x.d : `${x.ev} ${x.code}: ${x.err || ''}`).slice(0, 8))}</div>
+  </div>
+  <div class="sec-h" style="margin-top:32px"><h3>Tudo o que aconteceu</h3><div class="row"><input class="in" id="flt" placeholder="filtrar: nome, página, evento…" value="${esc(FILTER)}">
+    <div class="seg">${[['acoes', 'Ações'], ['tudo', 'Tudo'], ['erros', 'Erros']].map(([k, t]) => `<button data-show="${k}" class="${k === SHOW ? 'on' : ''}">${t}</button>`).join('')}</div></div></div>
+  <div class="tw" id="feed">${feed()}</div>`;
+  $('flt').oninput = e => { FILTER = e.target.value; $('feed').innerHTML = feed(); };
+}
+
+async function planilha() {
+  const g = await fetch('/api/planilha').then(r => r.json()).catch(() => null);
+  $('view').innerHTML = `<div class="card pad"><h3>${!g ? 'Não consegui ler' : g.length ? `${g.length} jogo${g.length > 1 ? 's' : ''} no site e não na planilha` : 'A planilha está em dia'}</h3>` +
+    (g || []).map(x => `<p class="meta" style="margin:6px 0">#${x.n} · ${esc(x.line)}</p>`).join('') +
+    '<p class="meta">Sem o hook do Apps Script, súmulas aprovadas e jogos da semana ficam só no site até alguém colar na planilha. A página de copiar é pública: ' +
+    'qualquer um com acesso de edição à planilha cola, e o servidor não precisa de nenhuma conta Google.</p><a class="btn pri sm" href="/#/planilha">Abrir a página de copiar</a></div>';
+}
+
+async function ideias() {  // members' ideas and bugs from /#/eu: the server opens an issue for each (BIOFUT_GITHUB_TOKEN); the link is the fallback
+  const xs = await fetch('/api/feedback').then(r => r.json()).catch(() => null);
+  $('view').innerHTML = !Array.isArray(xs) ? '<p class="err">Não consegui ler.</p>' : !xs.length ? '<p class="meta">Nenhuma ideia ainda.</p>' :
+    xs.slice().reverse().map(x => `<div class="card pad" style="margin-bottom:10px"><p class="meta" style="margin:0 0 6px">${esc(x.ts.slice(8, 10))}/${esc(x.ts.slice(5, 7))} ${esc(x.ts.slice(11, 16))} · <b>${esc(x.user)}</b> · ${esc(x.kind)}</p>` +
+      `<p style="margin:0 0 8px;white-space:pre-wrap">${esc(x.text)}</p>${x.issue ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x.issue)}">Issue #${esc(x.issue.split('/').pop())}</a>` : `<a class="btn sm" target="_blank" rel="noopener" href="https://github.com/Hauserrodr/biofut/issues/new?title=${encodeURIComponent(`[${x.kind}] ${x.text.slice(0, 70)}`)}&body=${encodeURIComponent(`${x.text}\n\nDe ${x.user} no site, ${x.ts}.`)}">Virar issue</a>`}</div>`).join('');
+}
+
+function show() {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB));
+  if (TAB === 'rev') render(); else if (TAB === 'pes') pessoas(); else if (TAB === 'ati') activity(); else if (TAB === 'ide') ideias(); else planilha();
+}
+
+async function load() {  // no key: the WhatsApp login cookie says who it is (server.py role_of)
+  const m = await BF.me;
+  ROLE = m.role;
+  if (ROLE !== 'admin' && ROLE !== 'conselho') {
+    $('view').innerHTML = `<p class="meta">Só para o Gab e o Conselho${m.user ? ` (você entrou como ${esc(m.user)})` : `. <a class="link" href="/entrar?next=/admin">Entrar com o WhatsApp</a>`}</p>`;
+    return;
+  }
+  $('who').textContent = ROLE === 'admin' ? 'Gab' : 'Conselho: súmulas, tabela, listas e pessoas';
+  $('bar').hidden = false;
+  document.querySelectorAll('[data-only=admin]').forEach(x => x.hidden = ROLE !== 'admin');
+  const [r, e] = await Promise.all([fetch('/api/review'), ROLE === 'admin' ? fetch('/api/admin/events') : null]);
+  if (!r.ok) { $('view').innerHTML = '<p class="err">Não consegui ler a fila.</p>'; return; }
+  ITEMS = await r.json();
+  EV = e?.ok ? await e.json() : [];
+  show();
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tab]'), s = e.target.closest('[data-show]');
+  if (t) { TAB = t.dataset.tab; show(); }
+  if (s) { SHOW = s.dataset.show; activity(); }
+  if (e.target.id === 'reload') load();
+});
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const id = +b.dataset.id, action = b.dataset.act, body = { id, action };
+  if (action === 'edit') {
+    try { body.payload = JSON.parse($('j' + id).value); } catch (err) { $('e' + id).textContent = 'JSON inválido: ' + err.message; return; }
+  }
+  if (action === 'reject' && !confirm('Rejeitar #' + id + '?')) return;
+  const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) load(); else $('e' + id).textContent = j.error || 'não deu';
+});
+load();
+</script>
+</body>
+</html>

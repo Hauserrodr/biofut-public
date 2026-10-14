@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioFut Transparência</title>
+<meta name="description" content="Quem se inscreve, quem desiste em cima da hora e a taxa de furo do BioFut.">
+<meta property="og:title" content="BioFut Transparência">
+<meta property="og:description" content="Quem se inscreve, quem desiste em cima da hora e a taxa de furo do BioFut.">
+<meta property="og:image" content="https://biofut.h-brain.org/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<style>
+.hid{cursor:help;color:var(--mut);border-bottom:1px dotted var(--mut)}
+main.tr h2 { margin: 48px 0 12px; }
+.meta { color: var(--mut); font-size: 14px; }
+.flake { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.flake .big { font: 800 88px/1 var(--cond); color: var(--loss); }
+.tro { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.tro h3 { margin-bottom: 12px; } .tro ol { margin: 0; padding-left: 22px; } .tro li { padding: 3px 0; }
+.tro li span { float: right; color: var(--mut); font-variant-numeric: tabular-nums; }
+.hbars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 8px 12px; align-items: center; font-size: 14px; }
+.hbars i { display: block; height: 14px; border-radius: 4px; background: var(--loss); min-width: 2px; }
+.hbars span { color: var(--mut); font-variant-numeric: tabular-nums; }
+.err { color: var(--loss); font-size: 14px; min-height: 1.2em; margin-top: 8px; }
+.st { font: 600 11px var(--cond); letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--card2); color: var(--mut); white-space: nowrap; }
+.log { list-style: none; margin: 0; padding: 4px 20px; } .log li { padding: 10px 0; border-bottom: 1px solid var(--line); } .log li:last-child { border-bottom: 0; }
+.tl { list-style: none; padding: 0; margin: 14px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.tl li { padding: 3px 0; } .tl .add { color: var(--win); } .tl .drop { color: var(--loss); }
+.tl .kick { font-weight: 700; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+code { background: var(--bg2); border: 1px solid var(--line); padding: 2px 6px; border-radius: 6px; }
+form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+<script src="/site.js"></script>
+<main id="view" class="tr"><div class="skel" style="height:320px"></div></main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const post = (action, body) => fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  .then(async r => ({ ok: r.ok, ...(await r.json().catch(() => ({}))) }));
+const when = t => new Date(typeof t === 'number' ? t * 1000 : t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const STATUS = { pending: '⏳ aguardando revisão', approved: '✅ aprovado', rejected: '❌ rejeitado', auto: '⏱️ liberado após 6 h', failed: '⚠️ falhou' };
+const KIND = { wiki: 'Wiki', sumula: 'Súmula (OCR)' };
+const HOW = { nome: 'pelo seu nome no WhatsApp, que é um nome da tabela', lista: 'pelos nomes que você escreve nas listas', frequencia: 'pelos dias em que você se inscreve, que batem com os seus jogos na planilha',
+  contato: 'por um cartão de contato compartilhado no grupo' };
+const hrs = h => h == null ? '–' : h >= 48 ? `${(h / 24).toFixed(1)} d` : `${Math.round(h)} h`;
+let D, sortKey = 'inscricoes', game = null;
+const AVISO_BACKUP = 'Você nunca deleta as mensagens do celular e tem um backup com conversas de antes de 2022-08-09? Fale com o Gab, isso nos ajudará a investigar o antigo testamento da biofut wiki e aumentar nosso conhecimento sobre o que acontecia naqueles dias tenebrosos.';
+const usd = v => 'US$ ' + (v || 0).toFixed(v < 0.01 && v ? 4 : 2);
+const custos = c => !c || !c.chamadas ? 'Custo das automações (IA): nenhuma chamada paga ainda. O servidor é uma máquina gratuita da Oracle dividida com outros sites do Gab; o domínio é dele.'
+  : `Custo das automações (IA): <b>${usd(c.usd_mes)}</b> este mês, ${usd(c.usd_total)} desde ${c.desde} em ${c.chamadas} chamadas` +
+    ` (${Object.entries(c.por).map(([k, v]) => `${({ ocr: 'leitura de súmulas', wiki: 'wiki' })[k] || k} ${usd(v)}`).join(', ')}). ` +
+    'O servidor é uma máquina gratuita da Oracle dividida com outros sites do Gab; o domínio é dele.';
+
+function bars() {
+  const q = D.listas.quando_desistem || [], max = Math.max(1, ...q.map(x => x.n));
+  if (!q.some(x => x.n)) return '';
+  return '<h2>Quando a galera arrega</h2><div class="card pad"><div class="hbars">' +
+    q.map(x => `<div>${esc(x.faixa)}</div><i style="width:${(100 * x.n / max).toFixed(1)}%"></i><span>${x.n}</span>`).join('') +
+    '</div><p class="meta" style="margin-bottom:0">Desistências em jogos que aconteceram, pela hora da repostagem em que o nome sumiu, contando a partir do horário do jogo ' +
+    '(o da lista, ou 18h).</p></div>';
+}
+
+function timeline() {
+  const gs = (D.listas.games || []).filter(g => g.eventos && g.eventos.length);
+  if (!gs.length) return '';
+  const g = gs.find(x => x.date === game) || gs[gs.length - 1];
+  const day = d => new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' });
+  const kick = new Date(`${g.date}T${g.kickoff || '18:00'}`).getTime() / 1000;
+  const ev = g.eventos.map(([t, n, op]) => `<li class="${op === '+' ? 'add' : 'drop'}">${when(t)} · ${op === '+' ? '➕ entrou' : '➖ saiu'}: ` +
+    `${nm(n)}${n === D.user ? ' (você)' : ''} <span class="meta">${hrs((kick - t) / 3600)} antes</span></li>`);
+  const at = g.eventos.findIndex(([t]) => t > kick);
+  ev.splice(at < 0 ? ev.length : at, 0, `<li class="kick">⚽ ${g.kickoff || '18:00'} horário do jogo${g.cancelled ? ' (contado como cancelado)' : ''}</li>`);
+  return `<select class="in" id="game">${gs.slice().reverse().map(x => `<option value="${x.date}"${x === g ? ' selected' : ''}>${day(x.date)} · ${x.signed} nomes, ` +
+    `${x.dropped} saíram${x.cancelled ? ' · cancelado' : ''}</option>`).join('')}</select><ul class="tl">${ev.join('')}</ul>`;
+}
+
+// #39: who opted out comes as null; the numbers stay in the ranking
+const nm = n => n == null ? '<span class="hid" title="esta pessoa escolheu não aparecer, respeitamos a privacidade de cada um">🙈 oculto</span>' : esc(n);
+function people() {
+  const ps = (D.listas.people || []).slice().sort((a, b) => sortKey === 'name' ? (a.name || '~').localeCompare(b.name || '~') : (b[sortKey] || 0) - (a[sortKey] || 0));
+  const cols = [['name', 'Nome', 'l'], ['inscricoes', 'Inscrições', 'n'], ['desistencias', 'Desistências', 'n'], ['em_cima_da_hora', 'No dia do jogo', 'n'], ['taxa', 'Taxa', 'n'], ['inscreve_h', 'Se inscreve', 'n'], ['desiste_h', 'Desiste', 'n']];
+  return '<div class="tw"><table><thead><tr>' + cols.map(([k, t, c]) => `<th class="${c}${k === sortKey ? ' on' : ''}" data-sort="${k}">${t}${k === sortKey ? ' ▾' : ''}</th>`).join('') + '</tr></thead><tbody>' +
+    ps.map(p => `<tr${p.name === D.user ? ' style="font-weight:700"' : ''}><td class="l">${nm(p.name)}</td><td class="n">${p.inscricoes || 0}</td><td class="n">${p.desistencias || 0}</td>` +
+      `<td class="n">${p.em_cima_da_hora || 0}</td><td class="n">${Math.round(p.taxa * 100)}%</td>` +
+      `<td class="n">${hrs(p.inscreve_h)}</td><td class="n">${hrs(p.desiste_h)}</td></tr>`).join('') + '</tbody></table></div>';
+}
+
+function render() {
+  const L = D.listas, f = L.flake || {};
+  const me = (L.people || []).find(p => p.name === D.user);
+  $('view').innerHTML = `<div class="kicker">Listas e automações</div><h1>Transparência</h1><p class="meta" style="max-width:720px;margin-top:14px">Tudo o que sai das listas do WhatsApp e tudo o que as automações fazem no site. ` +
+    `Contado a partir do histórico do grupo${L.built ? `, atualizado em ${when(L.built)}` : ''}.</p>` +
+    (f.games ? `<h2>Índice de Flake do BioFut</h2><div class="card pad flake"><div class="big">${Math.round(f.rate * 100)}%</div><div>` +
+      `Das <b>${f.games}</b> listas que abriram, <b>${f.cancelled}</b> viraram jogo cancelado.<br><span class="meta">Contamos como cancelado quando o jogo não está na planilha, ` +
+      `ninguém postou os times, e alguém falou "cancelado" no dia ou na véspera, ou a lista nem chegou a 8 nomes. É uma estimativa (e uma piada), não um laudo.</span></div></div>` : '') +
+    (L.trophies ? '<h2>Troféus</h2><div class="grid tro">' + Object.entries(L.trophies).map(([t, xs]) => `<div class="card pad"><h3>🏆 ${esc(t)}</h3><ol>` +
+      xs.map(x => `<li>${nm(x.name)} <span>${esc(x.n)}</span></li>`).join('') + '</ol></div>').join('') + '</div>' +
+      '<p class="meta">Inscrição = o nome aparece em alguma versão da lista daquele jogo. Desistência = estava na lista e sumiu da última versão antes do jogo. ' +
+      'Repostagens que tiram mais de 3 nomes de uma vez contam como lista nova, não como desistência. ' +
+      'Os tempos são medianas: metade das vezes foi antes disso, metade depois.</p>' : '') + bars() +
+    (D.user ? '<h2 id="eu">Quem é você?</h2><div class="card pad"><p class="meta" style="margin-top:0">Digite o seu número de WhatsApp e o site acha o seu nome no histórico do grupo ' +
+      'pelo seu nome no WhatsApp, pelos nomes que você escreve nas listas, pelos dias em que você costuma se inscrever ou por um cartão de contato compartilhado no grupo. ' +
+      'O número não é guardado: o servidor só tem uma impressão digital criptográfica de cada número.</p>' +
+      '<form class="inline" id="phoneForm"><input class="in" id="phone" inputmode="tel" autocomplete="tel" placeholder="(51) 9 9999-9999" required><button class="btn pri">Buscar</button></form><div class="err" id="pErr"></div>' +
+      (me ? `<p><b>${esc(me.name)}</b>: ${me.inscricoes} inscrições, ${me.desistencias || 0} desistências (${Math.round(me.taxa * 100)}%), ` +
+        `${me.em_cima_da_hora || 0} no dia do jogo. Você costuma se inscrever ${hrs(me.inscreve_h)} antes` +
+        `${me.desiste_h != null ? ` e desistir ${hrs(me.desiste_h)} antes` : ''} do jogo.</p>` : '') +
+      `<label class="meta" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="hide"${D.hide ? ' checked' : ''}> ` +
+      'Não quero aparecer: para os outros, meu nome vira “oculto” nesta página (os números continuam no ranking).</label></div>' +
+      `<h2>Todo mundo</h2><p class="meta">Quem se inscreveu em pelo menos 3 listas. Clique no cabeçalho para ordenar. ` +
+      `"Se inscreve" e "Desiste": quanto tempo antes do jogo, na mediana.</p><div id="people">${people()}</div>` +
+      `<h2>Linha do tempo de uma lista</h2><p class="meta">Quem entrou e quem saiu, na hora da repostagem em que o nome apareceu ou sumiu.</p>` +
+      `<div class="card pad" id="tl">${timeline()}</div>`
+      : '<div class="card pad">Membros veem os números de cada um e podem achar o próprio nome pelo telefone. <a href="/entrar?next=/transparencia">Entrar com seu WhatsApp</a></div>') +
+    '<h2>O que as automações fizeram</h2><p class="meta">A IA faz o trabalho chato (ler súmulas por foto, escolher as piadas da wiki) e nada entra direto: ' +
+    'fica 6 horas esperando o Gab aprovar, editar ou rejeitar. Se ninguém mexer, entra sozinho. Cada passo é avisado no grupo BioFut Avisos.</p>' +
+    (D.log.length ? '<ul class="log card">' + D.log.map(x => `<li><span class="st">${STATUS[x.status] || x.status}</span> #${x.id} <b>${KIND[x.kind] || x.kind}</b>: ` +
+      `${esc(x.title)} <span class="meta">· ${when(x.created)}${x.decided ? ` → ${when(x.decided)}` : ''}${x.edited ? ' · editado à mão' : ''}</span></li>`).join('') + '</ul>'
+      : '<div class="card pad meta">Nada ainda.</div>') +
+    (D.avisos.length ? '<h2>Últimos avisos</h2><ul class="log card">' + D.avisos.map(a => `<li><span class="meta">${when(a.ts)}</span> ${esc(a.text)}</li>`).join('') + '</ul>' : '') +
+    `<h2>Dinheiro</h2><div class="card pad">O BioFut não guarda dinheiro no site.${D.pix ? ` A quadra é paga por Pix para a chave <code>${esc(D.pix)}</code>; o resto está na aba <a href="/#/apoie">Apoie</a>.` : ''}` +
+    `<p class="meta" style="margin-bottom:0">${custos(D.custos)}</p></div>` +
+    `<h2>Antigo testamento</h2><div class="card pad">${AVISO_BACKUP}</div>`;
+  const hb = $('hide');
+  if (hb) hb.onchange = async () => {
+    const r = await post('profile', { hide: hb.checked });
+    if (!r.ok) { hb.checked = !hb.checked; return alert(r.error || 'não deu'); }
+    D.hide = hb.checked;
+  };
+  const pf = $('phoneForm');
+  if (pf) pf.onsubmit = async e => {
+    e.preventDefault();
+    const r = await post('whoami', { phone: $('phone').value });
+    if (!r.ok) return $('pErr').textContent = r.error || 'não deu';
+    $('pErr').style.color = 'var(--win)';
+    $('pErr').textContent = `Achei: ${r.user}${HOW[r.how] ? `, ${HOW[r.how]}` : ''}. Não é você? Avise o Gab.`;
+    setTimeout(() => location.reload(), 3500);
+  };
+}
+
+document.addEventListener('click', e => {
+  const k = e.target.dataset?.sort;
+  if (k) { sortKey = k; $('people').innerHTML = people(); }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'game') { game = e.target.value; $('tl').innerHTML = timeline(); }
+});
+fetch('/api/transparencia').then(r => r.json()).then(d => { D = d; render(); if (location.hash === '#eu') $('eu')?.scrollIntoView(); })
+  .catch(() => { $('view').innerHTML = '<p class="err">Não consegui carregar.</p>'; });
+</script>
+</body>
+</html>

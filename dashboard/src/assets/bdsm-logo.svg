@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#f0f9ff" stroke="#2563eb" stroke-width="2" />
+  
+  <!-- Transmutation circle elements -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#6366f1" stroke-width="1" stroke-dasharray="4,2" />
+  <circle cx="100" cy="100" r="65" fill="none" stroke="#6366f1" stroke-width="1" />
+  <polygon points="100,35 120,80 170,88 135,123 145,173 100,150 55,173 65,123 30,88 80,80" fill="none" stroke="#6366f1" stroke-width="0.5" opacity="0.6" />
+  
+  <!-- Medieval rounded potion bottle -->
+  <path d="M80 45 L80 75 C80 75 70 95 70 110 L70 150 C70 170 130 170 130 150 L130 110 C130 95 120 75 120 75 L120 45 Z" fill="#a5f3fc" stroke="#0284c7" stroke-width="2" />
+  
+  <!-- Potion bottle cap -->
+  <rect x="80" y="40" width="40" height="10" rx="5" fill="#0284c7" stroke="#0284c7" stroke-width="1" />
+  
+  <!-- Soccer ball outside the potion -->
+  <circle cx="145" cy="60" r="20" fill="white" stroke="#0f172a" stroke-width="1.5" />
+  <path d="M145 40 C135 45 135 55 145 60 C155 65 160 75 145 80 C130 75 125 65 145 60 C165 55 155 45 145 40" fill="#0f172a" />
+  <path d="M125 60 C130 50 140 50 145 60 C150 70 160 70 165 60 C160 70 150 80 145 60 C140 40 130 50 125 60" fill="#0f172a" />
+  
+  <!-- Bubbles in the potion -->
+  <circle cx="90" cy="110" r="5" fill="#bae6fd" />
+  <circle cx="100" cy="125" r="7" fill="#bae6fd" />
+  <circle cx="110" cy="100" r="4" fill="#bae6fd" />
+  
+  <!-- Wings -->
+  <path d="M45 90 Q20 105 30 130 Q40 120 50 125 Q30 110 45 90" fill="#e0f2fe" stroke="#0369a1" stroke-width="1" />
+  <path d="M155 90 Q180 105 170 130 Q160 120 150 125 Q170 110 155 90" fill="#e0f2fe" stroke="#0369a1" stroke-width="1" />
+  
+  <!-- Math symbols - more prominent -->
+  <text x="40" y="50" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">∑</text>
+  <text x="140" y="50" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">∫</text>
+  <text x="40" y="150" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">Δ</text>
+  <text x="150" y="150" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">√</text>
+  <text x="30" y="100" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">π</text>
+  <text x="160" y="100" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">∞</text>
+  <text x="100" y="35" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1" text-anchor="middle">α</text>
+  <text x="170" y="110" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">∇</text>
+  <text x="60" y="60" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">θ</text>
+  <text x="60" y="125" font-family="Arial" font-size="15" font-weight="bold" fill="#6366f1">λ</text>
+  
+  <!-- Transmutation symbols -->
+  <circle cx="100" cy="150" r="8" fill="none" stroke="#6366f1" stroke-width="1.5" />
+  <line x1="92" y1="150" x2="108" y2="150" stroke="#6366f1" stroke-width="1.5" />
+  <line x1="100" y1="142" x2="100" y2="158" stroke="#6366f1" stroke-width="1.5" />
+  
+  <path d="M55 75 L60 80 L55 85 L50 80 Z" fill="none" stroke="#6366f1" stroke-width="1.5" />
+  <path d="M135 175 L145 170 L155 175 L145 180 Z" fill="none" stroke="#6366f1" stroke-width="1.5" />
+</svg> 

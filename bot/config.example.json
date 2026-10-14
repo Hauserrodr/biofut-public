@@ -1,0 +1,11 @@
+{
+  "siteUrl": "https://biofut.h-brain.org",
+  "prefix": "[ESQUIZOFUT]",
+  "port": 8787,
+  "groupJid": "",
+  "avisosJid": "",
+  "captains": [
+    { "name": "Victor", "phone": "5551900000001" },
+    { "name": "Canova", "phone": "5551900000002" }
+  ]
+}

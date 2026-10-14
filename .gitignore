@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+# dados do grupo: nunca no git
+*.xlsx
+*.csv
+biofut_data/
+data/
+*.mp4
+*.AVI
+*.aep
+__pycache__/
+
+# bot: config local (telefones), sessão, estado
+bot/config.json
+bot/draft-state.json
+bot/outbox.jsonl

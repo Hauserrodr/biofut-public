@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioFut</title>
+<meta property="og:title" content="BioFut">
+<meta property="og:description" content="BioFut: o futebol da Biologia UFRGS. Tabela, jogos, jogadores, draft, BioBet e resenha desde 2019.">
+<meta property="og:image" content="https://biofut.h-brain.org/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="BioFut: o futebol da Biologia UFRGS. Tabela, jogos, jogadores, draft, BioBet e resenha desde 2019.">
+<meta name="theme-color" content="#0c0d0c">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<script src="/site.js"></script>
+<main><div id="app"><div class="skel"></div></div><div id="radio" class="card pad sec" hidden></div></main>
+<footer><div><span>BioFut · Futebol da Biologia UFRGS · desde 2019</span><span id="foot"></span></div></footer>
+<dialog id="pinDlg"><form method="dialog">
+  <h3>PIN do grupo</h3>
+  <p class="muted" style="font-size:14px;margin:8px 0 16px">Para salvar qualquer coisa aqui, use o PIN que está na descrição do grupo do WhatsApp.</p>
+  <input class="in" id="pinIn" inputmode="numeric" autocomplete="off" style="width:100%;font-size:22px;letter-spacing:.3em;text-align:center">
+  <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" value="no">Cancelar</button><button class="btn pri" value="ok">Entrar</button></div>
+  <p class="muted" style="font-size:13px;margin:14px 0 0">Ou <a class="link" href="/entrar" onclick="this.href='/entrar?next='+encodeURIComponent('/'+location.hash)">entre com seu WhatsApp</a>: logado, não precisa de PIN.</p>
+</form></dialog>
+<div class="toast" id="toast"></div>
+<input type="file" id="photoIn" accept="image/*" hidden>
+<datalist id="names"></datalist>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "x";
+const fmt = n => n.toLocaleString("pt-BR");
+const coin = n => (+n).toLocaleString("pt-BR", {maximumFractionDigits: 4});  // a Duelo win is 0,0001 moeda
+const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+const dt = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR", {day: "2-digit", month: "short", year: "numeric"}).replace(".", "") : "Copa";
+const store = {get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch {} }};
+
+let D, ST, G, NAMES;           // data, live state, all games (Excel + played here), known names
+let AV = new Set(), JF = {};  // JF: the group's photos of each game night (members, /api/jogos)            // members' WhatsApp profile photos (slugs), only when logged in: cards without an uploaded photo
+const ui = {sort: "pts", dir: -1, season: null, min: 1, q: "", gseason: null, open: new Set(), pick: "A", tier: "", coinSeen: 0};
+
+// ---------- api ----------
+function toast(msg, err) {
+  const t = $("#toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = "toast", 2600);
+}
+function askPin() {
+  return new Promise(res => {
+    const d = $("#pinDlg"); $("#pinIn").value = "";
+    d.onclose = () => res(d.returnValue === "ok" ? $("#pinIn").value.trim() : null);
+    d.showModal();
+  });
+}
+async function api(action, body) {
+  for (let tries = 0; tries < 2; tries++) {
+    const r = await fetch("/api/" + action, {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: JSON.stringify(body || {})});
+    if (r.status === 403) { const p = await askPin(); if (!p) return null; store.set("biofutPin", p); continue; }
+    const j = await r.json();
+    if (j.error) { toast(j.error, true); return null; }
+    setState(j); render(); return j;
+  }
+  toast("PIN errado", true);
+}
+function setState(s) {
+  ST = s;
+  const inSheet = new Set(D.games.map(g => g.date));  // the sheet wins once a site-recorded game is typed in
+  // who each name was: one spelling per person (alias), then the doubtful list names answered in #/eu or /admin (quem)
+  const fix = (d, n) => { n = ST.alias?.[n] ?? n; return ST.quem?.[d + "|" + n] ?? n; };
+  G = [...D.games, ...ST.played.filter(g => !inSheet.has(g.date))].sort((a, b) => a.n - b.n)
+    .map(g => ({...g, teams: g.teams.map(t => ({...t, players: t.players.map(([n, ...r]) => [fix(g.date, n), ...r])}))}));
+  const all = new Set(G.flatMap(g => g.teams.flatMap(t => t.players.map(p => p[0]))));
+  ST.match.confirmed.forEach(n => all.add(n));
+  NAMES = [...all].sort((a, b) => a.localeCompare(b, "pt"));
+  $("#names").innerHTML = NAMES.map(n => `<option value="${esc(n)}">`).join("");
+}
+
+// ---------- stats ----------
+const SEASONS = () => {
+  const s = [...new Set(G.map(g => g.season))];
+  const yr = s.filter(x => /^\d{4}/.test(x)).sort().reverse(), cup = s.filter(x => !/^\d{4}/.test(x));
+  return [...yr, ...cup];
+};
+// head-to-head for the draft: n's record with cap (same team) and against cap, as "5V-2D" / "3V-4D"; draws don't count
+function h2h(cap, n) {
+  const r = {com: [0, 0], vs: [0, 0]};
+  for (const g of G) { const tc = g.teams.find(t => t.players.some(p => p[0] === cap)), tn = g.teams.find(t => t.players.some(p => p[0] === n));
+    if (!tc || !tn) continue; const k = tc === tn ? r.com : r.vs, w = tn.res === "V" ? 0 : tn.res === "D" ? 1 : -1; if (w >= 0) k[w]++; }
+  const f = ([v, d]) => `${v}V-${d}D`; return `c/ ${esc(cap)} ${f(r.com)} · vs ${f(r.vs)}`;
+}
+function agg(games) {
+  const P = {};
+  for (const g of games) for (const t of g.teams) for (const [n, gl, as, og, cap] of t.players) {
+    if (n === "Sombra") continue;  // a guest from outside the group: plays, never counts
+    const s = P[n] ??={name: n, j: 0, v: 0, e: 0, d: 0, g: 0, a: 0, gc: 0, cap: 0, res: [], best: 0};
+    s.j++; s[t.res.toLowerCase()]++; s.g += gl; s.a += as; s.gc += og; s.cap += cap; s.res.push(t.res);
+    s.best = Math.max(s.best, gl);
+  }
+  for (const s of Object.values(P)) {
+    s.pts = 3 * s.v + s.e; s.aprov = pct(s.pts, 3 * s.j); s.gj = s.j ? s.g / s.j : 0; s.ga = s.g + s.a;
+    let run = 0; s.streak = 0;
+    for (const r of s.res) { run = r === "V" ? run + 1 : 0; s.streak = Math.max(s.streak, run); }
+  }
+  return P;
+}
+function cards(P, min = 10) {
+  const regs = Object.values(P).filter(s => s.j >= min);
+  const A = {GOL: s => s.g / s.j, ASS: s => s.a / s.j, VIT: s => s.v / s.j, EXP: s => s.j, CAP: s => s.cap / s.j};
+  const W = {GOL: .3, ASS: .25, VIT: .3, EXP: .1, CAP: .05};
+  const vals = Object.fromEntries(Object.entries(A).map(([k, f]) => [k, regs.map(f)]));
+  return regs.map(s => {
+    const at = Object.fromEntries(Object.entries(A).map(([k, f]) => { const x = f(s); return [k, Math.round(40 + 59 * vals[k].filter(v => v <= x).length / regs.length)]; }));
+    const ovr = Math.round(Object.entries(W).reduce((t, [k, w]) => t + at[k] * w, 0));
+    const tier = s.j >= 100 && ovr >= 75 ? "lenda" : ovr >= 80 ? "ouro" : ovr >= 68 ? "prata" : "bronze";
+    return {...s, ovr, tier, at};
+  }).sort((a, b) => b.ovr - a.ovr);
+}
+const CARDS = () => cards(agg(G));
+const cardOf = n => CARDS().find(c => c.name === n);
+// The cromada: the first buyer's copy of a card, +1 on the stat they picked. Only its holder sees it and plays it (Duelo deck).
+const cromo = c => { const k = ST.cromadas?.[c.name]; return k && k.by === ME && k.stat ? {...c, crom: k.stat, at: {...c.at, [k.stat]: c.at[k.stat] + 1}} : c; };
+// #/cartas: everybody sees which cards are cromadas (and whose); the +1 still plays only in the holder's deck
+const shiny = c => { const k = ST.cromadas?.[c.name]; return k?.stat ? {...c, crom: k.stat, holder: k.by, at: {...c.at, [k.stat]: c.at[k.stat] + 1}} : c; };
+
+// ---------- bits ----------
+function hue(n) { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+const face = s => ST.photos.includes(s) ? `/data/photos/${s}.jpg?${ST.photos.length}` : AV.has(s) ? `/api/avatar/${s}.jpg` : "";
+function av(n, cls = "") {
+  const s = slug(n);
+  if (face(s)) return `<span class="av ${cls}"><img src="${face(s)}" alt="" loading="lazy"></span>`;
+  const ini = n.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  return `<span class="av ${cls}" style="background:hsl(${hue(n)} 55% 68%)">${esc(ini)}</span>`;
+}
+const plink = n => `#/jogador/${encodeURIComponent(n)}`;
+const nick = n => ST.profiles?.[n]?.nick ? ` <small class="dim">“${esc(ST.profiles[n].nick)}”</small>` : "";
+// Radar of the card attributes (percentiles among regulars, 40-99); rings at 50/75/99.
+function radar(at) {
+  const L = {GOL: "Gols", ASS: "Assist.", VIT: "Vitórias", EXP: "Experiência", CAP: "Capitão"}, ks = Object.keys(L);
+  const pt = (i, v, r = 80 * v / 99) => { const a = -Math.PI / 2 + 2 * Math.PI * i / ks.length; return [100 + r * Math.cos(a), 100 + r * Math.sin(a)]; };
+  const poly = f => ks.map((k, i) => pt(i, f(k)).map(x => x.toFixed(1)).join(",")).join(" ");
+  return `<svg viewBox="-75 -8 350 216" role="img" aria-label="Radar: ${ks.map(k => `${L[k]} ${at[k]}`).join(", ")}" style="width:100%;max-width:420px;display:block;margin:auto">
+    ${[50, 75, 99].map(v => `<polygon points="${poly(() => v)}" fill="none" stroke="var(--line2)"/>`).join("")}
+    ${ks.map((k, i) => `<line x1="100" y1="100" x2="${pt(i, 99)[0]}" y2="${pt(i, 99)[1]}" stroke="var(--line)"/>`).join("")}
+    <polygon points="${poly(k => at[k])}" fill="var(--acc-soft)" stroke="var(--acc)" stroke-width="2"/>
+    ${ks.map((k, i) => { const [x, y] = pt(i, 99, 94); return `<text x="${x}" y="${y}" text-anchor="${x < 95 ? "end" : x > 105 ? "start" : "middle"}" dominant-baseline="middle" font-size="11" fill="var(--mut)">${L[k]} <tspan font-weight="700" fill="var(--ink)">${at[k]}</tspan></text>`; }).join("")}
+  </svg>`;
+}
+const form = res => `<span class="form">${res.slice(-5).map(r => `<i class="${r}">${r}</i>`).join("")}</span>`;
+function fc(c, sel) {  // sel: a card to pick for the deck (#/deck), true when it is in
+  const s = slug(c.name), ph = face(s) ? `<img src="${face(s)}" alt="" loading="lazy">` : esc(c.name.slice(0, 2).toUpperCase()), tag = sel === undefined ? "a" : "div";
+  return `<${tag} class="fc ${c.tier}${c.crom ? " cromada" : ""}${sel ? " sel" : ""}" ${tag === "a" ? `href="${plink(c.name)}"` : `role="button" tabindex="0" aria-pressed="${sel}" data-pick="${esc(c.name)}"`}>
+    <div class="top"><div class="ovr">${c.ovr}<small>OVR</small></div><div class="ph">${ph}</div></div>
+    <div class="nm">${esc(c.name)}</div>
+    <div class="at">${Object.entries(c.at).map(([k, v]) => `<span class="${k === c.crom ? "up" : ""}"><i>${k}</i><b>${v}</b></span>`).join("")}<span><i>JOG</i><b>${c.j}</b></span></div>
+    <div class="tier">${c.tier}${c.crom ? " · cromada" + (c.holder ? " de " + esc(c.holder) : "") : ""}${c.mine ? " · sua" : ""}</div></${tag}>`;
+}
+function matchRow(g) {
+  const [a, b] = g.teams, open = ui.open.has(g.n);
+  const pls = t => t.players.slice().sort((x, y) => (y[1] + y[2]) - (x[1] + x[2])).map(([n, gl, as, og, cap]) =>
+    `<li><a href="${plink(n)}">${esc(n)}${cap ? ' <span class="pill g">C</span>' : ""}</a><span class="ga">${gl ? `<em>${gl}G</em>` : ""}${as ? `<em class="a">${as}A</em>` : ""}${og ? `<em class="a">${og}GC</em>` : ""}</span></li>`).join("");
+  return `<div class="card fade" style="align-self:start"><div class="match" data-g="${g.n}">
+    <div class="tm ${a.res === "D" ? "l" : "w"}">${esc(a.name)}</div>
+    <div class="score num">${a.gf}<i>×</i>${b.gf}</div>
+    <div class="tm r ${b.res === "D" ? "l" : "w"}">${esc(b.name)}</div>
+    <div class="mmeta"><span>${dt(g.date)}</span><span>${esc(g.season)}</span></div></div>
+    ${open ? `<div class="lineups"><ul>${pls(a)}</ul><ul>${pls(b)}</ul></div>${gfotos(g)}` : ""}</div>`;
+}
+const KIND = {match_summary: "súmula", scoreboard: "placar", team_photo: "time", person_photo: "foto"};
+function gfotos(g) {  // #34: the photos posted in the group that night (members), the súmula the site read, and "não bate"
+  const fs = [...(g.sumula ? [{file: g.sumula, kind: "match_summary", by: "lida pelo site", at: ""}] : []), ...(JF[g.date] || [])];
+  return `<div class="gfotos">${fs.length ? `<div class="kicker">Fotos da noite no grupo</div><div class="strip">${fs.map(f =>
+    `<a href="/wiki/media/${esc(f.file)}" target="_blank" rel="noopener"><img src="/wiki/media/${esc(f.file)}" alt="${KIND[f.kind]}" loading="lazy"><small>${KIND[f.kind]} · ${esc(f.by)}${f.at ? " · " + esc(f.at) : ""}</small></a>`).join("")}</div>` : ""}
+    <button class="link" data-errado="${g.n}">⚑ A súmula não bate com a tabela</button></div>`;
+}
+function bindMatches(root) {
+  root.querySelectorAll("[data-g]").forEach(el => el.onclick = () => { const n = +el.dataset.g; ui.open.has(n) ? ui.open.delete(n) : ui.open.add(n); render(); });
+  root.querySelectorAll("[data-errado]").forEach(b => b.onclick = async () => {
+    if (!(await BF.me).user) return location.href = "/entrar?next=" + encodeURIComponent("/" + location.hash);
+    const text = prompt("O que não bate? (quem fez o gol, o placar, quem jogou)");
+    if (text !== null && await post("jogo_errado", {n: +b.dataset.errado, text})) toast("Valeu! Vai para a revisão do Conselho");
+  });
+}
+const PITCH = `<img class="pitch" src="/logo.png" alt="">`;
+
+// ---------- pages ----------
+function pageHome() {
+  const P = agg(G), seasons = SEASONS(), last = seasons[0], S = agg(G.filter(g => g.season === last));
+  const goals = G.reduce((t, g) => t + g.teams.reduce((u, x) => u + x.gf, 0), 0);
+  const sl = Object.values(S), maxJ = Math.max(...sl.map(s => s.j));
+  const top = (f, filt = () => true) => sl.filter(filt).sort((a, b) => f(b) - f(a))[0];
+  const leaders = [
+    ["Artilheiro", top(s => s.g), s => s.g, "gols"],
+    ["Garçom", top(s => s.a), s => s.a, "assist."],
+    ["Aproveitamento", top(s => s.aprov + s.j / 1000, s => s.j >= maxJ / 3), s => s.aprov + "%", "pontos"],
+    ["Mais vitórias", top(s => s.v + s.aprov / 1000), s => s.v, "vitórias"],
+  ];
+  const m = ST.match, dr = m.draft;
+  const status = !m.date ? "Sem jogo marcado" : dr && dr.ok.length === 2 ? "Times fechados · apostas abertas" : dr ? "Draft em andamento" : `${m.confirmed.length} confirmados`;
+  // records
+  const big = G.slice().sort((a, b) => Math.abs(b.teams[0].gf - b.teams[1].gf) - Math.abs(a.teams[0].gf - a.teams[1].gf))[0];
+  const most = G.slice().sort((a, b) => (b.teams[0].gf + b.teams[1].gf) - (a.teams[0].gf + a.teams[1].gf))[0];
+  let hat = {n: 0};
+  for (const g of G) for (const t of g.teams) for (const p of t.players) if (p[1] > hat.n && p[0] !== "Sombra") hat ={n: p[1], who: p[0], g};
+  const pl = Object.values(P), streak = pl.sort((a, b) => b.streak - a.streak)[0], iron = pl.slice().sort((a, b) => b.j - a.j)[0];
+  const sc = g => `${esc(g.teams[0].name)} ${g.teams[0].gf}×${g.teams[1].gf} ${esc(g.teams[1].name)}`;
+  const records = [
+    ["Maior goleada", `${Math.abs(big.teams[0].gf - big.teams[1].gf)}`, sc(big) + " · " + dt(big.date), big],
+    ["Jogo com mais gols", `${most.teams[0].gf + most.teams[1].gf}`, sc(most) + " · " + dt(most.date), most],
+    ["Mais gols num jogo", `${hat.n}`, `${esc(hat.who)} · ${dt(hat.g.date)}`, hat.g],
+    ["Maior sequência", `${streak.streak}`, `vitórias seguidas de ${esc(streak.name)}`],
+    ["Mais jogos", `${iron.j}`, `${esc(iron.name)}, o mais presente`],
+  ];
+  // on this day: games within 3 days of today's day and month, any earlier year
+  const now = new Date(), doy = d => (new Date(2000, +d.slice(5, 7) - 1, +d.slice(8, 10)) - new Date(2000, 0, 1)) / 864e5;
+  const today = (new Date(2000, now.getMonth(), now.getDate()) - new Date(2000, 0, 1)) / 864e5;
+  const onThisDay = G.filter(g => g.date && g.date.slice(0, 4) < now.getFullYear() && Math.abs(doy(g.date) - today) <= 3).reverse().slice(0, 4);
+  // best per season
+  const champs = seasons.map(s => {
+    const x = Object.values(agg(G.filter(g => g.season === s))), mj = Math.max(...x.map(p => p.j));
+    const mvp = x.filter(p => p.j >= mj / 3).sort((a, b) => b.pts - a.pts || b.ga - a.ga)[0];
+    const art = x.sort((a, b) => b.g - a.g)[0];
+    return {s, mvp, art, games: G.filter(g => g.season === s).length};
+  });
+  return `
+  <section class="hero fade">${PITCH}
+    <div class="kicker">Biologia UFRGS · desde 2019</div>
+    <h1 style="margin-top:12px">Quinta é dia<br>de esquizofut.</h1>
+    <p class="lead">Tudo do BioFut num lugar só: a tabela de cada temporada, todos os jogos desde 2019, as cartas, o draft da semana e a BioBet.</p>
+    <div class="counters num"><div><b>${fmt(G.length)}</b><span>Jogos</span></div><div><b>${fmt(goals)}</b><span>Gols</span></div><div><b>${fmt(pl.length)}</b><span>Jogadores</span></div><div><b>${seasons.length}</b><span>Temporadas</span></div></div>
+  </section>
+  ${onThisDay.length ? `<section class="sec"><div class="sec-h"><div><div class="kicker">Hoje na história</div><h2>Esta semana, em outros anos</h2></div><a class="link" href="#/duelo/dia">Duelo do dia →</a></div>
+    <div class="grid g2">${onThisDay.map(matchRow).join("")}</div></section>` : ""}
+
+  <section class="sec grid g2">
+    <a class="card pad" href="#/jogo" style="display:flex;flex-direction:column;gap:12px">
+      <div class="kicker">Próximo jogo</div>
+      <h2>${m.date ? dt(m.date) : "A marcar"}</h2>
+      <div class="row"><span class="pill">${status}</span></div>
+      <div class="chips">${m.confirmed.slice(0, 12).map(n => `<span class="chip">${av(n, "s")}${esc(n)}</span>`).join("")}${m.confirmed.length > 12 ? `<span class="chip" style="padding:4px 10px">+${m.confirmed.length - 12}</span>` : ""}</div>
+      <span class="link" style="margin-top:auto">${m.date ? "Entrar na lista" : "Marcar o jogo"} →</span>
+    </a>
+    <div class="card pad">
+      <div class="sec-h" style="margin:0 0 6px"><div><div class="kicker">Temporada ${esc(last)}</div><h2 style="margin-top:6px">Os donos da temporada</h2></div><a class="link" href="#/tabela">Tabela →</a></div>
+      ${leaders.map(([lbl, s, v, u]) => s ? `<a class="leader" href="${plink(s.name)}" style="padding:10px 0;border-top:1px solid var(--line)">${av(s.name)}<div><div class="lbl">${lbl}</div><div class="nm">${esc(s.name)}</div></div><div class="v num">${v(s)}<small>${u}</small></div></a>` : "").join("")}
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><div><h2>Últimos jogos</h2><p>Toque num placar para ver quem fez os gols.</p></div><a class="link" href="#/jogos">Todos os jogos →</a></div>
+    <div class="grid g2" id="recent">${G.filter(g => g.date).slice(-6).reverse().map(matchRow).join("")}</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><h2>Recordes</h2></div>
+    <div class="grid g3">${records.map(([l, v, d, g]) => `<${g ? `a href="#/jogos/${g.n}"` : "div"} class="card pad"><div class="kicker">${l}</div><div class="num" style="font:800 52px/1 var(--cond);margin:10px 0 6px">${v}</div><div class="muted" style="font-size:14px">${d}</div>${g ? `<span class="link" style="font-size:13px">Ver o jogo →</span>` : ""}</${g ? "a" : "div"}>`).join("")}</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><div><h2>Galeria de temporadas</h2><p>Craque = mais pontos com pelo menos 1/3 dos jogos.</p></div></div>
+    <div class="tw"><table><thead><tr><th class="l">Temporada</th><th>Jogos</th><th class="l">Craque</th><th class="hide-s">Pts</th><th class="l">Artilheiro</th><th>Gols</th></tr></thead><tbody>
+    ${champs.map(c => `<tr><td class="l" style="font:700 16px var(--cond)">${esc(c.s)}</td><td>${c.games}</td>
+      <td class="l"><a class="pl" href="${plink(c.mvp.name)}" style="display:flex;gap:10px;align-items:center">${av(c.mvp.name, "s")}${esc(c.mvp.name)}</a></td><td class="hide-s">${c.mvp.pts}</td>
+      <td class="l"><a href="${plink(c.art.name)}" style="display:flex;gap:10px;align-items:center">${av(c.art.name, "s")}${esc(c.art.name)}</a></td><td>${c.art.g}</td></tr>`).join("")}
+    </tbody></table></div>
+  </section>`;
+}
+
+const COLS = [["j", "J"], ["v", "V"], ["e", "E", 1], ["d", "D", 1], ["pts", "Pts"], ["aprov", "Aprov"], ["g", "Gols"], ["a", "Assist"], ["gj", "G/J", 1], ["cap", "Cap", 1]];
+function pageTabela() {
+  const seasons = SEASONS(); ui.season ??= seasons[0];
+  const P = agg(ui.season === "all" ? G : G.filter(g => g.season === ui.season));
+  const q = ui.q.toLowerCase();
+  const rows = Object.values(P).filter(s => s.j >= ui.min && s.name.toLowerCase().includes(q))
+    .sort((a, b) => ui.dir * (a[ui.sort] - b[ui.sort]) || b.pts - a.pts || b.g - a.g);
+  return `
+  <div class="sec-h"><div><div class="kicker">Classificação</div><h1 style="font-size:52px;margin-top:8px">Tabela</h1></div></div>
+  <div class="row" style="margin-bottom:16px">
+    <select class="in" id="season"><option value="all">Todas as temporadas</option>${seasons.map(s => `<option ${s === ui.season ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+    <label class="row muted" style="gap:8px;font-size:14px">mín. jogos <input class="in mini" id="min" type="number" min="1" value="${ui.min}"></label>
+    <input class="in" id="q" placeholder="Buscar jogador" value="${esc(ui.q)}" style="flex:1;max-width:260px">
+  </div>
+  <div class="tw"><table><thead><tr><th>#</th><th class="l">Jogador</th>
+    ${COLS.map(([k, l, h]) => `<th data-k="${k}" class="${ui.sort === k ? "on" : ""} ${h ? "hide-s" : ""}">${l}${ui.sort === k ? (ui.dir < 0 ? " ↓" : " ↑") : ""}</th>`).join("")}
+    <th class="hide-s">Forma</th></tr></thead><tbody>
+    ${rows.map((s, i) => `<tr class="medal${i + 1}"><td class="rk">${i + 1}</td>
+      <td class="l"><a class="pl" href="${plink(s.name)}">${av(s.name, "s")}${esc(s.name)}${nick(s.name)}</a></td>
+      <td>${s.j}</td><td>${s.v}</td><td class="hide-s">${s.e}</td><td class="hide-s">${s.d}</td><td class="pts">${s.pts}</td><td>${s.aprov}%</td>
+      <td>${s.g}</td><td>${s.a}</td><td class="hide-s">${s.gj.toFixed(2)}</td><td class="hide-s">${s.cap}</td><td class="hide-s">${form(s.res)}</td></tr>`).join("") || `<tr><td colspan="13" class="l muted">Ninguém com esse filtro.</td></tr>`}
+  </tbody></table></div>
+  <p class="dim" style="font-size:13px;margin-top:12px">Vitória 3, empate 1. Dados ao vivo da planilha do grupo (atualiza a cada 10 min), mais os jogos registrados aqui que ainda não entraram nela.</p>
+  <section class="sec" id="fila"></section>`;
+}
+// súmulas the bot's OCR read from group photos, waiting for Gab in /admin (or the 6 h auto-release)
+async function bindFila() {
+  const f = await fetch("/api/fila").then(r => r.json()).catch(() => null), el = $("#fila");
+  if (!f || !el) return;
+  const hm = t => new Date(t * 1000).toLocaleString("pt-BR", {weekday: "short", hour: "2-digit", minute: "2-digit"});
+  const st = {pending: "na fila", approved: "aprovada", auto: "entrou sozinha", rejected: "rejeitada", failed: "falhou"};
+  const team = t => `<div><b>${esc(t.name)} ${esc(t.gf)}</b><div class="dim" style="font-size:13px">${t.players.map(([n, g, a]) =>
+    esc(n) + (g ? ` ⚽${g > 1 ? "×" + g : ""}` : "") + (a ? ` 🅰️${a > 1 ? "×" + a : ""}` : "")).join(", ")}</div></div>`;
+  el.innerHTML = `<div class="sec-h"><div><h2>Súmulas na fila</h2><p>Fotos de súmula no grupo viram jogos aqui: a IA lê, o Gab confere (ou entram sozinhas 6 h depois).</p></div></div>
+    ${f.map(x => `<div class="card pad" style="margin-bottom:10px"><div class="row"><span class="pill">${st[x.status] || esc(x.status)}</span><b>${esc(x.title)}</b>
+      ${x.status === "pending" ? `<span class="dim" style="margin-left:auto;font-size:13px">${x.release ? `entra ${hm(x.release)} se ninguém mexer` : "sem gols: espera alguém conferir"}</span>` : ""}</div>
+      ${x.games.map(g => `<div class="grid g2" style="margin-top:10px">${g.teams.map(team).join("")}</div>`).join("")}</div>`).join("")
+      || '<p class="muted">Nenhuma súmula esperando. Mande a foto da súmula no grupo do BioFut.</p>'}`;
+}
+function bindTabela() {
+  bindFila();
+  $("#season").onchange = e => { ui.season = e.target.value; render(); };
+  $("#min").onchange = e => { ui.min = Math.max(1, +e.target.value || 1); render(); };
+  $("#q").oninput = e => { ui.q = e.target.value; const p = e.target.selectionStart; render(); const q = $("#q"); q.focus(); q.setSelectionRange(p, p); };
+  document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => { const k = th.dataset.k; ui.dir = ui.sort === k ? -ui.dir : -1; ui.sort = k; render(); });
+}
+
+function pageJogos(n) {
+  const seasons = SEASONS(), jump = n && G.find(g => g.n === +n);  // #/jogos/<n>: a record or link opens that game
+  if (jump && ui.jumped !== n) { ui.gseason = jump.season; ui.open.add(jump.n); }
+  ui.gseason ??= seasons[0];
+  const list = G.filter(g => g.season === ui.gseason).reverse();
+  const A = {}, goals = list.reduce((t, g) => t + g.teams[0].gf + g.teams[1].gf, 0);
+  return `
+  <div class="sec-h"><div><div class="kicker">${list.length} jogos · ${goals} gols · ${list.length ? (goals / list.length).toFixed(1) : 0} por jogo</div><h1 style="font-size:52px;margin-top:8px">Jogos</h1></div></div>
+  ${G.some(g => g.n > 1000) ? `<a class="card pad row" href="#/planilha" style="margin-bottom:18px;border-color:var(--acc)"><span class="pill">Planilha</span><span>${G.filter(g => g.n > 1000).length} jogo(s) do site ainda não estão na planilha do grupo.</span><span class="link" style="margin-left:auto">Passar para a planilha →</span></a>` : ""}
+  <div class="seg" id="gs" style="margin-bottom:18px">${seasons.map(s => `<button data-s="${esc(s)}" class="${s === ui.gseason ? "on" : ""}">${esc(s)}</button>`).join("")}</div>
+  <div class="grid g2">${list.map(matchRow).join("")}</div>`;
+}
+function bindJogos(n) {
+  document.querySelectorAll("#gs button").forEach(b => b.onclick = () => { ui.gseason = b.dataset.s; render(); });
+  bindMatches($("#app"));
+  if (n && ui.jumped !== n) { ui.jumped = n; setTimeout(() => $(`[data-g="${+n}"]`)?.scrollIntoView({block: "center"})); }
+}
+
+function pageCartas() {
+  const cs = CARDS().filter(c => !ui.tier || c.tier === ui.tier);
+  const T = [["", "Todas"], ["lenda", "Lenda"], ["ouro", "Ouro"], ["prata", "Prata"], ["bronze", "Bronze"]];
+  return `
+  <div class="sec-h"><div><div class="kicker">Quem tem 10+ jogos</div><h1 style="font-size:52px;margin-top:8px">Cartas</h1>
+    <p>Cada atributo é o percentil entre os regulares: GOL e ASS por jogo, VIT = taxa de vitória, EXP = jogos, CAP = vezes capitão.</p>
+    <p class="muted">Pontos viram moedas: 25 de boas-vindas (o bastante para um deck de 5 cartas) + 1 por gol ou assistência. Uma carta custa metade dos gols + assistências do jogador (mín. 5); abra a carta para comprar. Quem compra uma carta primeiro leva a <b>cromada</b>: +1 no atributo que escolher.
+    ${ME ? `Você tem ${coin(ST.balances[ME] ?? 25)} moedas e ${myCards().length} carta${myCards().length === 1 ? "" : "s"} · <a class="link" href="#/deck">meu deck</a>${myCards().length >= 5 ? ' · <a class="link" href="#/duelo/deck">jogar com ele</a>' : ""}.` : '<a class="link" href="/entrar?next=%2F%23%2Fdeck">Entre</a> para montar o seu deck.'}</p></div>
+    <div class="seg" id="tiers">${T.map(([k, l]) => `<button data-t="${k}" class="${ui.tier === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+  <div class="grid g4">${cs.map(c => fc({...shiny(c), mine: myCards().includes(c.name)})).join("")}</div>`;
+}
+
+function pagePlayer(name) {
+  const P = agg(G), s = P[name];
+  if (name === "Sombra") return `<div class="empty">Sombra é como a tabela chama um convidado de fora do grupo: joga, mas não conta nas estatísticas.</div>`;
+  if (!s) return `<div class="empty">Ninguém chamado ${esc(name)} na história do BioFut (ainda).</div>`;
+  const c = cardOf(name), seasons = SEASONS().filter(x => /^\d{4}/.test(x)).reverse();
+  const per = seasons.map(x => [x, agg(G.filter(g => g.season === x))[name]]).filter(x => x[1]);
+  const max = Math.max(1, ...per.map(([, v]) => v.g + v.a));
+  // teammates and opponents
+  const mates = {}, opp = {};
+  for (const g of G) {
+    const mine = g.teams.find(t => t.players.some(p => p[0] === name));
+    if (!mine) continue;
+    for (const t of g.teams) for (const [n] of t.players) {
+      if (n === name || n === "Sombra") continue;
+      const o = (t === mine ? mates : opp)[n] ??= {n, j: 0, v: 0};
+      o.j++; if (mine.res === "V") o.v++;
+    }
+  }
+  const rank = (o, min, dir) => Object.values(o).filter(x => x.j >= min).sort((a, b) => dir * (a.v / a.j - b.v / b.j) || b.j - a.j).slice(0, 5);
+  const li = (x, lbl) => `<li>${av(x.n, "s")}<a href="${plink(x.n)}" style="font-weight:600">${esc(x.n)}</a><span class="r"><b>${pct(x.v, x.j)}%</b><small>${lbl} · ${x.j} jogos</small></span></li>`;
+  const bal = ST.balances[name] ?? 25, price = ownPrice(name), mine = myCards(), myBal = ST.balances[ME] ?? 25;
+  // #36: the card is bought with points (moedas) into the member's collection; the first 5 make the deck (#/deck). The first buyer gets
+  // the cromada and picks its +1 stat (ui.cst) before the buy; a cromada bought before that picks it here once.
+  const own = Object.values(ST.cards || {}).filter(d => d.includes(name)).length, cr = ST.cromadas?.[name], held = cr && cr.by === ME, pick = ui.cst?.[name];
+  const line = t => `<p class="dim" style="text-align:center;font-size:13px;margin:8px 0 0">${t}</p>`;
+  const stats = () => `<div class="seg" style="display:flex;margin-top:10px">${ATTRS.map(a => `<button data-cst="${a}" class="${a === pick ? "on" : ""}" style="flex:1;padding:6px 0">${a}</button>`).join("")}</div>`;
+  const off = name === ME && price ? line(`<b>30% OFF</b> na sua própria carta: ${ST.prices[name]} → ${price} moedas`) : "";
+  const who = !cr ? "Seja o primeiro a obter esta carta: a <b>cromada</b>, com +1 no atributo que você escolher"
+    : `${own === 1 ? "1 jogador já tem" : `${own} jogadores já têm`} esta carta · a cromada${cr.stat ? ` (+1 ${cr.stat})` : ""} é de ${esc(cr.by)}`;
+  const buy = !c || !price ? ""
+    : held && !cr.stat ? line("Você comprou esta carta primeiro: ela é a sua <b>cromada</b>. Escolha o atributo +1:") + stats()
+      + `<button class="btn pri" style="width:100%;margin-top:10px" data-cromo ${pick ? "" : "disabled"}>Confirmar${pick ? ` +1 ${pick}` : ""}</button>`
+    : mine.includes(name) ? line(`✓ Esta carta é sua${held ? ` · é a sua cromada (+1 ${cr.stat})` : ""} · ${myDeck().includes(name) ? "está no" : "fora do"} seu <a class="link" href="#/deck">deck</a>`) + (held ? "" : line(who))
+    : ME ? off + line(who) + (cr ? "" : stats()) + `<button class="btn pri" style="width:100%;margin-top:10px" data-buy="${esc(name)}" ${myBal < price || !cr && !pick ? "disabled" : ""}>${cr ? "Comprar" : `Comprar a cromada${pick ? ` +1 ${pick}` : ""}`} · ${price} moedas</button>
+      <p class="dim" style="text-align:center;font-size:13px;margin:6px 0 0">Você ainda não tem esta carta · você tem ${coin(myBal)} moedas</p>`
+    : line(who) + line(`Você ainda não tem esta carta · <a class="link" href="/entrar?next=${encodeURIComponent("/#/jogador/" + encodeURIComponent(name))}">entre para comprar</a> (${price} moedas)`);
+  return `
+  <a class="link" href="#/tabela">← Tabela</a>
+  <div class="prof" style="margin-top:16px">
+    <div>${c ? fc(cromo(c)) : `<div class="card pad" style="display:grid;place-items:center;gap:12px">${av(name, "l")}<div class="muted" style="font-size:14px;text-align:center">Carta liberada com 10 jogos (${s.j}/10)</div></div>`}${buy}
+      <button class="btn" style="width:100%;margin-top:10px" id="photoBtn">${ST.photos.includes(slug(name)) ? "Trocar foto" : "Enviar foto"}</button></div>
+    <div>
+      <div class="kicker">${s.j} jogos · ${per.length ? `${esc(per[0][0])} a ${esc(per[per.length - 1][0])}` : ""}</div>
+      <h1 style="margin:8px 0 12px">${esc(name)}${nick(name)}</h1>
+      ${ST.profiles?.[name]?.status ? `<p class="muted" style="margin:-4px 0 14px">${esc(ST.profiles[name].status)}</p>` : ""}
+      <div class="row" style="margin-bottom:18px"><a class="pill" href="/wiki#/q/${encodeURIComponent(name)}">Na BioWiki →</a><a class="pill" href="#/duelo/${encodeURIComponent(name)}">Duelo de cartas →</a></div>
+      <div class="kpis num">
+        <div><b>${s.g}</b><span>Gols</span></div><div><b>${s.a}</b><span>Assist.</span></div><div><b>${s.aprov}%</b><span>Aproveit.</span></div>
+        <div><b>${s.v}-${s.e}-${s.d}</b><span>V-E-D</span></div><div><b>${s.gj.toFixed(2)}</b><span>Gols/jogo</span></div><div><b>${s.streak}</b><span>Seq. vitórias</span></div>
+        <div><b>${s.best}</b><span>Gols num jogo</span></div><div><b>${s.cap}</b><span>Capitão</span></div><div><b>${coin(bal)}</b><span>Moedas BioBet</span></div>
+      </div>
+      ${c ? `<div class="card pad" style="margin-top:14px"><h3>Habilidades</h3><p class="dim" style="font-size:13px;margin:4px 0 6px">Percentil entre quem tem 10+ jogos</p>${radar(c.at)}</div>` : ""}
+      <div class="card pad" style="margin-top:14px">
+        <div class="sec-h" style="margin-bottom:4px"><h3>Por temporada</h3><div class="legend"><span><i></i>Gols</span><span><i class="a"></i>Assist.</span></div></div>
+        <div class="bars">${per.map(([x, v]) => `<div class="b"><em class="num">${v.g + v.a}</em><div class="stack" style="height:${Math.max(4, 120 * (v.g + v.a) / max)}px">
+          <i style="height:${pct(v.g, v.g + v.a || 1)}%"></i><i class="a" style="height:${pct(v.a, v.g + v.a || 1)}%"></i></div><small>${esc(x)}</small></div>`).join("")}</div>
+      </div>
+      <div class="card pad" style="margin-top:14px"><h3 style="margin-bottom:12px">Últimos ${Math.min(40, s.res.length)} jogos</h3>
+        <div class="timeline">${s.res.slice(-40).map(r => `<i class="${r}" title="${r}"></i>`).join("")}</div></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card pad"><h3>Parceiros de ouro</h3><p class="dim" style="font-size:13px;margin:4px 0 6px">Vitórias jogando junto, 8+ jogos</p><ul class="list">${rank(mates, 8, -1).map(x => li(x, "vitórias")).join("") || '<li class="muted">Poucos jogos ainda</li>'}</ul></div>
+        <div class="card pad"><h3>Carrascos</h3><p class="dim" style="font-size:13px;margin:4px 0 6px">Quem mais te vence, 6+ jogos contra</p><ul class="list">${rank(opp, 6, 1).map(x => li(x, "vitórias suas")).join("") || '<li class="muted">Poucos jogos ainda</li>'}</ul></div>
+      </div>
+    </div>
+  </div>`;
+}
+function bindPlayer(name) {
+  const bb = $("[data-buy]");
+  const st = ui.cst?.[name] || "", first = !ST.cromadas?.[name];
+  if (bb) bb.onclick = async () => { const r = await post("buy_card", {card: bb.dataset.buy, stat: st}); if (r) { setState(r); ui.lineup = null; render(); toast(first ? `Cromada na sua coleção: +1 ${st}` : "Carta na sua coleção"); } };
+  document.querySelectorAll("[data-cst]").forEach(b => b.onclick = () => { (ui.cst ??= {})[name] = b.dataset.cst; render(); });
+  const cb = $("[data-cromo]");
+  if (cb) cb.onclick = async () => { const r = await post("cromo", {card: name, stat: st}); if (r) { setState(r); render(); toast(`Cromada: +1 ${st}`); } };
+  const b = $("#photoBtn"); if (!b) return;
+  b.onclick = () => { const f = $("#photoIn"); f.value = ""; f.onchange = () => upload(name, f.files[0]); f.click(); };
+}
+async function upload(name, file) {
+  if (!file) return;
+  const img = await createImageBitmap(file), side = Math.min(img.width, img.height), c = document.createElement("canvas");
+  c.width = c.height = 480;
+  c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 480, 480);
+  if (await api("photo", {name, photo: c.toDataURL("image/jpeg", .85)})) toast("Foto salva");
+}
+
+// ---------- jogo da semana ----------
+function pageJogo() {
+  const m = ST.match, d = m.draft, conf = m.confirmed;
+  const step = !m.date ? 0 : !d ? 1 : d.ok.length < 2 ? 2 : 3;
+  const steps = ["Marcar", "Lista", "Draft", "Apostas e placar"];
+  const C = Object.fromEntries(CARDS().map(c => [c.name, c]));
+  const ovr = n => C[n] ? C[n].ovr : "—";
+  let body = "";
+  if (!m.date) body = `<div class="card pad"><h3>Marcar o próximo jogo</h3><p class="muted" style="font-size:14px">Escolha a data. Isso abre a lista de confirmados.</p>
+    <div class="row"><input class="in" type="date" id="date"><button class="btn pri" id="mark">Abrir lista</button></div></div>`;
+  else {
+    const drafted = d ? Object.values(d.teams).flat() : [];
+    const pool = conf.filter(n => !drafted.includes(n)).sort((a, b) => (C[b]?.ovr ?? 0) - (C[a]?.ovr ?? 0));
+    const L = m.lista, at = t => new Date(t * 1000).toLocaleString("pt-BR", {weekday: "short", hour: "2-digit", minute: "2-digit"});
+    body += `<div class="card pad"><div class="sec-h" style="margin-bottom:12px"><div><h3>Confirmados · ${conf.length}</h3><p>${L ? `📋 Lista do grupo, aberta por <b>${esc(L.owner)}</b>, atualizada ${at(L.at)}${L.by !== L.owner ? ` por ${esc(L.by)}` : ""}. Ela se preenche sozinha; quem entra pelo site fica marcado.` : "Entre na lista com o nome que você usa no grupo."}</p></div>
+        <div class="row"><input class="in" id="who" list="names" placeholder="Seu nome" autocomplete="off"><button class="btn pri" id="join">Tô dentro</button></div></div>
+      <div class="chips">${conf.map(n => `<span class="chip ${d && d.captains.includes(n) ? "cap" : ""}">${av(n, "s")}<a href="${plink(n)}">${esc(n)}</a><small class="dim">${ovr(n)}</small>${L && !L.names.includes(n) ? '<small class="pill">site</small>' : ""}${d && drafted.includes(n) ? "" : `<button data-out="${esc(n)}" aria-label="Tirar ${esc(n)}">×</button>`}</span>`).join("") || '<span class="muted">Ninguém ainda. Seja o primeiro.</span>'}</div>
+      ${(ST.mercados || []).some(x => x.status === "aberta" && x.date === m.date) ? `<p style="margin-top:10px"><a class="pill" href="#/biobet">🎲 ${(ST.mercados || []).filter(x => x.status === "aberta" && x.date === m.date).length} apostas abertas sobre este jogo na BioBet →</a></p>` : ""}
+      ${L && L.waiting.length ? `<p class="dim" style="font-size:13px;margin-top:10px">Suplência: ${L.waiting.map(esc).join(", ")}</p>` : ""}
+      ${ST.last_list ? `<details style="margin-top:10px"><summary class="dim" style="cursor:pointer;font-size:13px">Última mensagem que o bot leu: ${esc(ST.last_list.by)}, ${at(ST.last_list.at)} · ${esc(ST.last_list.why)}${ST.last_list.check ? ` · ⚠ ${esc(ST.last_list.check)}` : ""}</summary>
+        <pre style="white-space:pre-wrap;font-size:12px;margin-top:8px">${esc(ST.last_list.text)}</pre></details>` : ""}</div>`;
+    if (!d) body += `<div class="card pad" style="margin-top:14px"><h3>Começar o draft</h3><p class="muted" style="font-size:14px">Dois capitães entre os confirmados. A escolha é em cobra: A, B, B, A…</p>
+      <div class="row">${[0, 1].map(i => { const lc = ((m.lista || {}).captains || []).filter(c => conf.includes(c)); return `<select class="in" id="cap${"AB"[i]}"><option value="">Capitão ${"AB"[i]}</option>${conf.map(n => `<option ${n === lc[i] ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`; }).join("")}
+      <button class="btn pri" id="start" ${conf.length < 2 ? "disabled" : ""}>Começar</button></div></div>`;
+    else {
+      const waiting = d.first === null;  // v1 drafts have no "first": they pick straight away
+      const turn = !waiting && d.ok.length < 2 && pool.length ? snake(d) : null, locked = m.bets.length > 0;
+      const tsum = cap => d.teams[cap].reduce((t, n) => t + (C[n]?.ovr ?? 60), 0);
+      const picks = Object.values(d.teams).flat().length - 2, lastCap = picks ? d.captains[[0, 1, 1, 0][(picks - 1) % 4]] : null;
+      body += `<div class="sec"><div class="sec-h"><div><h2>Draft</h2><p>${waiting ? "Quem escolhe primeiro? Moeda ou acordo." : turn ? `Vez de <b style="color:var(--acc)">${esc(turn)}</b> escolher` : d.ok.length < 2 ? "Todos escolhidos. Capitães, confirmem os times." : "Times fechados."}</p></div>
+        <div class="row">${!locked && picks > 0 ? '<button class="btn sm" id="undo">Desfazer</button>' : ""}</div></div>
+        ${waiting || (d.coin && ui.coinSeen !== d.coin.at) ? coinBlock(d) : ""}
+        <div class="teams">${d.captains.map((cap, i) => `<div class="team ${turn === cap ? "turn" : ""}">
+          <h3><span>${i ? "B" : "A"} · Time ${esc(cap)}</span><span class="muted num" style="font-size:14px">Σ ${tsum(cap)}</span></h3>
+          <ol>${d.teams[cap].map(n => `<li>${av(n, "s")}<a href="${plink(n)}">${esc(n)}</a>${n === cap ? ' <span class="pill">C</span>' : ""}<span class="o">${ovr(n)}</span></li>`).join("")}</ol>
+          ${pool.length || waiting ? "" : d.ok.includes(cap) ? '<p class="pill" style="margin-top:10px">Confirmado</p>' : `<button class="btn sm pri" style="margin-top:10px" data-ok="${esc(cap)}">Confirmar time</button>`}</div>`).join("")}</div>
+        ${ST.odds ? oddsBar(ST.odds, d) : ""}
+        ${d.ok.length < 2 && lastCap && C[d.teams[lastCap].at(-1)] ? showcase(C[d.teams[lastCap].at(-1)], lastCap) : ""}
+        ${pendingBlock(d)}
+        ${turn ? `<h3 style="margin:22px 0 10px">Disponíveis</h3><div class="pool">${pool.map(n => `<button class="pick" data-pick="${esc(n)}">${av(n)}<span><b>${esc(n)}</b><small>OVR ${ovr(n)} · ${h2h(turn, n)}</small></span></button>`).join("")}</div>` : ""}</div>`;
+      if (d.ok.length === 2) body += redraftBlock(d) + betsBlock(d) + resultBlock(d);
+    }
+    body += `<details style="margin-top:28px"><summary class="dim" style="cursor:pointer;font-size:14px">Cancelar ou remarcar este jogo</summary>
+      <div class="row" style="margin-top:10px"><input class="in" type="date" id="date" value="${esc(m.date)}"><button class="btn" id="mark">Recomeçar com esta data</button>
+      <span class="dim" style="font-size:13px">Apaga lista e draft. Apostas são devolvidas.</span></div></details>`;
+  }
+  return `
+  <div class="kicker">${m.date ? dt(m.date) : "Sem data"} · Planet Ball</div>
+  <h1 style="font-size:52px;margin-top:8px">Jogo da semana</h1>
+  <div class="steps">${steps.map((s, i) => `<div class="${i === step ? "on" : i < step ? "done" : ""}"><b>${i < step ? "✓" : i + 1}</b>${s}</div>`).join("")}</div>
+  ${body}`;
+}
+const snake = d => d.captains[[0, 1, 1, 0][(Object.values(d.teams).flat().length - 2) % 4]];
+// Who picks first: each captain calls cara/coroa without seeing the other (the server keeps the calls), or both name the same captain.
+function coinBlock(d) {
+  const chose = d.flip || [], sel = cap => `<select class="in" data-agree="${esc(cap)}"><option value="">já decidimos: começa…</option>${d.captains.map(c => `<option>${esc(c)}</option>`).join("")}</select>`;
+  return `<div class="card pad" style="margin-bottom:14px"><div class="coinbox"><div class="coin ${ui.coinSeen === (d.coin?.at ?? 0) ? "" : "spin"}" id="coin"><i class="f"><img src="/logo.png" alt="cara"></i><i class="b">COROA</i></div></div>
+    ${d.note ? `<p class="pill" style="margin:0 auto 12px;display:table">${esc(d.note)}</p>` : ""}
+    ${d.first ? `<p class="pill" style="margin:0 auto;display:table;font-size:16px">Deu ${esc(d.coin.result)}! <b>${esc(d.first)}</b> escolhe primeiro</p></div>` : `<div class="grid g2">${d.captains.map(cap => `<div class="team"><h3><span>${esc(cap)}</span>${chose.includes(cap) ? '<span class="pill">escolheu ✓</span>' : ""}</h3>
+      <div class="row" style="margin-top:8px"><button class="btn sm pri" data-flip="${esc(cap)}" data-side="cara">Cara</button><button class="btn sm pri" data-flip="${esc(cap)}" data-side="coroa">Coroa</button>${sel(cap)}</div></div>`).join("")}</div>
+    <p class="dim" style="font-size:13px;margin:10px 0 0">Cada capitão escolhe sem ver o outro. Os dois iguais na moeda: joga de novo. No acordo, os dois precisam dizer o mesmo nome.</p></div>`}`;
+}
+// The card and the radar of the name just picked: the group follows the draft here.
+const showcase = (c, cap) => `<div class="card pad sec showcase"><div class="sec-h"><div><h3>Última escolha</h3><p>${esc(cap)} levou <b>${esc(c.name)}</b></p></div></div><div class="grid g2" style="align-items:center">${fc(c)}${radar(c.at)}</div></div>`;
+// Names that asked in while the draft runs: both captains must say yes, then the draft restarts.
+function pendingBlock(d) {
+  const pend = Object.entries(d.pending || {});
+  return pend.length ? `<div class="card pad sec"><h3>Querem entrar · ${pend.length}</h3><p class="muted" style="font-size:14px;margin:6px 0 12px">Se os dois capitães aceitarem, o nome entra na lista e o draft recomeça.</p>
+    ${pend.map(([n, oks]) => `<div class="row" style="margin-top:8px">${av(n, "s")}<b>${esc(n)}</b>${d.captains.map(cap => oks.includes(cap) ? `<span class="pill">${esc(cap)} ✓</span>` : `<button class="btn sm" data-admit="${esc(cap)}" data-who="${esc(n)}">${esc(cap)}: aceitar</button>`).join("")}<button class="btn sm" data-refuse="${esc(d.captains[0])}" data-who="${esc(n)}">Recusar</button></div>`).join("")}</div>` : "";
+}
+// After the teams close: the players can ask for a redraft (a whole team + half of the other, secret ballot), unless both captains go Modo Ditador.
+function redraftBlock(d) {
+  const dit = d.ditador || [], team = d.captains.find(c => d.teams[c].includes(ME)), isCap = d.captains.includes(ME);
+  const toggles = d.captains.map(cap => `<button class="btn sm ${dit.includes(cap) ? "pri" : ""}" data-dit="${esc(cap)}" data-on="${dit.includes(cap) ? 0 : 1}">👑 ${esc(cap)}${dit.includes(cap) ? " · ditador ✓" : ""}</button>`).join("");
+  if (dit.length === 2) return `<div class="card pad sec"><h3>👑 Modo Ditador</h3><p class="muted" style="font-size:14px;margin:6px 0 12px">Os dois capitães fecharam os times. Sem redraft.</p><div class="row">${toggles}</div></div>`;
+  return `<div class="card pad sec"><div class="sec-h"><div><h3>Redraft?</h3><p>Um time inteiro (sem o capitão) mais metade do outro pedem, e os capitães escolhem de novo. Voto secreto: só a contagem aparece.</p></div><span class="pill">${d.votes || 0} voto${d.votes === 1 ? "" : "s"}</span></div>
+    <div class="row" style="margin-top:12px">${!ME ? `<a class="btn sm pri" href="/entrar?next=${encodeURIComponent("/#/jogo")}">Entre para votar</a>` : isCap ? '<span class="dim" style="font-size:13px">Capitão não vota. Os dois juntos podem fechar os times:</span>' : team ? '<button class="btn sm pri" data-rv="1">Quero redraft</button><button class="btn sm" data-rv="0">Tá bom assim</button>' : '<span class="dim" style="font-size:13px">Só quem está num time vota.</span>'}</div>
+    <div class="row" style="margin-top:12px"><span class="dim" style="font-size:13px">Modo Ditador (os dois):</span>${toggles}</div></div>`;
+}
+function oddsBar(o, d) {
+  const inv = {A: 1 / o.A, E: 1 / o.E, B: 1 / o.B}, t = inv.A + inv.E + inv.B, p = k => Math.round(100 * inv[k] / t);
+  return `<div class="card pad" style="margin-top:14px"><div class="sec-h" style="margin-bottom:10px"><h3>O que a BioBet acha</h3><p class="dim" style="margin:0;font-size:13px">Modelo treinado em ${D.model.games} jogos: força de cada um + química das duplas</p></div>
+    <div class="probs"><div style="flex:${p("A")};background:var(--win)">${esc(d.captains[0])} ${p("A")}%</div><div style="flex:${p("E")};background:var(--draw)">Empate ${p("E")}%</div><div style="flex:${p("B")};background:var(--loss)">${esc(d.captains[1])} ${p("B")}%</div></div></div>`;
+}
+function betsBlock(d) {
+  const o = ST.odds, bets = ST.match.bets;
+  const lbl = {A: "Time " + d.captains[0], E: "Empate", B: "Time " + d.captains[1]};
+  return `<div class="sec grid g2">
+    <div class="card pad"><h3>Apostar</h3><p class="muted" style="font-size:14px;margin:6px 0 14px">Moeda BioBet: 1 por gol ou assistência na história, mais 25 de boas-vindas.</p>
+      <div class="picks3">${["A", "E", "B"].map(k => `<button data-bp="${k}" class="${ui.pick === k ? "on" : ""}"><b class="num">${o[k].toFixed(2)}</b><small>${esc(lbl[k])}</small></button>`).join("")}</div>
+      ${ME ? `<div class="row" style="margin-top:14px"><input class="in" id="stake" type="number" min="1" value="5" style="flex:1">
+      <button class="btn pri" id="bet">Apostar</button></div><p class="dim" id="betHint" style="font-size:13px;margin:8px 0 0"></p>`
+      : `<p style="margin:14px 0 0"><a class="btn pri" href="/entrar?next=${encodeURIComponent("/#/jogo")}">Entre para apostar</a></p>`}</div>
+    <div class="card pad"><h3>Apostas · ${bets.length}</h3><ul class="list" style="margin-top:8px">${bets.map(b => `<li>${av(b.bettor, "s")}<span style="font-weight:600">${esc(b.bettor)}</span><span class="r"><b>${b.stake}</b><small>em ${esc(lbl[b.pick])} @ ${b.odds}</small></span></li>`).join("") || '<li class="muted">Nenhuma ainda. Os times travam na primeira aposta.</li>'}</ul></div>
+  </div>`;
+}
+function resultBlock(d) {
+  return `<div class="card pad sec"><h3>Placar final</h3><p class="muted" style="font-size:14px;margin:6px 0 14px">Encerra o jogo: entra na tabela, paga as apostas e vira moeda para quem fez gol ou assistência.</p>
+    <div class="row" style="justify-content:center;gap:16px;margin-bottom:18px"><span class="tm" style="font:700 18px var(--cond);text-transform:uppercase">${esc(d.captains[0])}</span>
+      <input class="in res-in" id="sA" type="number" min="0" value="0"><span class="dim" style="font:800 24px var(--cond)">×</span><input class="in res-in" id="sB" type="number" min="0" value="0">
+      <span style="font:700 18px var(--cond);text-transform:uppercase">${esc(d.captains[1])}</span></div>
+    <div class="teams">${d.captains.map(cap => `<div><div class="st-row dim" style="font:600 12px var(--cond);letter-spacing:.12em"><span>TIME ${esc(cap.toUpperCase())}</span><span>GOLS</span><span>ASSIST.</span></div>
+      ${d.teams[cap].map(n => `<div class="st-row"><span>${esc(n)}</span><input class="in mini" type="number" min="0" value="0" data-sg="${esc(n)}"><input class="in mini" type="number" min="0" value="0" data-sa="${esc(n)}"></div>`).join("")}</div>`).join("")}</div>
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn pri" id="close">Encerrar jogo</button></div></div>`;
+}
+function bindJogo() {
+  const m = ST.match, on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
+  on("#mark", () => { const v = $("#date").value; if (!v) return toast("Escolha a data", true); if (m.confirmed.length && !confirm("Apagar a lista e o draft atuais?")) return; api("new_match", {date: v}); });
+  on("#join", () => { const n = $("#who").value.trim(); if (!n) return;
+    if (m.draft && !m.confirmed.includes(n) && !confirm("O draft já começou. Entrar agora só vale se os dois capitães aceitarem, e aí o draft recomeça do zero. Pedir pra entrar?")) return;
+    api("signup", {name: n}).then(r => r && toast(m.draft ? `${n} pediu pra entrar · os capitães decidem` : r.posted ? `${n} confirmado · o bot avisou no grupo e mandou a lista` : `${n} confirmado aqui no site · no grupo, manda a lista atualizada`)); });
+  document.querySelectorAll("[data-flip]").forEach(b => b.onclick = () => api("draft_flip", {captain: b.dataset.flip, choice: b.dataset.side}));
+  document.querySelectorAll("[data-agree]").forEach(e => e.onchange = () => e.value && api("draft_flip", {captain: e.dataset.agree, choice: e.value}));
+  document.querySelectorAll("[data-admit]").forEach(b => b.onclick = () => api("draft_admit", {captain: b.dataset.admit, player: b.dataset.who}));
+  document.querySelectorAll("[data-refuse]").forEach(b => b.onclick = () => confirm(`Recusar ${b.dataset.who}?`) && api("draft_admit", {captain: b.dataset.refuse, player: b.dataset.who, ok: false}));
+  document.querySelectorAll("[data-rv]").forEach(b => b.onclick = () => act("redraft_vote", {ok: b.dataset.rv === "1"}, "Voto secreto registrado"));
+  document.querySelectorAll("[data-dit]").forEach(b => b.onclick = () => api("draft_ditador", {captain: b.dataset.dit, on: b.dataset.on === "1"}));
+  const coin = $("#coin"), c = m.draft?.coin;
+  if (coin && c) { coin.classList.add(c.result); if (ui.coinSeen !== c.at) setTimeout(() => { ui.coinSeen = c.at; render(); }, 4000); }  // one spin per flip, then the draft goes on
+  const who = $("#who"); if (who) who.onkeydown = e => e.key === "Enter" && $("#join").click();
+  document.querySelectorAll("[data-out]").forEach(b => b.onclick = () => api("unconfirm", {name: b.dataset.out}));
+  on("#start", () => api("draft_start", {captains: [$("#capA").value, $("#capB").value]}));
+  document.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => api("draft_pick", {captain: snake(m.draft), player: b.dataset.pick}));
+  on("#undo", () => api("draft_undo"));
+  document.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => api("draft_confirm", {captain: b.dataset.ok}));
+  document.querySelectorAll("[data-bp]").forEach(b => b.onclick = () => { ui.pick = b.dataset.bp; render(); });
+  const hint = () => { const s = +$("#stake").value || 0;
+    $("#betHint").textContent = `Você tem ${coin(ST.balances[ME] ?? 25)} moedas. ` + (s ? `Se acertar, recebe ${Math.floor(s * ST.odds[ui.pick])}.` : ""); };
+  if ($("#stake")) { $("#stake").oninput = hint; hint(); }
+  on("#bet", () => act("bet", {pick: ui.pick, stake: Math.floor(+$("#stake").value)}, "Aposta feita"));
+  on("#close", () => {
+    const stats = {}, n = s => Math.max(0, Math.floor(+s.value || 0));
+    document.querySelectorAll("[data-sg]").forEach(i => stats[i.dataset.sg] = [n(i), n(document.querySelector(`[data-sa="${CSS.escape(i.dataset.sg)}"]`))]);
+    const score = [n($("#sA")), n($("#sB"))];
+    if (!confirm(`Encerrar ${m.draft.captains[0]} ${score[0]} × ${score[1]} ${m.draft.captains[1]}?`)) return;
+    api("close_match", {score, stats}).then(r => r && (toast("Jogo registrado"), location.hash = "#/jogos", ui.gseason = null));
+  });
+}
+
+// ---------- biobet ----------
+// Mercados (server.py new_mercado/pay): a member opens a sim/não bet on a BioFut event; the losing side's coins go to the winners by stake.
+const act = (a, body, msg) => post(a, body).then(r => r && (setState(r), render(), toast(msg)));
+const when = t => new Date(t * 1000).toLocaleString("pt-BR", {timeZone: "America/Sao_Paulo", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"});
+const STAFF = () => ["admin", "conselho"].includes(ROLE);
+const CASA = 0.042;  // server.py HOUSE: the house keeps 4.2% of what is bet
+function potOdds(m, k, s = 0) {  // side k's odds with s more coins on it; 0 while nobody is on the other side
+  const tot = m.bets.reduce((t, b) => t + b.stake, 0) + s, on = m.bets.filter(b => b.side === k).reduce((t, b) => t + b.stake, 0) + s;
+  return on && tot > on ? tot * (1 - CASA) / on : 0;
+}
+function mHint(id) {
+  const m = ST.mercados.find(x => x.id === id), k = ui["mp" + id], s = Math.floor(+(ui["ms" + id] ?? m.min) || 0), o = k && s > 0 && potOdds(m, k, s);
+  return !k ? "Escolha sim ou não." : !s ? "" : o ? `Se ganhar agora, recebe ${Math.floor(s * o)} moedas. As odds mudam até a aposta fechar.`
+    : "Ninguém do outro lado ainda: se ficar assim, as moedas voltam.";
+}
+function mercadoCard(m) {
+  const tot = m.bets.reduce((t, b) => t + b.stake, 0), on = k => m.bets.filter(b => b.side === k).reduce((t, b) => t + b.stake, 0);
+  const mine = m.bets.find(b => b.who === ME), open = m.status === "aberta" && Date.now() / 1000 < m.fecha;
+  const out = (m.kind === "jogadores" && ST.match.date === m.date && ST.match.confirmed.includes(ME)) || ME === m.p;
+  const can = open && ME && !mine && !out, pick = ui["mp" + m.id];
+  const tiles = `<div class="picks3" style="grid-template-columns:1fr 1fr">${["sim", "não"].map(k => `<button ${can ? `data-mpick="${m.id}" data-side="${k}"` : 'style="cursor:default"'} class="${pick === k || m.status === k ? "on" : ""}">
+    <b class="num">${potOdds(m, k) ? potOdds(m, k).toFixed(2) : "—"}</b><small>${k} · ${tot ? Math.round(100 * on(k) / tot) : 0}% · ${on(k)} moedas</small></button>`).join("")}</div>`;
+  const join = !open || mine ? "" : !ME ? `<p style="margin:12px 0 0"><a class="link" href="/entrar?next=${encodeURIComponent("/#/biobet")}">Entre para apostar</a></p>`
+    : out ? '<p class="dim" style="margin:12px 0 0">Essa aposta é sobre você: fica de fora.</p>'
+    : `<div class="row" style="margin-top:12px"><input class="in" type="number" min="${m.min}" value="${ui["ms" + m.id] ?? m.min}" data-ms="${m.id}" style="flex:1"><button class="btn pri" data-mb="${m.id}">Apostar</button></div>
+      <p class="dim" data-mh="${m.id}" style="font-size:13px;margin:8px 0 0">${mHint(m.id)}</p>`;
+  const fim = m.status !== "aberta" ? "" : STAFF() && !mine ? `<div class="row" style="margin-top:8px"><span class="dim" style="font-size:13px">Decidir:</span>${["sim", "não", "anular"].map(o => `<button class="btn" data-mf="${m.id}" data-out="${o}">${o}</button>`).join("")}</div>`
+    : m.by === ME && m.bets.every(b => b.who === ME) ? `<button class="btn" style="margin-top:8px" data-mf="${m.id}" data-out="anular">Anular</button>` : "";
+  const res = m.status === "aberta" ? `${open ? "fecha" : "fechou"} ${when(m.fecha)}` : m.status === "anulada" ? `anulada por ${esc(m.end_by)}` : `deu <b>${m.status.toUpperCase()}</b>${m.back ? " · ninguém do outro lado" : ""}`;
+  return `<div class="card pad"><div class="kicker">#${m.id} · ${dt(m.date)}</div><h3 style="margin:6px 0">${esc(m.text)}?</h3>
+    <p class="dim" style="font-size:13px;margin:0 0 12px">Pote <b>${tot}</b> moedas · ${m.status === "aberta" ? "casa 4,2%" : `casa levou ${m.casa || 0}`} · mínimo ${m.min} · aberta por ${esc(m.by)} · ${res}</p>${tiles}
+    <p class="dim" style="font-size:13px;margin:10px 0 0">${m.bets.map(b => `${esc(b.who)} ${b.stake} no ${b.side}${b.odds ? ` @ ${b.odds.toFixed(2)}` : ""}${b.pay != null ? ` → ${b.pay}` : ""}`).join(" · ")}</p>
+    ${mine && open ? `<p class="dim" style="font-size:13px;margin:8px 0 0">Você: ${mine.stake} no ${mine.side}${potOdds(m, mine.side) ? `, recebe ${Math.floor(mine.stake * potOdds(m, mine.side))} se ganhar agora` : ""}</p>` : ""}${join}${fim}</div>`;
+}
+function novoMercado() {
+  const m = ST.match, k = ui.mk || "lista";
+  if (!m.date) return '<p class="muted">As apostas abrem com a lista do próximo jogo.</p>';
+  if (!ME) return `<p class="muted"><a class="link" href="/entrar?next=${encodeURIComponent("/#/biobet")}">Entre</a> para abrir uma aposta.</p>`;
+  const arg = {lista: `<input class="in" id="mp" list="names" placeholder="Quem" autocomplete="off">`, jogadores: '<input class="in" id="mn" type="number" min="2" max="40" value="14" style="width:80px"> <span class="dim">jogadores ou mais</span>',
+    capitao: `<select class="in" id="mh">${[24, 12, 6].map(h => `<option value="${h}">até ${h} h antes</option>`).join("")}</select>`, jogo: ""}[k];
+  return `<p class="muted" style="font-size:14px;margin:6px 0 12px">Sobre o jogo de ${dt(m.date)}. Você abre a aposta já apostando nela.</p>
+    <div class="row"><select class="in" id="mk">${Object.entries({lista: "Fulano entra na lista", capitao: "Os capitães saem", jogadores: "Número de jogadores", jogo: "O jogo acontece"}).map(([v, t]) => `<option value="${v}" ${v === k ? "selected" : ""}>${t}</option>`).join("")}</select>${arg}</div>
+    <div class="row" style="margin-top:10px"><label class="dim" style="font-size:13px">mínimo para entrar <input class="in" id="mmin" type="number" min="1" value="1" style="width:70px"></label>
+      <label class="dim" style="font-size:13px">sua aposta <input class="in" id="mstk" type="number" min="1" value="5" style="width:70px"></label></div>
+    <div class="row" style="margin-top:10px"><button class="btn pri" data-mnew="sim">Abrir no sim</button><button class="btn" data-mnew="não">Abrir no não</button><span class="dim" style="font-size:13px">você tem ${coin(ST.balances[ME] ?? 25)} moedas</span></div>`;
+}
+function bindBioBet() {
+  const k = $("#mk"); if (k) k.onchange = () => { ui.mk = k.value; render(); };
+  const n = id => Math.floor(+($(id)?.value) || 0);
+  document.querySelectorAll("[data-mnew]").forEach(b => b.onclick = () => act("mercado", {kind: ui.mk || "lista", p: $("#mp")?.value.trim(), h: n("#mh"), n: n("#mn"),
+    min: n("#mmin"), side: b.dataset.mnew, stake: n("#mstk")}, "Aposta aberta"));
+  document.querySelectorAll("[data-mpick]").forEach(b => b.onclick = () => { ui["mp" + b.dataset.mpick] = b.dataset.side; render(); });
+  document.querySelectorAll("[data-ms]").forEach(i => i.oninput = () => { ui["ms" + i.dataset.ms] = i.value; $(`[data-mh="${i.dataset.ms}"]`).textContent = mHint(+i.dataset.ms); });
+  document.querySelectorAll("[data-mb]").forEach(b => b.onclick = () => { const id = +b.dataset.mb, k = ui["mp" + id];
+    if (!k) return toast("Escolha sim ou não", true);
+    act("mercado_bet", {id, side: k, stake: n(`[data-ms="${id}"]`)}, `Aposta feita: ${k}`); });
+  document.querySelectorAll("[data-mf]").forEach(b => b.onclick = () => confirm(`Aposta #${b.dataset.mf}: ${b.dataset.out}?`) && act("mercado_fim", {id: +b.dataset.mf, out: b.dataset.out}, "Aposta decidida"));
+}
+function pageBioBet() {
+  const bal = Object.entries(ST.balances).sort((a, b) => b[1] - a[1]);
+  const settled = ST.played.flatMap(g => (g.bets || []).map(b => ({...b, g})));
+  const ms = ST.mercados || [], abertas = ms.filter(m => m.status === "aberta"), feitas = ms.filter(m => m.status !== "aberta").reverse();
+  const net = {};
+  for (const b of settled) net[b.bettor] = (net[b.bettor] || 0) + b.payout - b.stake;
+  for (const m of feitas) for (const b of m.bets) net[b.who] = (net[b.who] || 0) + b.pay - b.stake;
+  const bettors = Object.entries(net).sort((a, b) => b[1] - a[1]);
+  const trophies = SEASONS().map(s => { const x = Object.values(agg(G.filter(g => g.season === s))).sort((a, b) => b.ga - a.ga)[0]; return [s, x]; });
+  return `
+  <div class="kicker">Apostas com moeda de gol</div><h1 style="font-size:52px;margin-top:8px">BioBet</h1>
+  <p class="muted" style="max-width:640px">Cada gol ou assistência que você fez na história do BioFut vale 1 moeda, e todo mundo ganha 25 de boas-vindas. As odds vêm de um modelo treinado em ${D.model.games} jogos da planilha: força de cada jogador mais a química de cada dupla. A casa fica com 4,2% de tudo que é apostado e já guardou <b>${ST.casa || 0}</b> moedas. Apostas no placar abrem no <a class="link" href="#/jogo">Jogo da semana</a> quando os times fecham.</p>
+  <section class="sec"><div class="sec-h"><h2>Apostas abertas</h2><p>Abrem com a lista e fecham 24 h antes do jogo</p></div>
+    <p class="muted" style="max-width:640px;font-size:14px">Cada aposta tem um pote. As odds de cada lado vêm da probabilidade que o pote dá a ele e mudam até a aposta fechar: quem acerta divide o pote, menos os 4,2% da casa, na proporção do que apostou. Se ninguém entrar do outro lado, as moedas voltam. Ninguém aposta sobre o próprio nome, quem está na lista não aposta no número de jogadores, e quem aposta no prazo dos capitães não pode ser capitão antes dele. A BioBet decide sozinha pela lista, pela tabela e pelo draft; o Gab ou o Conselho decide quando precisa.</p>
+    <div class="grid g2">${abertas.map(mercadoCard).join("") || '<div class="empty">Nenhuma aposta aberta agora.</div>'}<div class="card pad"><h3>Abrir uma aposta</h3>${novoMercado()}</div></div></section>
+  <div class="grid g2 sec">
+    <div class="card pad"><h3>Carteiras</h3><ul class="list" style="margin-top:8px">${bal.slice(0, 15).map(([n, v], i) => `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${coin(v)}</b></span></li>`).join("")}</ul></div>
+    <div class="card pad"><h3>Melhores apostadores</h3><ul class="list" style="margin-top:8px">${bettors.slice(0, 10).map(([n, v]) => `<li>${av(n, "s")}<span style="font-weight:600">${esc(n)}</span><span class="r"><b class="num" style="color:${v >= 0 ? "var(--win)" : "var(--loss)"}">${v >= 0 ? "+" : ""}${v}</b><small>lucro</small></span></li>`).join("") || '<li class="muted">Nenhuma aposta encerrada ainda. A primeira vai ser histórica.</li>'}</ul>
+      <h3 style="margin-top:24px">Últimas apostas</h3><ul class="list" style="margin-top:8px">${settled.slice(-8).reverse().map(b => `<li><span style="font-weight:600">${esc(b.bettor)}</span><span class="dim" style="font-size:13px">${dt(b.g.date)}</span><span class="r"><b class="num" style="color:${b.payout ? "var(--win)" : "var(--loss)"}">${b.payout ? "+" + (b.payout - b.stake) : "−" + b.stake}</b><small>@ ${b.odds}</small></span></li>`).join("") || '<li class="muted">—</li>'}</ul></div>
+  </div>
+  <section class="sec"><div class="sec-h"><h2>Histórico</h2><p>Todas as apostas decididas, anuladas e de jogos cancelados</p></div>
+    <div class="grid g2">${feitas.map(mercadoCard).join("")}${(ST.cancelados || []).slice().reverse().map(c => `<div class="card pad"><div class="kicker">${dt(c.date)}</div><h3 style="margin:6px 0">Jogo cancelado: apostas no placar devolvidas</h3>
+      <p class="dim" style="font-size:13px;margin:0">${c.bets.map(b => `${esc(b.bettor)} ${b.stake}`).join(" · ")}</p></div>`).join("") || (feitas.length ? "" : '<div class="empty">Nada ainda.</div>')}</div></section>
+  <section class="sec"><div class="sec-h"><h2>Troféus de temporada</h2><p>Melhor jogador = mais gols + assistências</p></div>
+    <div class="grid g4">${trophies.map(([s, x]) => `<a class="card pad" href="${plink(x.name)}" style="display:flex;gap:12px;align-items:center">${av(x.name)}<div><div class="kicker">${esc(s)}</div><div style="font:700 19px var(--cond);text-transform:uppercase">${esc(x.name)}</div><div class="dim num" style="font-size:13px">${x.g} G · ${x.a} A</div></div></a>`).join("")}</div></section>`;
+}
+
+// ---------- resenha ----------
+function pageResenha() {
+  const t = D.terms, max = t[0][1], min = t[t.length - 1][1];
+  const order = t.map((x, i) => [x, (i * 7919) % t.length]).sort((a, b) => a[1] - b[1]).map(x => x[0]);   // stable shuffle
+  const tones = ["var(--ink)", "var(--acc)", "var(--mut)", "var(--silver)", "var(--gold)"];
+  return `
+  <div class="kicker">O grupo do WhatsApp em números e gírias</div><h1 style="font-size:52px;margin-top:8px">Resenha</h1>
+  <div class="card sec" style="margin-top:22px"><div class="cloud">${order.map(([w, c]) => { const k = Math.sqrt((c - min) / (max - min));
+    return `<span title="${c} menções. Está errada? Toque" data-wrong="palavra:${esc(w)}" style="font-size:${(14 + 46 * k).toFixed(0)}px;color:${tones[hue(w) % tones.length]};opacity:${(.55 + .45 * k).toFixed(2)}">${esc(w)}</span>`; }).join("")}</div>
+    <p class="dim" style="font-size:12px;text-align:center;margin:0 0 16px">As ${t.length} palavras mais ditas no grupo desde maio de 2026 (risadas contam todas como kkkk). Alguma errada? Toque nela.</p></div>
+  <div class="grid g2 sec">
+    <div class="card pad"><h3 style="margin-bottom:16px">Dicionário BioFut</h3><dl class="gl">${D.glossary.map(([k, v]) => `<dt>${esc(k)}${wrong("termo", k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>
+    <div><div class="card pad"><h3 style="margin-bottom:16px">Apelidos</h3><dl class="gl">${D.nicknames.map(([k, v]) => `<dt>${esc(k)}${wrong("apelido", k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>
+      <div class="card pad" style="margin-top:14px"><h3 style="margin-bottom:8px">Trilha sonora <a class="link" style="font-size:14px" href="#/radio">🎵 ouvir na Rádio BioFut</a> <a class="dim" style="font-size:14px" href="${D.songs_url}" target="_blank" rel="noopener">· SoundCloud</a></h3><ul class="list">${D.songs.map(([k, v]) => `<li><span style="font:700 17px var(--cond);text-transform:uppercase">${esc(k)}</span><span class="r dim" style="font-size:14px">${esc(v)}${wrong("musica", k)}</span></li>`).join("")}</ul></div></div>
+  </div>`;
+}
+
+const wrong = (kind, item) => ` <button class="wrong" title="Isso está errado" data-wrong="${kind}:${esc(item)}">⚑</button>`;
+function bindResenha() {  // "isso está errado": goes to the BioWiki's reports (page site:resenha) and to the Avisos group
+  document.querySelectorAll("[data-wrong]").forEach(b => b.onclick = async () => {
+    if (!(await BF.me).user) return location.href = "/entrar?next=" + encodeURIComponent("/#/resenha");
+    const ref = b.dataset.wrong, text = prompt(`O que está errado em “${ref.split(":").slice(1).join(":")}”?`);
+    if (text?.trim() && await post("wiki_feedback", {page: "site:resenha", ref: ref.slice(0, 60), text})) toast("Valeu! Vai para a revisão");
+  });
+}
+
+// ---------- apoie ----------
+const COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform";  // ponytail: paste the public registration form link here; empty = "em breve"
+function pageCopa() {
+  const feats = [
+    ["📝", "Inscrição no site", "Nome, posição e time num lugar só: a comissão vê a lista pronta, sem caçar mensagem no grupo."],
+    ["🎲", "Draft dos times pelo celular", "Capitães escolhem ao vivo, moeda 3D decide quem começa, todo mundo acompanha com as cartas de cada jogador."],
+    ["📊", "Tabela e artilharia ao vivo", "Grupos, mata-mata, gols e assistências atualizados do lado da quadra, direto na planilha do grupo."],
+    ["⚖️", "VAR do povo", "Foi pênalti ou não? Quem está assistindo vota pelo celular em tempo real. A decisão continua do árbitro, a corneta fica registrada."],
+    ["🎥", "Lances de todo ângulo", "Filmou do banco? Manda pelo celular e o lance fica guardado junto com o jogo, pra resenha e pra BioWiki."],
+    ["🎰", "BioBet da Copa", "Odds por jogo, bolão do campeão, melhor jogador e artilheiro, pagos em moedas do site."],
+    ["🏆", "Cartas e troféus", "Campeão, artilheiro, luva de ouro e melhor da copa viram cartas cromadas e entram na história do jogador."],
+    ["🎶", "Rádio e telão", "Trilha sonora do grupo tocando na quadra e o placar numa tela pra quem está na arquibancada."],
+  ];
+  return `
+  <div class="kicker">5ª Copa BioFut · SuperCopa 2026</div><h1 style="font-size:52px;margin-top:8px">21 de novembro, 8:30 às 14:30</h1>
+  <p class="muted" style="max-width:640px;font-size:17px">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Edu, Canova, Bruno M e Gab (só a parte tech).</p>
+  <div class="card pad" style="margin-top:22px;display:flex;flex-wrap:wrap;align-items:center;gap:14px">
+    <div style="flex:1;min-width:220px"><div class="kicker">Inscrições</div><p style="margin:6px 0 0">Inscrições abertas: preencha o formulário da comissão para garantir a vaga.</p></div>
+    ${COPA_FORM ? `<a class="btn pri" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a>` : '<span class="pill g">Formulário em breve no grupo</span>'}
+  </div>
+  <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Diga no grupo o que vale a pena e o que é viagem.</p></div></div>
+    <div class="grid g3">${feats.map(([i, t, d]) => `<div class="card pad"><div style="font-size:28px">${i}</div><h3 style="margin:8px 0 6px">${t}</h3><p class="muted" style="margin:0;font-size:14px">${d}</p></div>`).join("")}</div></div>
+  <div class="sec"><div class="sec-h"><div><h2>As outras copas</h2></div></div>
+    <ul class="list card pad">
+      <li><span class="pill">2024</span><span>3ª copa, decidida nos pênaltis: Babuínos campeões, Barp melhor jogador.</span></li>
+      <li><span class="pill">2025</span><span>Grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Edu melhor da copa de novo.</span></li>
+    </ul></div>`;
+}
+
+function pageApoie() {
+  return `
+  <div class="kicker">Pix do grupo</div><h1 style="font-size:52px;margin-top:8px">Apoie o BioFut</h1>
+  <div class="grid g2 sec" style="margin-top:22px;align-items:start">
+    <div class="card pad"><p style="margin-top:0;font-size:17px">O BioFut é bancado por quem joga. Uma ajuda extra vai para quadra, bolas e coletes, e para manter este site no ar.</p>
+      <p class="muted">Qualquer valor. Use a chave do grupo, a mesma das listas semanais:</p>
+      <div class="row" style="margin:14px 0"><code style="font:600 18px ui-monospace,monospace">${esc(D.pix.key)}</code><button class="btn sm" data-copy="${esc(D.pix.key)}">Copiar chave</button></div>
+      <label class="dim" style="font-size:13px">Pix copia e cola</label>
+      <textarea class="pix" readonly>${esc(D.pix.payload)}</textarea>
+      <button class="btn pri" style="margin-top:10px" data-copy="${esc(D.pix.payload)}">Copiar código Pix</button></div>
+    <div class="card pad" style="display:grid;place-items:center;gap:12px"><div class="qr" id="qr"></div><span class="dim" style="font-size:13px">Aponte o app do banco. O Pix chega com a mensagem “Apoio pelo site BioFut”.</span></div>
+  </div>
+  <div class="card pad sec" id="custos"><div class="kicker">Quanto custa</div><p class="muted" style="margin:6px 0 0">Carregando…</p></div>
+  <section class="sec"><div class="sec-h"><h2>Negócios da galera</h2><p>Quem joga no BioFut também trabalha. Apoie o grupo apoiando eles.</p></div>
+    <div class="grid g3">${SHOPS.map(([n, who, what, url]) => `<${url ? `a href="${url}" target="_blank" rel="noopener"` : "div"} class="card pad"><div class="kicker">${esc(who)}</div><h3 style="margin-top:4px">${esc(n)}</h3>
+      ${what ? `<p class="muted" style="font-size:14px;margin:6px 0 0">${esc(what)}</p>` : ""}${url ? `<p class="link" style="font-size:14px;margin:8px 0 0">${esc(url.replace(/^https?:\/\/(www\.)?|\/$/g, ""))} →</p>` : ""}</${url ? "a" : "div"}>`).join("")}
+      <button class="card pad" id="shop" style="text-align:left;border-style:dashed;cursor:pointer;font:inherit;color:inherit"><h3>Coloque sua empresa aqui</h3><p class="muted" style="font-size:14px;margin:6px 0 0">Joga no BioFut e tem um negócio? Mande o nome, o que faz e o link.</p></button></div></section>`;
+}
+// ponytail: the list lives here; "Coloque sua empresa aqui" sends a request (feedback kind "empresa") and Gab adds it
+const SHOPS = [  // [name, who, what, url]
+  ["Torres Consultor I.A.", "Gab", "Deep learning e modelagem: IA sob medida, do dado ao produto. Portfólio do Gab.", "https://www.h-brain.org/"],
+  ["Dupla Fasi", "André", "", ""],
+  ["Baita Brownies", "Victor", "Os brownies do pós-jogo (e do MVP da partida).", ""],
+];
+function bindApoie() {
+  const usd = v => "US$ " + (v || 0).toFixed(v < 0.01 && v ? 4 : 2);
+  fetch("/api/custos").then(r => r.json()).then(c => $("#custos").innerHTML = `<div class="kicker">Quanto custa</div><p style="margin:6px 0 0">` +
+    (c.chamadas ? `As automações (IA lendo súmulas por foto) custaram <b>${usd(c.usd_mes)}</b> este mês e ${usd(c.usd_total)} desde ${c.desde}, em ${c.chamadas} chamadas.`
+      : "As automações (IA) ainda não gastaram nada.") +
+    ` O servidor é uma máquina gratuita da Oracle dividida com outros sites do Gab; o domínio é dele. Detalhes na <a href="/transparencia">Transparência</a>.</p>`).catch(() => {});
+  $("#shop").onclick = async () => {
+    if (!(await BF.me).user) return location.href = "/entrar?next=" + encodeURIComponent("/#/apoie");
+    const text = prompt("Nome da empresa, o que ela faz e o link (site ou Instagram):");
+    if (text?.trim() && await post("feedback", {kind: "empresa", text})) toast("Pedido enviado! O Gab coloca aqui.");
+  };
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { await navigator.clipboard.writeText(b.dataset.copy); toast("Copiado"); });
+  const draw = () => new QRCode($("#qr"), {text: D.pix.payload, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M});
+  if (window.QRCode) return draw();
+  const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"; s.onload = draw; document.head.appendChild(s);
+}
+
+// ---------- rádio: the BioFut songs (data/radio/*.mp3, then the SoundCloud set through its widget), members only ----------
+function pageRadio() {
+  return `
+  <div class="kicker">As músicas do grupo</div><h1 style="font-size:52px;margin-top:8px">Rádio BioFut</h1>
+  <p class="muted" style="max-width:640px">“Não deixem essa playlist se perder.” (Andrei, 10/02/2025). As faixas que o grupo fez, uma atrás da outra: os áudios do grupo e o álbum BioFut Hits 2025/1 do SoundCloud.</p>
+  <p class="dim" style="font-size:13px">Pode trocar de página: a rádio continua tocando lá embaixo.</p>`;  // the player is #radio, outside #app (render)
+}
+// The player is built once and lives outside #app, so the music goes on while the member browses the other pages
+// (render shrinks it to a bar at the bottom). Only a full page load stops it: /wiki, /transparencia, F5.
+const bindRadio = () => bindRadio.p ||= startRadio();
+async function startRadio() {
+  const box = $("#radio");
+  box.innerHTML = '<div class="skel"></div>';
+  if (!(await BF.me).user) return box.innerHTML = `Só para membros. <a href="/entrar?next=${encodeURIComponent("/#/radio")}">Entrar com seu WhatsApp</a>`;
+  const songs = await fetch("/api/radio").then(r => r.json()).catch(() => []);
+  if (!songs.length) return box.innerHTML = '<span class="muted">Ainda sem músicas. O Gab escolhe e sobe.</span>';
+  let i = 0, shuffle = false, share = false;
+  const [, , k0, t0] = location.hash.slice(1).split("/");  // #/radio/<song>/<second>: a shared moment
+  const T = s => s.t || s, li = (s, k) => `<li><a href="#" data-k="${k}" class="link">${esc(T(s))}</a></li>`, n0 = songs.filter(s => !s.sc).length;
+  box.innerHTML = `<audio id="au" controls preload="none" style="width:100%"></audio>
+    <iframe id="sc" hidden allow="autoplay; encrypted-media" title="SoundCloud" style="width:100%;height:166px;border:0;border-radius:10px"></iframe>
+    <div class="row" style="margin:12px 0"><button class="btn sm" id="prev">⏮</button><button class="btn sm" id="next">⏭</button><label class="dim full" style="font-size:13px"><input type="checkbox" id="shuf"> aleatório</label><a class="link mini-only" id="np" href="#/radio"></a></div>
+    <div class="full">${n0 ? `<h4 class="dim" style="margin:0 0 6px">Áudios do grupo</h4><ol style="margin:0 0 14px;padding-left:22px">${songs.slice(0, n0).map(li).join("")}</ol>` : ""}
+    ${n0 < songs.length ? `<h4 class="dim" style="margin:0 0 6px">BioFut Hits 2025/1 · <a class="dim" href="https://soundcloud.com/h-mind/sets/biofut-hits-2025-1" target="_blank" rel="noopener">SoundCloud</a></h4>
+      <ol style="margin:0;padding-left:22px">${songs.slice(n0).map((s, k) => li(s, n0 + k)).join("")}</ol>` : ""}</div>`;
+  box.insertAdjacentHTML("beforeend", `<div class="row full" style="margin-top:12px"><label class="dim" style="font-size:13px"><input type="checkbox" id="share"> Link com a música e o momento</label>
+    <button class="btn sm" id="wa">Copiar pro WhatsApp</button></div>`);
+  const au = $("#au"), fr = $("#sc"), items = [...box.querySelectorAll("[data-k]")];
+  let pos = 0, W = null, pend = 0;  // pos: the second we are at, either player; pend: a shared moment to seek to on the first PLAY
+  const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const link = () => "#/radio" + (share ? `/${i}/${Math.floor(pos)}` : "");
+  const tick = () => share && location.hash.startsWith("#/radio") && history.replaceState(null, "", link());  // not over another page's hash
+  $("#share").onchange = e => { share = e.target.checked; history.replaceState(null, "", link()); };
+  au.ontimeupdate = () => { pos = au.currentTime; tick(); };
+  au.onplay = () => box.dataset.played = 1;  // from now on the bar follows the member around
+  // the SoundCloud widget only takes a color and on/off switches; the buttons, list and share above drive it (Widget API)
+  const scOpts = {color: "#f2c230", visual: false, show_comments: false, hide_related: true, show_teaser: false, show_user: false, sharing: false, buying: false, download: false};
+  const scPlay = async (url, auto) => {
+    const src = "https://w.soundcloud.com/player/?" + new URLSearchParams({url, ...scOpts, auto_play: auto});
+    // ponytail: api.js load() turns every option into "true"/"false" (the color too): it re-arms the events, our src wins
+    if (W) { W.load(url, {auto_play: auto}); fr.src = src; return; }
+    await new Promise((ok, no) => document.head.append(Object.assign(document.createElement("script"), {src: "https://w.soundcloud.com/player/api.js", onload: ok, onerror: no})));
+    fr.src = src;
+    W = SC.Widget(fr);
+    W.bind(SC.Widget.Events.PLAY_PROGRESS, e => { if (songs[i].sc) { pos = e.currentPosition / 1000; tick(); } });
+    W.bind(SC.Widget.Events.PLAY, () => { box.dataset.played = 1; if (pend) { W.seekTo(pend * 1000); pend = 0; } });
+    W.bind(SC.Widget.Events.FINISH, () => $("#next").onclick());
+  };
+  $("#wa").onclick = () => navigator.clipboard.writeText(`🎵 Tô ouvindo "${T(songs[i])}" na Rádio BioFut${share ? ` (a partir de ${mmss(pos)})` : ""}: ${location.origin}/${link()}`)
+    .then(() => toast("Copiado! Cola lá no grupo"), () => toast("Não deu pra copiar", true));
+  const play = (k, auto = true) => {
+    i = (k + songs.length) % songs.length; pos = 0; pend = 0; au.onloadedmetadata = null;  // a shared moment belongs to its own song
+    const s = songs[i];
+    au.hidden = !!s.sc; fr.hidden = !s.sc;
+    if (s.sc) { au.pause(); scPlay(s.sc, auto).catch(() => toast("O SoundCloud não carregou", true)); }
+    else { W?.pause(); au.src = "/data/radio/" + encodeURIComponent(s) + ".mp3"; if (auto) au.play().catch(() => {}); }
+    items.forEach((a, j) => a.style.fontWeight = j === i ? "700" : ""); $("#np").textContent = "🎵 " + T(s);
+    document.title = T(s) + " · Rádio BioFut";
+  };
+  items.forEach(a => a.onclick = e => { e.preventDefault(); play(+a.dataset.k); });
+  $("#prev").onclick = () => play(i - 1);
+  $("#next").onclick = () => play(shuffle ? Math.floor(Math.random() * songs.length) : i + 1);
+  $("#shuf").onchange = e => shuffle = e.target.checked;
+  au.onended = () => $("#next").onclick();
+  play(+k0 || 0, false);  // loaded, not blasting: the member presses play
+  if (+t0) {
+    share = $("#share").checked = true; pos = +t0;
+    if (songs[i].sc) pend = +t0;
+    else { au.onloadedmetadata = () => { au.currentTime = +t0; au.onloadedmetadata = null; }; au.load(); }
+  }
+}
+
+// ---------- duelo: Super Trunfo with the real cards ----------
+// Best of 5. You pick the attribute in rounds 1, 3, 5, the machine in 2 and 4 (its card's best). The top card of the
+// whole deck is the Super Craque: it beats everyone, except a bronze card (zebra). The daily duel deals the same cards
+// to everybody (seeded by the date), so results can be compared in the group; #/duelo/<name> plays with that player.
+// A member plays on the server (server.py duel_act): it deals, hides the machine's cards and judges, so the duel counts
+// in the ranking and a win pays 0,0001 moeda. A visitor plays the same duel here in the browser, for fun only.
+const ATTRS = ["GOL", "ASS", "VIT", "EXP", "CAP"];
+const rng = seed => () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function newDuel(mine) {
+  const all = CARDS(), day = localDay(), r = rng(mine ? Date.now() : [...day].reduce((h, c) => h * 31 + c.charCodeAt(0) | 0, 7));
+  let deck = all.map(c => [r(), c]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  const pick = mine && all.find(c => c.name === mine);
+  if (pick) deck = [pick, ...deck.filter(c => c !== pick)];
+  return {key: mine || day, daily: !pick, day, ace: all[0].name, you: deck.slice(0, 5), cpu: deck.slice(5, 10), round: 0, score: [0, 0], log: [], shown: null};
+}
+function duelWinner(d, a, x, y) {  // 1 = you, -1 = machine, 0 = draw
+  if (x.name === d.ace) return y.tier === "bronze" ? -1 : 1;
+  if (y.name === d.ace) return x.tier === "bronze" ? 1 : -1;
+  return Math.sign(x.at[a] - y.at[a]);
+}
+function dcard(c, d, {hide, pick, on} = {}) {
+  if (hide) return `<div class="fc back"><span>Bio<b>Fut</b></span></div>`;
+  const s = slug(c.name), ph = face(s) ? `<img src="${face(s)}" alt="" loading="lazy">` : esc(c.name.slice(0, 2).toUpperCase());
+  return `<div class="fc ${c.tier}${c.crom ? " cromada" : ""}">${c.name === d.ace ? '<span class="ace">Super Craque</span>' : ""}
+    <div class="top"><div class="ovr">${c.ovr}<small>OVR</small></div><div class="ph">${ph}</div></div>
+    <div class="nm">${esc(c.name)}</div>
+    <div class="at">${ATTRS.map(a => `<button data-at="${a}" class="${a === on ? "on" : ""}${a === c.crom ? " up" : ""}" ${pick ? "" : "disabled"}><i>${a}</i><b>${c.at[a]}</b></button>`).join("")}<span><i>JOG</i><b>${c.j}</b></span></div>
+    <div class="tier">${c.tier}${c.crom ? " · cromada" : ""}</div></div>`;
+}
+const srvDuel = (key, v, fresh) => {  // the server's view of the duel (fresh: show the round just played)
+  if (v.feito) return {key, msg: `Você já jogou o Duelo do dia: ${v.feito.join("×")}. Amanhã tem outro.`};
+  const log = v.log.map(x => x[1]), n = log.length, sh = fresh && n;
+  return {key, srv: true, daily: v.mode === "dia", deck: v.mode === "deck", day: v.day, ace: v.ace, you: v.you, cpu: v.cpu, log,
+    score: [log.filter(w => w > 0).length, log.filter(w => w < 0).length], round: sh ? n - 1 : n, shown: sh ? {a: v.log[n - 1][0], w: log[n - 1]} : null};
+};
+function duelRank() {  // ST.duelo: each member's record, kept by the server
+  const R = Object.entries(ST.duelo || {}).filter(([, r]) => r.best);
+  if (!R.length) return `<section class="sec"><div class="kicker">Ranking do Duelo</div><p class="muted" style="margin-top:8px">Ninguém terminou um duelo valendo ainda: o primeiro a terminar abre o ranking.</p></section>`;
+  const top = (title, sort, big, small) => `<div class="card pad"><h3>${title}</h3><ul class="list" style="margin-top:8px">${[...R].sort(([, a], [, b]) => sort(a, b)).slice(0, 10).map(([n, r], i) =>
+    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`).join("")}</ul></div>`;
+  return `<section class="sec"><div class="sec-h"><div><div class="kicker">Ranking do Duelo</div><h2>Quem manda no Duelo</h2></div></div><div class="grid g3">
+    ${top("Mais vitórias seguidas", (a, b) => b.top - a.top || b.run - a.run, r => r.top, r => `agora ${r.run}`)}
+    ${top("Mais pontos num duelo", (a, b) => b.best[0] - a.best[0] || a.best[1] - b.best[1], r => r.best.join("×"), r => `${r.v + r.e + r.d} duelo${r.v + r.e + r.d > 1 ? "s" : ""}`)}
+    ${top("Mais vitórias", (a, b) => b.v - a.v || a.d - b.d, r => r.v, r => `${r.e}E ${r.d}D · +${coin(r.v / 10000)} moeda`)}</div></section>`;
+}
+function pageDuelo(name) {
+  if (CARDS().length < 10) return '<div class="empty">Poucas cartas para um duelo.</div>';
+  if (ME === undefined) return '<div class="skel"></div>';  // member (server duel) or visitor (local): wait to know
+  name = name === "dia" ? "" : name || (myCards().length >= 5 ? "deck" : "");  // #/duelo: your deck once you have one
+  const free = CARDS()[Math.floor(Math.random() * Math.min(40, CARDS().length))].name;
+  const tabs = on => `<div class="seg" style="margin-bottom:18px">${[["deck", "Meu deck"], ["dia", "Do dia"], [encodeURIComponent(free), "Livre"]].map(([h, l], i) =>
+    `<a href="#/duelo/${h}" class="dtab${i === on ? " on" : ""}">${l}</a>`).join("")}</div>`;
+  if (name === "deck" && myCards().length < 5) return tabs(0) + `<div class="card pad fade" style="text-align:center;max-width:560px;margin:0 auto">
+    <h3>${ME ? `Você tem ${myCards().length} de 5 cartas` : "O Duelo com o seu deck é para quem entra"}</h3>
+    <p class="muted" style="margin:8px 0 0">${ME ? "Compre as que faltam com as suas moedas: as 5 primeiras formam o deck." : "Entre para ganhar 25 moedas, comprar cartas e montar o seu deck."}</p>
+    <div class="row" style="justify-content:center;margin-top:16px"><a class="btn pri" href="${ME ? "#/deck" : "/entrar?next=%2F%23%2Fdeck"}">${ME ? "Montar o deck" : "Entrar"}</a></div></div>` + duelRank();
+  const key = name || localDay();
+  if (ui.duel?.key !== key) ui.duel = ME ? {key, wait: true, mode: name === "deck" ? "deck" : name ? "livre" : "dia", name} : newDuel(name);  // a new day or another player deals again
+  const d = ui.duel, i = d.round, yours = i % 2 === 0, x = d.you?.[i], y = d.cpu?.[i], sh = d.shown, over = i >= 5;
+  const marks = (d.log || []).map(w => w > 0 ? "🟩" : w < 0 ? "🟥" : "⬜").join(""), rank = duelRank();
+  const again = d.deck ? '<button class="btn" id="again">Outro com o deck</button>' : `<a class="btn" href="#/duelo/${encodeURIComponent(free)}" id="again">Duelo livre</a>`;
+  const head = tabs(d.deck || d.mode === "deck" ? 0 : d.daily || d.mode === "dia" ? 1 : 2) + `<div class="sec-h"><div><div class="kicker">${d.daily ? `Duelo do dia · ${dt(d.day)}` : d.deck ? "Seu deck" : d.srv || !ME ? "Duelo livre" : "Duelo"} · melhor de 5</div><h1 style="font-size:52px;margin-top:8px">Duelo</h1>
+    <p>Super Trunfo com as cartas de verdade. Maior atributo leva a rodada. O <b>Super Craque</b> (${esc(CARDS()[0].name)}) ganha de todo mundo, menos de carta bronze: zebra.
+    ${ME ? "Cada vitória vale 0,0001 moeda e conta no ranking." : 'Este é um treino: <a class="link" href="/entrar?next=%2F%23%2Fduelo">entre</a> para valer moedas e ranking.'}</p>
+    ${d.note ? `<p class="muted">${d.note}</p>` : ""}</div>
+    ${d.score ? `<div class="score num" style="font-size:34px">${d.score[0]}<i>×</i>${d.score[1]}</div>` : ""}</div>`;
+  if (d.wait) return head + '<div class="empty">Embaralhando…</div>' + rank;
+  if (d.msg) return head + `<div class="card pad fade" style="text-align:center;max-width:560px;margin:0 auto"><h3>${esc(d.msg)}</h3><div class="row" style="justify-content:center;margin-top:16px">${again}</div></div>` + rank;
+  if (over) {
+    const res = Math.sign(d.score[0] - d.score[1]), rec = JSON.parse(store.get("biofutDuelo") || "[0,0,0]"), r = ST.duelo?.[ME];
+    const share = `BioFut Duelo${d.daily ? " " + d.day.split("-").reverse().join("/") : ""}: ${["perdi", "empatei", "venci"][res + 1]} ${d.score[0]}×${d.score[1]} ${marks}\nhttps://biofut.h-brain.org/#/duelo${d.daily ? "/dia" : ""}`;
+    return head + `<div class="card pad fade" style="text-align:center;max-width:560px;margin:0 auto">
+      <h2 style="font-size:44px">${["Derrota", "Empate", "Vitória"][res + 1]}</h2><p style="font-size:30px;margin:12px 0">${marks}</p>
+      <p class="muted">${d.srv && r ? `${res > 0 ? "+0,0001 moeda · " : ""}${r.run ? `${r.run} vitória${r.run > 1 ? "s" : ""} seguida${r.run > 1 ? "s" : ""}` : "sequência zerada"} (a maior: ${r.top}) · ${r.v}V ${r.e}E ${r.d}D`
+        : `Seu histórico neste navegador: ${rec[0]}V ${rec[1]}E ${rec[2]}D`}</p>
+      <div class="row" style="justify-content:center;margin-top:16px"><button class="btn pri" data-copy="${esc(share)}">Copiar resultado</button>${again}</div></div>` + rank;
+  }
+  const verdict = sh && (sh.w > 0 ? "Você levou" : sh.w < 0 ? "A máquina levou" : "Empate");
+  return head + `<div class="duel">
+    <div><div class="kicker" style="margin-bottom:8px">Você · carta ${i + 1}/5</div>${dcard(x, d, {pick: yours && !sh, on: sh?.a})}</div>
+    <div><div class="kicker" style="margin-bottom:8px">Máquina</div>${dcard(y, d, {hide: !sh, on: sh?.a})}</div></div>
+    <div class="card pad" style="max-width:600px;margin:18px auto 0;text-align:center">
+      ${sh ? `<h3>${verdict} no ${sh.a}${x.name === d.ace || y.name === d.ace ? " (Super Craque)" : ""}</h3><button class="btn pri" id="next" style="margin-top:12px">${i === 4 ? "Ver resultado" : "Próxima rodada"}</button>`
+        : yours ? '<h3>Sua vez: escolha um atributo da sua carta</h3>' : '<h3>A máquina escolhe nesta rodada</h3><button class="btn pri" id="cpu" style="margin-top:12px">Ver a jogada</button>'}
+      <p style="margin:12px 0 0">${marks || "&nbsp;"}</p></div>` + rank;
+}
+async function bindDuelo() {
+  if (ME === undefined) { ME = (await BF.me).user || null; return render(); }
+  const d = ui.duel; if (!d) return;
+  if (d.wait && !d.asked) {
+    d.asked = true;
+    api("duelo", {mode: d.mode, name: d.name}).then(j => {  // one open duel per member: the server returns it before dealing another
+      ui.duel = j ? {...srvDuel(d.key, j.duel), note: j.duel.mode && j.duel.mode !== d.mode ? "Você tem um duelo aberto: termine este antes de começar outro." : ""} : {key: d.key, msg: "Não deu para abrir este duelo."};
+      render();
+    });
+  }
+  const play = async a => {
+    if (d.srv) {  // the server plays the round (and the machine's pick in its rounds)
+      if (d.busy) return;
+      d.busy = true; const j = await api("duelo", {at: a}); d.busy = false;
+      if (j) ui.duel = srvDuel(d.key, j.duel, true);
+      return render();
+    }
+    const w = duelWinner(d, a, d.you[d.round], d.cpu[d.round]); d.shown = {a, w}; d.log.push(w); if (w) d.score[w > 0 ? 0 : 1]++; render();
+  };
+  document.querySelectorAll(".duel [data-at]:not([disabled])").forEach(b => b.onclick = () => play(b.dataset.at));
+  const cpu = $("#cpu"); if (cpu) cpu.onclick = () => { const c = d.cpu[d.round]; play(d.srv ? "" : ATTRS.reduce((m, a) => c.at[a] > c.at[m] ? a : m)); };
+  const nx = $("#next"); if (nx) nx.onclick = () => {
+    d.round++; d.shown = null;
+    if (d.round === 5) {
+      const res = Math.sign(d.score[0] - d.score[1]), rec = JSON.parse(store.get("biofutDuelo") || "[0,0,0]");
+      if (!d.srv) { rec[1 - res]++; store.set("biofutDuelo", JSON.stringify(rec)); }
+      BF.ev("duelo", `${d.daily ? "dia" : d.deck ? "deck" : "livre"} ${d.score[0]}x${d.score[1]}`);
+    }
+    render();
+  };
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copiado: cole no grupo"); } catch { toast("O navegador bloqueou a cópia", true); } });
+  const again = $("#again"); if (again) again.onclick = () => { ui.duel = null; if (d.deck) render(); };
+  document.querySelectorAll(".dtab").forEach(a => a.onclick = () => {  // after a duel, any tab deals a new one (even the same tab)
+    if (d.round >= 5 || d.msg) { ui.duel = null; if (location.hash === a.getAttribute("href")) render(); }
+  });
+}
+
+// ---------- deck (#36): the member's collection and the 5 cards they take to the Duelo (server.py set_deck, deck_of) ----------
+const ownPrice = n => { const p = ST.prices?.[n]; return p && n === ME ? Math.floor(p * 0.7) : p; };  // 30% off your own card (server.py OWN_OFF)
+const myCards = () => ST.cards?.[ME] || [];
+function myDeck() {  // deck_of: the saved 5 while they are all still the member's, else the first 5 bought
+  const own = myCards(), t = ST.deck?.[ME] || [];
+  return t.length === 5 && t.every(n => own.includes(n)) ? t : own.slice(0, 5);
+}
+function pageDeck() {
+  if (ME === undefined) return '<div class="skel"></div>';
+  const head = `<div class="sec-h"><div><div class="kicker">Seu Super Trunfo</div><h1 style="font-size:52px;margin-top:8px">Meu deck</h1>
+    <p>Junte as cartas dos jogadores e leve 5 delas ao <a class="link" href="#/duelo/deck">Duelo</a>. Todo mundo começa com 25 moedas, o bastante para 5 cartas baratas;
+    cada gol ou assistência seu vale +1 moeda e cada duelo vencido +0,0001.</p></div></div>`;
+  if (!ME) return head + '<div class="empty"><a class="link" href="/entrar?next=%2F%23%2Fdeck">Entre</a> para comprar cartas e montar o seu deck.</div>';
+  const own = myCards(), by = Object.fromEntries(CARDS().map(c => [c.name, c])), bal = ST.balances[ME] ?? 25;
+  const L = ui.lineup ??= [...myDeck()], saved = myDeck(), dirty = [...L].sort().join() !== [...saved].sort().join(), cut = own.length > 5;
+  const shop = Object.keys(ST.prices || {}).filter(n => by[n] && !own.includes(n)).map(n => [n, ownPrice(n)]).sort((a, b) => a[1] - b[1]).slice(0, 8);
+  const kpis = `<div class="kpis num" style="margin-bottom:18px"><div><b>${coin(bal)}</b><span>Moedas</span></div>
+    <div><b>${own.length}/${CARDS().length}</b><span>Cartas</span></div><div><b>${Math.min(5, own.length)}/5</b><span>No deck</span></div></div>`;
+  const bar = own.length < 5
+    ? `<h3>Faltam ${5 - own.length} carta${own.length === 4 ? "" : "s"} para o Duelo com o seu deck</h3><p class="muted" style="margin:6px 0 0">As 5 primeiras que você compra formam o deck. Abra uma carta para comprar.</p>`
+    : `<h3>${cut ? `${L.length}/5 escolhidas${dirty ? " · não salvo" : ""}` : "Estas 5 são o seu deck"}</h3>
+      ${cut ? '<p class="muted" style="margin:6px 0 0">Toque nas cartas para trocar quem vai ao Duelo.</p>' : ""}
+      <div class="row" style="margin-top:12px">${cut ? `<button class="btn pri" id="saveDeck" ${L.length === 5 && dirty ? "" : "disabled"}>Salvar deck</button>` : ""}
+      <a class="btn${cut ? "" : " pri"}" href="#/duelo/deck">Jogar com o deck</a></div>`;
+  const pickable = c => fc(cromo(c), cut ? L.includes(c.name) : undefined);
+  return head + kpis + `<div class="card pad" style="margin-bottom:22px">${bar}</div>
+    ${own.length ? `<h2 style="margin-bottom:12px">Sua coleção</h2><div class="grid g4">${own.filter(n => by[n]).map(n => pickable(by[n])).join("")}</div>` : ""}
+    ${shop.length ? `<h2 style="margin:28px 0 12px">${own.length < 5 ? "As mais baratas" : "Para a coleção"}</h2><div class="grid g4">${shop.map(([n, p]) =>
+      `<div>${fc(shiny(by[n]))}<p class="dim" style="text-align:center;font-size:13px;margin:6px 0 0">${p} moedas${n === ME ? " · 30% OFF" : ""}${p > bal ? " · faltam " + coin(p - bal) : ""}</p></div>`).join("")}</div>` : ""}`;
+}
+async function bindDeck() {
+  if (ME === undefined) { ME = (await BF.me).user || null; return render(); }
+  document.querySelectorAll(".fc[data-pick]").forEach(b => b.onclick = b.onkeydown = e => {
+    if (e.key && e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    const n = b.dataset.pick, L = ui.lineup;
+    if (L.includes(n)) L.splice(L.indexOf(n), 1); else if (L.length < 5) L.push(n); else return toast("O deck já tem 5: tire uma antes", true);
+    render();
+  });
+  const sv = $("#saveDeck");
+  if (sv) sv.onclick = async () => { const r = await post("deck", {cards: ui.lineup}); if (r) { setState(r); ui.lineup = null; render(); toast("Deck salvo"); } };
+}
+
+// ---------- planilha: games the site has and the Google Sheet lacks, one paste each (no Gmail login, no Apps Script) ----------
+function pagePlanilha() {
+  return `<div class="fade"><div class="kicker">Planilha do grupo</div><h1>Passar para a planilha</h1>
+  <p class="muted" style="max-width:680px;margin:14px 0 0">Jogos que já estão no site (súmula aprovada ou jogo da semana) e ainda faltam na planilha.
+  Para cada um: <b>Copiar</b>, abrir a aba DATABASE, clicar na coluna <b>L (Data)</b> da primeira linha de um bloco de jogo vazio e colar (Ctrl+V).
+  Não mexa nas colunas A–K: são fórmulas. Em até 10 minutos o site lê a planilha e o jogo sai daqui sozinho.</p>
+  <div id="pl" class="grid" style="margin-top:22px"><div class="skel"></div></div></div>`;
+}
+async function bindPlanilha() {
+  const rows = await fetch("/api/planilha").then(r => r.json()).catch(() => null), heads = ["Data", "Time", "Nome", "Gol", "Assist.", "Gol contra", "Capitão"];
+  $("#pl").innerHTML = !rows ? '<div class="empty">Não consegui carregar. Tente recarregar.</div>'
+    : !rows.length ? '<div class="empty">Nada pendente: a planilha já tem todos os jogos do site.</div>'
+    : rows.map(g => `<div class="card pad"><div class="row" style="justify-content:space-between"><h3>${esc(g.line)}</h3>
+      <button class="btn pri sm" data-tsv="${esc(g.tsv)}" data-ev="copiar jogo ${g.n}">Copiar ${g.tsv.split("\n").length} linhas</button></div>
+      <div class="tw" style="margin-top:12px"><table><thead><tr>${heads.map(h => `<th class="l">${h}</th>`).join("")}</tr></thead>
+      <tbody>${g.tsv.split("\n").map(r => `<tr>${r.split("\t").map(c => `<td class="l">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`).join("");
+  document.querySelectorAll("[data-tsv]").forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.tsv); toast("Copiado. Cole na coluna L da planilha"); } catch { toast("O navegador bloqueou a cópia: selecione a tabela", true); }
+  });
+}
+
+// ---------- member page: own stats, nickname/status, ideas for the site ----------
+let ME, ROLE, QUEM, MSG;  // QUEM: GET /api/quem, the doubtful names this member put on lists and their claim (server.py quem_view); MSG: /api/mensagens
+function pageEu() {
+  if (ME === undefined || ME && QUEM === undefined) return '<div class="skel"></div>';
+  if (!ME) return `<div class="empty">Esta é a sua página de membro. <a class="link" href="/entrar?next=${encodeURIComponent("/#/eu")}">Entrar com seu WhatsApp</a></div>`;
+  const p = ST.profiles?.[ME] || {}, tilde = ME.startsWith("~"), mine = (QUEM?.items || []).filter(it => it.by === ME);
+  const claim = tilde ? `<form class="card pad" id="claim"><h3>Qual é o seu nome na tabela?</h3>
+      <p class="dim" style="font-size:13px;margin:4px 0 12px">Seu número não aparece em nenhuma lista do grupo, então por enquanto você está com o nome do seu WhatsApp (o “~” quer dizer: não confirmado). Diga quem você é na tabela, e o Gab ou o Conselho confirma.</p>
+      ${QUEM?.asked ? `<p class="muted" style="margin:0 0 10px">Pedido enviado: <b>${esc(QUEM.asked)}</b>. Falta confirmar.</p>` : ""}
+      <input class="in" id="claimIn" list="names" maxlength="40" placeholder="seu nome na tabela" style="width:100%;margin:0 0 10px"><button class="btn pri">Sou eu</button></form>` : "";
+  const dub = mine.length ? `<div class="card pad"><h3>Quem era?</h3><p class="dim" style="font-size:13px;margin:4px 0 12px">Nomes que você pôs na lista e que podem ser de mais de uma pessoa. Sua resposta corrige a tabela.</p>
+      <ul class="list">${mine.map(it => `<li style="display:block"><div>Você colocou <b>“${esc(it.wrote)}”</b> na lista de ${dt(it.date)}, e na tabela ficou <b>${esc(it.name)}</b>. Quem era?</div>
+        <div class="row" style="margin-top:8px">${it.options.map(o => `<button class="btn sm${it.answer?.choice === o ? " pri" : ""}" data-q="${esc(it.id)}" data-c="${esc(o)}">${o === "Sombra" ? "Convidado (Sombra)" : esc(o)}</button>`).join("")}</div></li>`).join("")}</ul></div>` : "";
+  return `
+  <div class="sec-h"><div><div class="kicker">Sua página</div><h1 style="font-size:52px;margin-top:8px">${esc(ME)}</h1></div>
+    ${agg(G)[ME] ? '<button class="btn sm" id="shareMe">📲 Compartilhar meu perfil</button>' : ""}</div>
+  <section style="margin-bottom:18px">${agg(G)[ME] ? pagePlayer(ME).replace(/<a class="link" href="#\/tabela">← Tabela<\/a>/, "") : `<div class="empty">${tilde ? "Seus jogos aparecem aqui quando o seu nome na tabela for confirmado." : `Ainda sem jogos registrados no nome ${esc(ME)}.`}</div>`}</section>
+  ${claim || dub ? `<div class="grid g2" style="margin-bottom:18px">${claim}${dub}</div>` : ""}
+  <div class="grid g2">
+    <form class="card pad" id="prof"><h3>Seu perfil</h3><p class="dim" style="font-size:13px;margin:4px 0 12px">Todo mundo vê o apelido e o status na tabela e na sua página.</p>
+      <label class="muted" style="font-size:13px">Apelido</label><input class="in" id="nick" maxlength="30" value="${esc(p.nick)}" style="width:100%;margin:4px 0 10px">
+      <label class="muted" style="font-size:13px">Status</label><input class="in" id="stat" maxlength="80" placeholder="ex.: voltando da lesão em novembro" value="${esc(p.status)}" style="width:100%;margin:4px 0 12px">
+      <button class="btn pri">Salvar</button></form>
+    <form class="card pad" id="fb"><h3>Ideias e bugs</h3><p class="dim" style="font-size:13px;margin:4px 0 12px">O que falta no site, o que está errado. Vira tarefa para os devs do BioFut.</p>
+      <div class="seg" id="fbk" style="margin-bottom:10px"><button type="button" data-k="ideia" class="on">Ideia</button><button type="button" data-k="bug">Bug</button></div>
+      <textarea class="in" id="fbt" rows="4" maxlength="2000" style="width:100%"></textarea>
+      <button class="btn pri" style="margin-top:10px">Enviar</button><ul class="list" id="mine" style="margin-top:12px"></ul></form>
+  </div>
+  ${tilde ? "" : `<div class="card pad" style="margin-top:18px"><div class="sec-h" style="margin-bottom:10px"><div><h3>Suas mensagens no grupo</h3>
+      <p class="dim" style="font-size:13px;margin:4px 0 0" id="msgc">Só você vê.</p></div><input class="in" id="msgq" placeholder="Buscar" autocomplete="off"></div>
+    <ul class="list" id="msgs"><li class="dim">Carregando…</li></ul></div>`}
+  <p class="row" style="margin:18px 0 0"><a class="pill" href="/transparencia#eu">Suas listas e presença →</a><a class="pill" href="/wiki#/q/${encodeURIComponent(ME)}">Você na BioWiki →</a></p>`;
+}
+// ponytail: text + link, not an image; a canvas-drawn card if the group wants the picture itself
+function shareMe() {
+  const s = agg(G)[ME], c = cardOf(ME), per = SEASONS().filter(x => /^\d{4}/.test(x)).map(x => [x, agg(G.filter(g => g.season === x))[ME]]).filter(x => x[1]);
+  const text = `⚽ ${ME} no BioFut${c ? ` · carta ${c.tier} OVR ${c.ovr}` : ""}\n${s.j} jogos · ${s.g} gols · ${s.a} assistências · ${s.aprov}% de aproveitamento\n`
+    + per.map(([t, v]) => `${t}: ${v.j}J ${v.g}G ${v.a}A`).join("\n") + `\n${location.origin}/#/jogador/${encodeURIComponent(ME)}`;
+  (navigator.share ? navigator.share({text}) : navigator.clipboard.writeText(text).then(() => toast("Copiado! Cola lá no grupo"))).catch(() => {});
+}
+async function bindEu() {
+  if (ME === undefined) { ME = (await BF.me).user || null; return render(); }
+  if (!ME) return;
+  if (QUEM === undefined) { QUEM = await fetch("/api/quem").then(r => r.json()).catch(() => null); return render(); }
+  bindPlayer(ME);
+  if ($("#shareMe")) $("#shareMe").onclick = shareMe;  // on() is bindJogo's own helper
+  document.querySelectorAll("[data-q]").forEach(b => b.onclick = async () => {
+    const r = await post("quem", {id: b.dataset.q, choice: b.dataset.c});
+    if (r) { QUEM = r; setState(await fetch("/api/state").then(r => r.json())); render(); toast("Valeu! A tabela foi corrigida"); }
+  });
+  if ($("#claim")) $("#claim").onsubmit = async e => {
+    e.preventDefault();
+    const r = await post("quem", {claim: $("#claimIn").value.trim()});
+    if (r) { QUEM = r; render(); toast("Pedido enviado ao Gab e ao Conselho"); }
+  };
+  let kind = "ideia";
+  document.querySelectorAll("#fbk button").forEach(b => b.onclick = () => { kind = b.dataset.k; document.querySelectorAll("#fbk button").forEach(x => x.classList.toggle("on", x === b)); });
+  $("#prof").onsubmit = async e => {
+    e.preventDefault();
+    const r = await post("profile", {nick: $("#nick").value, status: $("#stat").value});
+    if (r) { (ST.profiles ??= {})[ME] = r.profile; toast("Perfil salvo"); }
+  };
+  const mine = async () => {
+    const xs = await fetch("/api/feedback").then(r => r.json()).catch(() => []);
+    $("#mine").innerHTML = (Array.isArray(xs) ? xs : []).slice(-5).reverse().map(x => `<li><span class="pill">${esc(x.kind)}</span> ${esc(x.text.slice(0, 120))}<small class="r dim">${esc(x.ts.slice(8, 10) + "/" + x.ts.slice(5, 7))}</small></li>`).join("");
+  };
+  $("#fb").onsubmit = async e => {
+    e.preventDefault();
+    const text = $("#fbt").value.trim();
+    if (text && await post("feedback", {kind, text})) { $("#fbt").value = ""; toast("Valeu! Recebido"); mine(); }
+  };
+  mine();
+  if (!$("#msgs")) return;
+  MSG ??= await fetch("/api/mensagens").then(r => r.json()).then(x => Array.isArray(x) ? x : []).catch(() => []);
+  const day = t => new Date(t * 1000).toLocaleDateString("pt-BR", {day: "2-digit", month: "short", year: "numeric"});
+  const show = () => {  // the newest 50 that match: a few thousand rows would choke a phone
+    const q = $("#msgq").value.trim().toLowerCase(), xs = q ? MSG.filter(m => m[1].toLowerCase().includes(q)) : MSG;
+    $("#msgc").textContent = `Só você vê. ${xs.length} mensage${xs.length === 1 ? "m" : "ns"}${q ? ` com “${q}”` : MSG.length ? ` desde ${day(MSG[0][0])}` : ""}.`;
+    $("#msgs").innerHTML = xs.slice(-50).reverse().map(([t, s]) => `<li style="display:block"><small class="dim">${day(t)}</small><div style="white-space:pre-wrap">${esc(s)}</div></li>`).join("") || '<li class="dim">Nenhuma mensagem.</li>';
+  };
+  $("#msgq").oninput = show;
+  show();
+}
+// ---------- first-login tour: each step opens the page it talks about; done or skipped, the server remembers ----------
+function tour(i = 0) {
+  const n = coin(ST.balances?.[ME] ?? 25), steps = [
+    ["#/cartas", "Os craques viraram cartas", `Cada jogador do grupo é uma carta, com atributos tirados dos jogos: GOL, ASS, VIT, EXP e CAP. Você tem <b>${n} moedas</b> para comprar as suas.`],
+    ["#/cartas", "O 1º a comprar leva a cromada ✨", "Só existe <b>uma</b> cromada de cada craque, com +1 no atributo que você escolher. Abra um jogador e toque em Comprar."],
+    ["#/deck", "Monte seu deck de 5", "Escolha 5 das suas cartas. As mais baratas custam 5: suas moedas iniciais já fecham um deck."],
+    ["#/duelo", "Duelo", "Super Trunfo contra a máquina: maior atributo leva a rodada. Cada vitória vale <b>+0,0001</b> moeda e sobe você no ranking."],
+    ["#/biobet", "BioBet", "Aposte suas moedas no jogo da semana e nos mercados do grupo."],
+  ], [h, t, x] = steps[i], last = i === steps.length - 1;
+  if (location.hash !== h) location.hash = h;
+  $("#tour")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="card pad tour" id="tour" role="dialog" aria-label="Tutorial">
+    <div class="kicker">Novo no BioFut · ${i + 1}/${steps.length}</div><h3 style="margin:6px 0">${t}</h3><p class="dim" style="margin:0 0 14px">${x}</p>
+    <div class="row"><button class="btn sm" id="tourSkip">${last ? "Fechar" : "Pular"}</button><button class="btn pri sm" id="tourNext">${last ? "Bora comprar" : "Próximo"}</button></div></div>`);
+  const done = () => { $("#tour").remove(); post("tour", {}); };
+  $("#tourSkip").onclick = done;
+  $("#tourNext").onclick = () => last ? (done(), location.hash = "#/cartas") : tour(i + 1);
+}
+// member-only POSTs: the cookie is the proof, not the PIN, and the reply is not the match state
+async function post(action, body) {
+  const j = await fetch("/api/" + action, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({error: "sem conexão"}));
+  if (j.error) { toast(j.error, true); return null; }
+  return j;
+}
+
+// ---------- router ----------
+function render() {
+  const h = location.hash.slice(1) || "/", [, page, arg] = h.split("/");
+  document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "/#/" + (page === "jogador" ? "tabela" : page || "")));
+  const app = $("#app"), y = scrollY, same = render.last === h; render.last = h;
+  const name = arg && decodeURIComponent(arg);
+  const pages = {
+    "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
+    cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
+    jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa],
+    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu],
+  };
+  const [view, bind] = pages[page ?? ""] || pages[""];
+  app.innerHTML = view();
+  bind && bind();
+  const r = $("#radio"); r.hidden = page !== "radio" && !r.dataset.played; r.classList.toggle("mini", page !== "radio");
+  document.title = (page ? ({jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página"}[page] + " · ") : "") + "BioFut";
+  if (same) scrollTo(0, y); else scrollTo(0, 0);
+}
+addEventListener("hashchange", render);
+
+// live draft: refresh state every 8 s on the match page, unless someone is typing
+setInterval(async () => {
+  if (!location.hash.startsWith("#/jogo") || document.hidden || ["INPUT", "SELECT"].includes(document.activeElement?.tagName)) return;
+  const s = await fetch("/api/state").then(r => r.json()).catch(() => null);
+  if (s && JSON.stringify(s.match) !== JSON.stringify(ST.match)) { setState(s); render(); }
+}, 8000);
+
+Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r => r.json())]).then(([d, s]) => {
+  D = d; setState(s);
+  $("#foot").textContent = `${G.length} jogos registrados`;
+  render();
+  BF.me.then(m => (ROLE = m.role, ME = m.user || null, m.tour && tour(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
+}).catch(() => $("#app").innerHTML = '<div class="empty">Não consegui carregar os dados. Tente recarregar.</div>');
+</script>
+</body>
+</html>
