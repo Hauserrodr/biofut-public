@@ -113,7 +113,7 @@ MSGS = HERE / "data" / "mensagens.json"  # phones.py: each member's own group me
 FEEDBACK = HERE / "data" / "feedback.jsonl"  # members' ideas and bug reports from #/eu; Gab reads them in /admin, Ideias
 ISSUES = HERE / "data" / "feedback_issues.json"  # fid(row) -> GitHub issue URL: each idea becomes an issue on its own
 GITHUB_TOKEN = os.environ.get("BIOFUT_GITHUB_TOKEN", "")  # fine-grained, Issues read/write on REPO only. Unset = /admin keeps "Virar issue"
-REPO = "Hauserrodr/biofut"
+REPO = "Hauserrodr/biofut-public"
 ISSUE_LOCK = threading.Lock()
 
 
