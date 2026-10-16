@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /api/
+Disallow: /admin
+Disallow: /entrar
+Disallow: /data/
+
+Sitemap: https://biofut.h-brain.org/sitemap.xml

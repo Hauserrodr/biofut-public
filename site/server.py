@@ -1935,7 +1935,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/state":
             with LOCK:
                 return self.send_json(public_state(load_state()))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png") or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml") or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()

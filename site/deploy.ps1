@@ -153,7 +153,7 @@ function Run-Ssh($cmd) {
 # 1. Files.
 Run-Ssh 'sudo mkdir -p /srv/biofut/data && sudo chown -R ubuntu:ubuntu /srv/biofut'
 $Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot\wiki.html", "$PSScriptRoot\transparencia.html", "$PSScriptRoot\entrar.html", "$PSScriptRoot\admin.html", "$PSScriptRoot\sumula.py", "$PSScriptRoot\costs.py", "$PSScriptRoot\sheet.py", "$PSScriptRoot\lista.py", "$PSScriptRoot\backup.sh", "$PSScriptRoot\db.py",
-  "$PSScriptRoot\site.css", "$PSScriptRoot\site.js", "$PSScriptRoot\og.png", "$PSScriptRoot\logo.png")
+  "$PSScriptRoot\site.css", "$PSScriptRoot\site.js", "$PSScriptRoot\og.png", "$PSScriptRoot\logo.png", "$PSScriptRoot\robots.txt", "$PSScriptRoot\sitemap.xml")
 if (Test-Path $Json) { $Files += $Json } else { 'biofut.json not here: keeping the one on the server' }
 & scp -q -i $Key @Files "${Target}:/srv/biofut/"
 if ($LASTEXITCODE) { throw "scp failed ($LASTEXITCODE)" }
