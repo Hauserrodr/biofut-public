@@ -1861,7 +1861,8 @@ class Handler(SimpleHTTPRequestHandler):
             if not user:
                 return self.send_json({"error": "só para membros"}, 403)
             if path == "/api/votes":  # key -> [sum, how many, yours]
-                return self.send_json({k: [sum(v.values()), len(v), v.get(user, 0)] for k, v in load_votes().items() if v})
+                return self.send_json({k: [*(list(v.values()).count(i) for i in (1, 2, 3)), v.get(user, 0)] if k[0] == "c" else  # Copa ideas: Top / Vai dar ruim / Que merda
+                                       [sum(v.values()), len(v), v.get(user, 0)] for k, v in load_votes().items() if v})
             return self.send_json([{**r, "id": fid(r)} for r in read_jsonl(WIKI / "feedback.jsonl")])
         m = re.fullmatch(r"/wiki/media/([\w-]+\.jpg)", path)
         if m:
@@ -2125,10 +2126,10 @@ class Handler(SimpleHTTPRequestHandler):
                            "payload": {"n": g["n"], "date": g["date"], "placar": f"{a['name']} {a['gf']} × {b['gf']} {b['name']}",
                                        "text": str(body.get("text") or "").strip()[:1000], "user": user, "fotos": fotos}})
                 return self.send_json({"ok": True})
-            if action == "vote":  # concordo/discordo on a report ("f:<id>", ±1), how funny a wiki bit is ("b:<id>", 1-5); 0 takes it back
+            if action == "vote":  # concordo/discordo on a report ("f:<id>", ±1), how funny a wiki bit is ("b:<id>", 1-5), a Copa idea ("c:<n>", 1-3); 0 takes it back
                 key, v = str(body.get("key") or ""), body.get("v")
-                if not user or not re.fullmatch(r"[fb]:[\w#.-]{1,60}", key) or type(v) is not int or not (
-                        -1 <= v <= 1 if key[0] == "f" else 0 <= v <= 5):
+                if not user or not re.fullmatch(r"[fbc]:[\w#.-]{1,60}", key) or type(v) is not int or not (
+                        -1 <= v <= 1 if key[0] == "f" else 0 <= v <= (3 if key[0] == "c" else 5)):
                     raise ValueError("voto inválido")
                 with LOCK:
                     votes = load_votes()

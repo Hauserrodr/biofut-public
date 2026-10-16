@@ -27,6 +27,13 @@
 .copa-hero{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin:22px 0 8px;padding:26px 24px;border-radius:18px;color:#fff;text-decoration:none;background:radial-gradient(120% 140% at 0% 0%,#f5c54255,transparent 55%),linear-gradient(135deg,#7a1a2e,#2a0b14 70%);border:1px solid #f5c54266;box-shadow:0 10px 40px #f5c54222}
 .copa-hero .kicker{color:#f5c542}.copa-hero h2{font:800 clamp(34px,8vw,56px)/1 var(--cond);margin:8px 0}.copa-hero h2 b{color:#f5c542}
 .copa-hero p{margin:0;opacity:.85}.copa-l{flex:1;min-width:240px}
+.pulse{animation:pulse 1.6s ease-in-out infinite;box-shadow:0 0 0 0 #f5c542aa}.btn.big{font-size:20px;padding:16px 26px}
+@keyframes pulse{50%{transform:scale(1.06);box-shadow:0 0 0 12px #f5c54200}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+.cd{display:flex;gap:14px;margin-top:8px}.cd span{display:grid;justify-items:center;font-size:12px;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
+.cd b{font:800 clamp(34px,8vw,56px)/1 var(--cond);color:#f5c542}
+.cv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.cv button{font:600 12px/1.15 var(--cond);padding:7px 4px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.cv button.on{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
 #giftDlg{text-align:center;border:2px solid #f5c542}
 #giftDlg .big{font:800 56px var(--cond);color:#f5c542;line-height:1}
 @media (prefers-reduced-motion:reduce){.rain{display:none}}
@@ -718,7 +725,7 @@ function copaBanner() {  // home: the SuperCopa in evidence until the day after 
   return `<a class="copa-hero fade" href="#/copa"><div class="copa-l"><div class="kicker">5ª Copa BioFut · SuperCopa 2026</div>
     <h2>${days > 0 ? `Faltam <b class="num">${days}</b> dia${days > 1 ? "s" : ""}` : days === 0 ? "É <b>hoje</b>!" : "Foi ontem!"}</h2>
     <p>21 de novembro, 8:30 às 14:30 · Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos.</p></div>
-    <div class="copa-r"><span class="btn pri">${COPA_FORM && days > 0 ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
+    <div class="copa-r"><span class="btn pri pulse">${COPA_FORM && days > 0 ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
 }
 function pageCopa() {
   const feats = [
@@ -733,18 +740,44 @@ function pageCopa() {
   ];
   return `
   <div class="kicker">5ª Copa BioFut · SuperCopa 2026</div><h1 style="font-size:52px;margin-top:8px">21 de novembro, 8:30 às 14:30</h1>
-  <p class="muted" style="max-width:640px;font-size:17px">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Edu, Canova, Bruno M e Gab (só a parte tech).</p>
-  <div class="card pad" style="margin-top:22px;display:flex;flex-wrap:wrap;align-items:center;gap:14px">
-    <div style="flex:1;min-width:220px"><div class="kicker">Inscrições</div><p style="margin:6px 0 0">Inscrições abertas: preencha o formulário da comissão para garantir a vaga.</p></div>
-    ${COPA_FORM ? `<a class="btn pri" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a>` : '<span class="pill g">Formulário em breve no grupo</span>'}
+  <p class="muted" style="max-width:640px;font-size:17px">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Dan, Edu, Canova, Bruno M, Matte e Gab (só a parte tech).</p>
+  <div class="copa-hero" style="margin-top:22px"><div class="copa-l"><div class="kicker">Começa em</div><div class="cd" id="cd">${copaClock()}</div></div>
+    <div class="copa-r">${COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}</div>
   </div>
-  <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Diga no grupo o que vale a pena e o que é viagem.</p></div></div>
-    <div class="grid g3">${feats.map(([i, t, d]) => `<div class="card pad"><div style="font-size:28px">${i}</div><h3 style="margin:8px 0 6px">${t}</h3><p class="muted" style="margin:0;font-size:14px">${d}</p></div>`).join("")}</div></div>
+  <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Vote em cada uma: o que vale a pena e o que é viagem.</p></div></div>
+    <div class="grid g3">${feats.map(([i, t, d], n) => `<div class="card pad" style="display:flex;flex-direction:column"><div style="font-size:28px">${i}</div><h3 style="margin:8px 0 6px">${t}</h3><p class="muted" style="margin:0 0 12px;font-size:14px;flex:1">${d}</p>
+      <div class="cv">${CV.map((l, v) => `<button type="button" data-cv="c:${n}" data-v="${v + 1}">${l} <b class="num"></b></button>`).join("")}</div></div>`).join("")}</div>
+    <form class="card pad" id="copaIdea" style="margin-top:14px"><h3>Tem uma ideia melhor?</h3><p class="dim" style="font-size:13px;margin:4px 0 10px">Manda aqui. Vai para a comissão e vira tarefa para os devs do BioFut.</p>
+      <textarea id="copaIdeaT" rows="3" maxlength="2000" style="width:100%" aria-label="Sua ideia para a Copa" placeholder="Ex.: transmissão ao vivo da final"></textarea>
+      <button class="btn pri" style="margin-top:10px">Enviar ideia</button></form></div>
   <div class="sec"><div class="sec-h"><div><h2>As outras copas</h2></div></div>
     <ul class="list card pad">
       <li><span class="pill">2024</span><span>3ª copa, decidida nos pênaltis: Babuínos campeões, Barp melhor jogador.</span></li>
       <li><span class="pill">2025</span><span>Grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Edu melhor da copa de novo.</span></li>
     </ul></div>`;
+}
+
+const CV = ["🔥 Top", "😬 Vai dar ruim", "💩 Que merda..."];  // vote 1 / 2 / 3 on a Copa idea (key "c:<n>", server "vote")
+function copaClock() {
+  const ms = Math.max(0, new Date(COPA_DAY + "T08:30") - new Date()), u = [[864e5, "dias"], [36e5, "horas"], [6e4, "min"], [1e3, "seg"]];
+  return u.map(([k, l], i) => `<span><b class="num">${String(Math.floor(ms / k) % (i ? [0, 24, 60, 60][i] : 1e9)).padStart(2, "0")}</b>${l}</span>`).join("");
+}
+setInterval(() => { const c = $("#cd"); if (c) c.innerHTML = copaClock(); }, 1000);
+async function bindCopa() {
+  const show = votes => document.querySelectorAll("[data-cv]").forEach(b => { const x = votes[b.dataset.cv] || [0, 0, 0, 0], v = +b.dataset.v;
+    b.querySelector("b").textContent = x[v - 1] || ""; b.classList.toggle("on", x[3] === v); });
+  const me = (await BF.me).user, login = () => location.href = "/entrar?next=" + encodeURIComponent("/#/copa");
+  if (me) fetch("/api/votes").then(r => r.ok ? r.json() : {}).then(show).catch(() => {});
+  document.querySelectorAll("[data-cv]").forEach(b => b.onclick = async () => {
+    if (!me) return login();
+    const v = b.classList.contains("on") ? 0 : +b.dataset.v, j = await post("vote", {key: b.dataset.cv, v});
+    if (j) fetch("/api/votes").then(r => r.json()).then(show).catch(() => {});
+  });
+  $("#copaIdea").onsubmit = async e => { e.preventDefault();
+    if (!me) return login();
+    const t = $("#copaIdeaT").value.trim(); if (!t) return;
+    if (await post("feedback", {kind: "ideia", text: "Copa: " + t})) { $("#copaIdeaT").value = ""; toast("Valeu! A ideia foi para a comissão"); }
+  };
 }
 
 function pageApoie() {
@@ -1195,7 +1228,7 @@ function render() {
   const pages = {
     "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
     cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
-    jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa],
+    jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa, bindCopa],
     planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu],
   };
   const [view, bind] = pages[page ?? ""] || pages[""];
