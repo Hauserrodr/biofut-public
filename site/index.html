@@ -1256,7 +1256,7 @@ function coinRain(n = 40) {  // ponytail: CSS 3D coins, no WebGL; three.js only 
   }
   document.body.appendChild(r); setTimeout(() => r.remove(), 6500);
 }
-const IG_REEL = "";  // launch reel URL; empty = the Instagram popup stays off
+const IG_REEL = "https://www.instagram.com/p/Dej3TUyp4BY/";  // launch reel URL; empty = the Instagram popup stays off
 function insta() {  // once per browser, after the gift (if any)
   if (!IG_REEL || store.get("bfInsta")) return;
   store.set("bfInsta", "1"); $("#instaGo").href = IG_REEL; $("#instaGo").onclick = () => $("#instaDlg").close(); $("#instaDlg").showModal();
