@@ -16,6 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/site.css">
+<style>#bell{position:relative;font-size:16px;line-height:1}#bell i{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:var(--acc);border:2px solid var(--bg)}#newsDlg ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}#newsDlg li small{color:var(--mut)}</style>
 </head>
 <body>
 <script src="/site.js"></script>
@@ -1124,6 +1125,31 @@ async function post(action, body) {
   return j;
 }
 
+// ---------- Novidades: 🔔 in the header; newest first, seen-state and visited routes in localStorage ----------
+const NEWS = [  // d = ISO date, h = route (or full URL), t = text
+  {d: "2026-10-15", h: "https://github.com/Hauserrodr/biofut-public", t: "O código do site agora é aberto no GitHub."},
+  {d: "2026-10-14", h: "#/duelo/dia", t: "Duelo do dia: o mesmo desafio de cartas para todo mundo, para comparar no grupo."},
+  {d: "2026-10-14", h: "#/biobet", t: "BioBet: aposte suas moedas no jogo da semana e nos mercados do grupo."},
+  {d: "2026-10-14", h: "#/cartas", t: "Cartas: cada craque virou uma carta, e só existe uma cromada de cada."},
+];
+const HINTS = {duelo: ["#/duelo/dia", "Já tentou o Duelo do dia?"], cartas: ["#/cartas", "Já viu as Cartas dos craques?"], biobet: ["#/biobet", "Já passou na BioBet?"]};
+const visited = () => { try { return JSON.parse(store.get("biofutVisited") || "[]") } catch { return [] } };
+function bellHint() {  // one per visit: the first tab never opened, picked once
+  return bellHint.v ??= Object.entries(HINTS).find(([k]) => !visited().includes(k))?.[1] || null;
+}
+function bellDot() { $("#bell i").hidden = !(NEWS[0].d > (store.get("biofutSeen") || "") || (bellHint() && !bellHint.shown)); }
+function bellInit() {
+  document.querySelector(".bar").insertBefore(Object.assign(document.createElement("button"), {id: "bell", className: "theme", ariaLabel: "Novidades", innerHTML: '🔔<i hidden></i>'}), $("#theme"));
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="newsDlg" aria-label="Novidades"><form method="dialog"><h3>Novidades</h3><ul id="newsL"></ul>
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn pri">Fechar</button></div></form></dialog>`);
+  $("#bell").onclick = () => {
+    const hint = bellHint(), li = (h, t, d) => `<li><a class="link" href="${esc(h)}"${h[0] === "#" ? "" : ' target="_blank" rel="noopener"'}>${esc(t)}</a>${d ? `<br><small>${dt(d)}</small>` : ""}</li>`;
+    $("#newsL").innerHTML = (hint ? li(hint[0], "💡 " + hint[1]) : "") + NEWS.map(n => li(n.h, n.t, n.d)).join("");
+    $("#newsL").onclick = e => e.target.closest("a") && $("#newsDlg").close();
+    store.set("biofutSeen", NEWS[0].d); bellHint.shown = true; bellDot(); $("#newsDlg").showModal();
+  };
+  bellDot();
+}
 // ---------- router ----------
 function render() {
   if (!D) return; // hashchange antes do /api/data; o fetch chama render() ao chegar
@@ -1131,6 +1157,7 @@ function render() {
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "/#/" + (page === "jogador" ? "tabela" : page || "")));
   const app = $("#app"), y = scrollY, same = render.last === h; render.last = h;
   const name = arg && decodeURIComponent(arg);
+  if (page && !visited().includes(page)) store.set("biofutVisited", JSON.stringify([...visited(), page]));
   const pages = {
     "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
     cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
@@ -1156,7 +1183,7 @@ setInterval(async () => {
 Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r => r.json())]).then(([d, s]) => {
   D = d; setState(s);
   $("#foot").textContent = `${G.length} jogos registrados`;
-  render();
+  render(); bellInit();
   BF.me.then(m => (ROLE = m.role, ME = m.user || null, m.tour && tour(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
 }).catch(() => $("#app").innerHTML = '<div class="empty">Não consegui carregar os dados. Tente recarregar.</div>');
 </script>
