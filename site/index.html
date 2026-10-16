@@ -738,10 +738,10 @@ const SHOPS = [  // [name, who, what, url]
 ];
 function bindApoie() {
   const usd = v => "US$ " + (v || 0).toFixed(v < 0.01 && v ? 4 : 2);
-  fetch("/api/custos").then(r => r.json()).then(c => $("#custos").innerHTML = `<div class="kicker">Quanto custa</div><p style="margin:6px 0 0">` +
+  fetch("/api/custos").then(r => r.json()).then(c => $("#custos")?.isConnected && ($("#custos").innerHTML = `<div class="kicker">Quanto custa</div><p style="margin:6px 0 0">` +
     (c.chamadas ? `As automações (IA lendo súmulas por foto) custaram <b>${usd(c.usd_mes)}</b> este mês e ${usd(c.usd_total)} desde ${c.desde}, em ${c.chamadas} chamadas.`
       : "As automações (IA) ainda não gastaram nada.") +
-    ` O servidor é uma máquina gratuita da Oracle dividida com outros sites do Gab; o domínio é dele. Detalhes na <a href="/transparencia">Transparência</a>.</p>`).catch(() => {});
+    ` O servidor é uma máquina gratuita da Oracle dividida com outros sites do Gab; o domínio é dele. Detalhes na <a href="/transparencia">Transparência</a>.</p>`)).catch(() => {});
   $("#shop").onclick = async () => {
     if (!(await BF.me).user) return location.href = "/entrar?next=" + encodeURIComponent("/#/apoie");
     const text = prompt("Nome da empresa, o que ela faz e o link (site ou Instagram):");
@@ -1002,6 +1002,7 @@ function pagePlanilha() {
 }
 async function bindPlanilha() {
   const rows = await fetch("/api/planilha").then(r => r.json()).catch(() => null), heads = ["Data", "Time", "Nome", "Gol", "Assist.", "Gol contra", "Capitão"];
+  if (!$("#pl")) return;  // left the route while the fetch ran
   $("#pl").innerHTML = !rows ? '<div class="empty">Não consegui carregar. Tente recarregar.</div>'
     : !rows.length ? '<div class="empty">Nada pendente: a planilha já tem todos os jogos do site.</div>'
     : rows.map(g => `<div class="card pad"><div class="row" style="justify-content:space-between"><h3>${esc(g.line)}</h3>
@@ -1077,6 +1078,7 @@ async function bindEu() {
   };
   const mine = async () => {
     const xs = await fetch("/api/feedback").then(r => r.json()).catch(() => []);
+    if (!$("#mine")) return;
     $("#mine").innerHTML = (Array.isArray(xs) ? xs : []).slice(-5).reverse().map(x => `<li><span class="pill">${esc(x.kind)}</span> ${esc(x.text.slice(0, 120))}<small class="r dim">${esc(x.ts.slice(8, 10) + "/" + x.ts.slice(5, 7))}</small></li>`).join("");
   };
   $("#fb").onsubmit = async e => {
@@ -1087,6 +1089,7 @@ async function bindEu() {
   mine();
   if (!$("#msgs")) return;
   MSG ??= await fetch("/api/mensagens").then(r => r.json()).then(x => Array.isArray(x) ? x : []).catch(() => []);
+  if (!$("#msgs")) return;
   const day = t => new Date(t * 1000).toLocaleDateString("pt-BR", {day: "2-digit", month: "short", year: "numeric"});
   const show = () => {  // the newest 50 that match: a few thousand rows would choke a phone
     const q = $("#msgq").value.trim().toLowerCase(), xs = q ? MSG.filter(m => m[1].toLowerCase().includes(q)) : MSG;
