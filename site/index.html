@@ -747,7 +747,7 @@ function bindApoie() {
     const text = prompt("Nome da empresa, o que ela faz e o link (site ou Instagram):");
     if (text?.trim() && await post("feedback", {kind: "empresa", text})) toast("Pedido enviado! O Gab coloca aqui.");
   };
-  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { await navigator.clipboard.writeText(b.dataset.copy); toast("Copiado"); });
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copiado"); } catch { toast("Não deu pra copiar", true); } });
   const draw = () => new QRCode($("#qr"), {text: D.pix.payload, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M});
   if (window.QRCode) return draw();
   const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"; s.onload = draw; document.head.appendChild(s);
