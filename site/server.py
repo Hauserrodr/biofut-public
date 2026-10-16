@@ -1071,7 +1071,8 @@ def wa_check(poster, wa, roster):
 def sync_list(st, text, ts, poster, pk="", wa=""):
     """A sign-up list posted in the group -> Jogo da semana. Its names join the confirmed list as the tabela spells them,
     names taken off it leave (unless drafted or bet on), names that signed up on the site stay. A list for a later date
-    starts that match once this one's day has come (and, on the day itself, no draft is open). Nobody is pinged: they
+    starts that match once this one's day has come (and, on the day itself, no draft is open), or at once when this one has
+    no draft and no bets (rescheduled: its site sign-ups are dropped, they were for another date). Nobody is pinged: they
     are all in the group. The list belongs to whoever posted its first copy (pk: phone_pk of their number, wa: their
     WhatsApp name). -> what changed, or None."""
     seen = st["last_list"] = {"text": text[:2000], "at": int(ts), "by": poster, "date": None, "why": "não é uma lista"}  # what the bot sent last, shown on Jogo da semana
@@ -1090,7 +1091,7 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
     for d in sorted(owners)[:-8]:
         del owners[d]  # a few weeks of who opened which list is plenty
     mt, today = st["match"], time.strftime("%Y-%m-%d", time.gmtime(ts - 3 * 3600))  # the group's day (Brasília, see log_event)
-    if lst["date"] < mt["date"] or lst["date"] > mt["date"] and mt["date"] and (mt["date"] > today or mt["date"] == today and mt["draft"]):
+    if lst["date"] < mt["date"] or lst["date"] > mt["date"] and mt["date"] and (mt["draft"] or mt["bets"]) and (mt["date"] > today or mt["date"] == today and mt["draft"]):  # no draft and no bets yet: the game moved (list reset, new date), so the new list replaces it
         seen["why"] = "lista de um jogo antigo" if lst["date"] < mt["date"] else f"próximo jogo: espera o de {mt['date']}"
         return None  # an old list reposted, or next week's list before this week's game
     if lst["date"] != mt["date"]:
