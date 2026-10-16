@@ -506,8 +506,13 @@ r = server.sync_list(st, lst("15/10", "Zeca", "Novo"), brt(10, 11), "Rafo")
 assert r == {"date": "2026-10-15", "added": ["Novo"], "removed": []} and "Dan" in st["match"]["confirmed"], "a truncated copy"
 assert st["last_list"]["why"].startswith("aplicada: +1 -0, ninguém saiu (4 nomes"), st["last_list"]
 assert server.sync_list(st, lst("08/10", "Zeca"), brt(10, 12), "Rafo") is None and st["last_list"]["why"] == "lista de um jogo antigo", "an old list"
+resched = _copy.deepcopy(st)  # no draft, no bets: the game was rescheduled (new date, list reset), so the new list replaces it
+server.sync_list(resched, lst("17/10", "Zeca", "Nando"), brt(10, 14), "Dan")
+assert resched["match"]["date"] == "2026-10-17" and resched["match"]["confirmed"] == ["Zeca", "Nando"], "rescheduled"
+st["match"]["bets"].append({"id": "b1", "bettor": "Dan", "pick": "A", "stake": 1, "odds": 2})  # with a bet the game stands
 assert server.sync_list(st, lst("22/10", "Zeca"), brt(10, 14), "Dan") is None and st["match"]["date"] == "2026-10-15", "game not played yet"
 assert st["last_list"] == {"text": lst("22/10", "Zeca"), "at": int(brt(10, 14)), "by": "Dan", "date": "2026-10-22", "why": "próximo jogo: espera o de 2026-10-15"}
+st["match"]["bets"].clear()
 server.sync_list(st, lst("22/10", "Zeca", "dan", "tito"), brt(10, 16), "Rafo")
 assert st["match"]["date"] == "2026-10-22" and st["match"]["confirmed"] == ["Zeca", "Dan", "Tito"] and st["match"]["lista"]["owner"] == "Dan"
 apply(st, "draft_start", {"captains": ["Zeca", "Dan"]})
