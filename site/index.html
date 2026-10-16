@@ -34,6 +34,7 @@
 .cd b{font:800 clamp(34px,8vw,56px)/1 var(--cond);color:#f5c542}
 .cv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.cv button{font:600 12px/1.15 var(--cond);padding:7px 4px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
 .cv button.on{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.cvb{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--line);margin-top:10px}.cvb i:nth-child(1){background:#2fbf71}.cvb i:nth-child(2){background:#f2b632}.cvb i:nth-child(3){background:#9b5b34}.cvt{font-size:12px;margin:6px 0 0}
 #giftDlg{text-align:center;border:2px solid #f5c542}
 #giftDlg .big{font:800 56px var(--cond);color:#f5c542;line-height:1}
 @media (prefers-reduced-motion:reduce){.rain{display:none}}
@@ -744,9 +745,10 @@ function pageCopa() {
   <div class="copa-hero" style="margin-top:22px"><div class="copa-l"><div class="kicker">Começa em</div><div class="cd" id="cd">${copaClock()}</div></div>
     <div class="copa-r">${COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}</div>
   </div>
-  <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Vote em cada uma: o que vale a pena e o que é viagem.</p></div></div>
+  <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Vote em cada uma: o que vale a pena e o que é viagem. O voto é anônimo: só a contagem aparece, ninguém vê quem votou em quê.</p></div></div>
     <div class="grid g3">${feats.map(([i, t, d], n) => `<div class="card pad" style="display:flex;flex-direction:column"><div style="font-size:28px">${i}</div><h3 style="margin:8px 0 6px">${t}</h3><p class="muted" style="margin:0 0 12px;font-size:14px;flex:1">${d}</p>
-      <div class="cv">${CV.map((l, v) => `<button type="button" data-cv="c:${n}" data-v="${v + 1}">${l} <b class="num"></b></button>`).join("")}</div></div>`).join("")}</div>
+      <div class="cv">${CV.map((l, v) => `<button type="button" data-cv="c:${n}" data-v="${v + 1}">${l} <b class="num"></b></button>`).join("")}</div>
+      <div class="cvb" data-cvb="c:${n}"></div><p class="dim cvt" data-cvt="c:${n}">Entre para votar e ver a votação</p></div>`).join("")}</div>
     <form class="card pad" id="copaIdea" style="margin-top:14px"><h3>Tem uma ideia melhor?</h3><p class="dim" style="font-size:13px;margin:4px 0 10px">Manda aqui. Vai para a comissão e vira tarefa para os devs do BioFut.</p>
       <textarea id="copaIdeaT" rows="3" maxlength="2000" style="width:100%" aria-label="Sua ideia para a Copa" placeholder="Ex.: transmissão ao vivo da final"></textarea>
       <button class="btn pri" style="margin-top:10px">Enviar ideia</button></form></div>
@@ -764,8 +766,14 @@ function copaClock() {
 }
 setInterval(() => { const c = $("#cd"); if (c) c.innerHTML = copaClock(); }, 1000);
 async function bindCopa() {
-  const show = votes => document.querySelectorAll("[data-cv]").forEach(b => { const x = votes[b.dataset.cv] || [0, 0, 0, 0], v = +b.dataset.v;
-    b.querySelector("b").textContent = x[v - 1] || ""; b.classList.toggle("on", x[3] === v); });
+  const show = votes => {
+    document.querySelectorAll("[data-cv]").forEach(b => { const x = votes[b.dataset.cv] || [0, 0, 0, 0], v = +b.dataset.v;
+      b.querySelector("b").textContent = x[v - 1] || ""; b.classList.toggle("on", x[3] === v); });
+    document.querySelectorAll("[data-cvb]").forEach(bar => {
+    const k = bar.dataset.cvb, x = (votes[k] || [0, 0, 0]).slice(0, 3), n = x[0] + x[1] + x[2], pc = c => Math.round(100 * c / n) + "%";
+    bar.innerHTML = n ? x.map(c => `<i style="width:${pc(c)}"></i>`).join("") : "";  // the split, counts only: the server never sends who voted
+    $(`[data-cvt="${k}"]`).textContent = n ? `${n} voto${n > 1 ? "s" : ""} · ` + x.map((c, i) => `${pc(c)} ${CV[i].split(" ")[0]}`).join(" · ") : "Nenhum voto ainda: seja o primeiro"; });
+  };
   const me = (await BF.me).user, login = () => location.href = "/entrar?next=" + encodeURIComponent("/#/copa");
   if (me) fetch("/api/votes").then(r => r.ok ? r.json() : {}).then(show).catch(() => {});
   document.querySelectorAll("[data-cv]").forEach(b => b.onclick = async () => {
