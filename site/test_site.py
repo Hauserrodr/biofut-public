@@ -562,6 +562,11 @@ def call(path, body=None, token="tok", cookie=""):
     except urllib.error.HTTPError as e:
         return e.code, e.read()
 jpg = b64.b64encode(b"\xff\xd8 face").decode()
+for junk in (b"null", b"42", b"[1]", b'"x"'):  # #10: a JSON body that isn't an object is a 400, not a dropped connection
+    for path, ck in (("/api/vote", "biofut=" + server.sign("Dan", "127.0.0.1")), ("/api/cancelado", "")):
+        try: urllib.request.urlopen(urllib.request.Request(url + path, junk, {"X-BioFut-Token": "tok", "Cookie": ck})); code = 200
+        except urllib.error.HTTPError as e: code = e.code
+        assert code == (400 if "vote" in path else 200), (path, junk, code)
 assert call("/api/avatar", {"phone": "5551998765432", "image": jpg}, token="no")[0] == 401
 assert json.loads(call("/api/avatar", {"phone": "5551900000000", "image": jpg})[1]) == {"ok": False}, "nobody's number"
 assert json.loads(call("/api/avatar", {"phone": "5551998765432", "image": jpg})[1]) == {"ok": True}
