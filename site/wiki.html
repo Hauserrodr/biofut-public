@@ -355,7 +355,8 @@ $('q').addEventListener('change', e => { const s = byName[e.target.value.toLower
 window.addEventListener('hashchange', route);
 
 (async () => {
-  [DATA, { user: USER }] = await Promise.all([fetch('/api/wiki').then(r => r.json()), BF.me]);
+  try { [DATA, { user: USER }] = await Promise.all([fetch('/api/wiki').then(r => { if (!r.ok) throw 0; return r.json(); }), BF.me]); }
+  catch { $('view').innerHTML = '<p class="err">Não deu para carregar a BioWiki agora. Tente de novo em instantes.</p>'; return; }
   fetch('/api/data').then(r => r.json()).then(d => {  // who also plays: person pages link to their stats (cached 5 min)
     PLAYERS = new Set(d.games.flatMap(g => g.teams.flatMap(t => t.players.map(p => p[0]))));
     if (/^#\/p\//.test(location.hash)) route();
