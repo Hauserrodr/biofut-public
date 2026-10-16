@@ -53,6 +53,7 @@ OWN_OFF = 0.3  # 30% off your own card (index.html mirrors it): the launch video
 def card_cost(prices, user, card):
     """What `user` pays for `card`: the list price, 30% off (rounded down) when it is their own card."""
     return int(prices[card] * (1 - OWN_OFF)) if card == user else prices[card]
+BONUS, BONUS_WHY, BONUS_END = 25, "presente do lançamento", "2026-10-31"  # one gift per member, claimed on their first visit
 WELCOME = DECK * CARD_MIN  # coins everyone starts with: enough for a minimal deck (Gab, 2026-10-13), the stats coins come on top
 DUEL_WIN = 0.0001  # coins per Duelo won (Gab: "0.0001 (yes)")
 PLAY, LEAVE = 3, 1  # coins for playing a match, coins for leaving the list after confirming (Gab, 2026-10-14)
@@ -495,6 +496,21 @@ def season_of(date):
     return f"{date[:4]}/{1 if int(date[5:7]) <= 6 else 2}"
 
 
+def guard(mt, action, body, user, staff):
+    """Who may do what (jarvis 2026-10-16): staff anything; a captain only as themself; nobody closes a match blind."""
+    if staff:
+        return
+    caps = (mt["draft"] or {}).get("captains", [])
+    if action in ("close_match", "draft_undo") and user not in caps:
+        raise ValueError("só os capitães ou o conselho")
+    if "captain" in body and clean_name(body.get("captain")) != user:
+        raise ValueError("só o próprio capitão")
+    if action == "unconfirm" and clean_name(body.get("name")) != user:
+        body["free"] = True  # taking someone else off the list never costs them coins
+    if action == "new_match" and not re.fullmatch(r"\d{4}-\d\d-\d\d", str(body.get("date", ""))):
+        raise ValueError("data inválida")
+
+
 def apply(state, action, body, data=None, base=None):
     """Mutates state for one POST action. Raises ValueError on bad input."""
     mt = state["match"]
@@ -515,7 +531,7 @@ def apply(state, action, body, data=None, base=None):
             raise ValueError("já escolhido no draft")
         if draft:
             draft.get("pending", {}).pop(name, None)
-        if name in conf:
+        if name in conf and not body.get("free"):
             state["ledger"].append({"player": name, "amount": -LEAVE, "reason": f"saiu da lista {mt['date']}"})
         mt["confirmed"] = [c for c in conf if c != name]
     elif action == "draft_start":
@@ -2135,6 +2151,14 @@ class Handler(SimpleHTTPRequestHandler):
                 elif action == "deck":
                     set_deck(st, user, [clean_name(n) for n in body.get("cards") or []][:DECK + 1])
                     save_state(st)
+                elif action == "bonus":  # launch gift (Gab, 2026-10-16): BONUS coins once per member until BONUS_END
+                    if not user:
+                        raise ValueError("entre primeiro")
+                    got = time.strftime("%Y-%m-%d") <= BONUS_END and not any(x["player"] == user and x["reason"] == BONUS_WHY for x in st["ledger"])
+                    if got:
+                        st["ledger"].append({"player": user, "amount": BONUS, "reason": BONUS_WHY})
+                        save_state(st)
+                    return self.send_json({"bonus": BONUS if got else 0})
                 elif action == "tour":  # the member saw (or skipped) the first-login tour
                     if not user:
                         raise ValueError("entre primeiro")
@@ -2162,6 +2186,7 @@ class Handler(SimpleHTTPRequestHandler):
                         if not user:
                             raise ValueError("entre para votar")
                         body["voter"] = user
+                    guard(st["match"], action, body, user, self.role() in ("admin", "conselho"))
                     before, d0 = heads(st["match"]), json.loads(json.dumps(st["match"]["draft"]))
                     apply(st, action, body, DATA, base_of(st, DATA))
                     news = match_news(st["played"][-1]) if action == "close_match" else draft_news(st, action, d0) if st["match"]["draft"] else None
