@@ -282,7 +282,7 @@ function pageTabela() {
   return `
   <div class="sec-h"><div><div class="kicker">Classificação</div><h1 style="font-size:52px;margin-top:8px">Tabela</h1></div></div>
   <div class="row" style="margin-bottom:16px">
-    <select class="in" id="season"><option value="all">Todas as temporadas</option>${seasons.map(s => `<option ${s === ui.season ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+    <select class="in" id="season" aria-label="Temporada"><option value="all">Todas as temporadas</option>${seasons.map(s => `<option ${s === ui.season ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
     <label class="row muted" style="gap:8px;font-size:14px">mín. jogos <input class="in mini" id="min" type="number" min="1" value="${ui.min}"></label>
     <input class="in" id="q" placeholder="Buscar jogador" value="${esc(ui.q)}" style="flex:1;max-width:260px">
   </div>
@@ -442,7 +442,7 @@ function pageJogo() {
   const ovr = n => C[n] ? C[n].ovr : "—";
   let body = "";
   if (!m.date) body = `<div class="card pad"><h3>Marcar o próximo jogo</h3><p class="muted" style="font-size:14px">Escolha a data. Isso abre a lista de confirmados.</p>
-    <div class="row"><input class="in" type="date" id="date"><button class="btn pri" id="mark">Abrir lista</button></div></div>`;
+    <div class="row"><input class="in" type="date" id="date" aria-label="Data da pelada"><button class="btn pri" id="mark">Abrir lista</button></div></div>`;
   else {
     const drafted = d ? Object.values(d.teams).flat() : [];
     const pool = conf.filter(n => !drafted.includes(n)).sort((a, b) => (C[b]?.ovr ?? 0) - (C[a]?.ovr ?? 0));
@@ -476,7 +476,7 @@ function pageJogo() {
       if (d.ok.length === 2) body += redraftBlock(d) + betsBlock(d) + resultBlock(d);
     }
     body += `<details style="margin-top:28px"><summary class="dim" style="cursor:pointer;font-size:14px">Cancelar ou remarcar este jogo</summary>
-      <div class="row" style="margin-top:10px"><input class="in" type="date" id="date" value="${esc(m.date)}"><button class="btn" id="mark">Recomeçar com esta data</button>
+      <div class="row" style="margin-top:10px"><input class="in" type="date" id="date" aria-label="Data da pelada" value="${esc(m.date)}"><button class="btn" id="mark">Recomeçar com esta data</button>
       <span class="dim" style="font-size:13px">Apaga lista e draft. Apostas são devolvidas.</span></div></details>`;
   }
   return `
@@ -720,7 +720,7 @@ function pageApoie() {
       <p class="muted">Qualquer valor. Use a chave do grupo, a mesma das listas semanais:</p>
       <div class="row" style="margin:14px 0"><code style="font:600 18px ui-monospace,monospace">${esc(D.pix.key)}</code><button class="btn sm" data-copy="${esc(D.pix.key)}">Copiar chave</button></div>
       <label class="dim" style="font-size:13px">Pix copia e cola</label>
-      <textarea class="pix" readonly>${esc(D.pix.payload)}</textarea>
+      <textarea class="pix" readonly aria-label="Pix copia e cola">${esc(D.pix.payload)}</textarea>
       <button class="btn pri" style="margin-top:10px" data-copy="${esc(D.pix.payload)}">Copiar código Pix</button></div>
     <div class="card pad" style="display:grid;place-items:center;gap:12px"><div class="qr" id="qr"></div><span class="dim" style="font-size:13px">Aponte o app do banco. O Pix chega com a mensagem “Apoio pelo site BioFut”.</span></div>
   </div>
