@@ -1126,6 +1126,7 @@ async function post(action, body) {
 
 // ---------- router ----------
 function render() {
+  if (!D) return; // hashchange antes do /api/data; o fetch chama render() ao chegar
   const h = location.hash.slice(1) || "/", [, page, arg] = h.split("/");
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "/#/" + (page === "jogador" ? "tabela" : page || "")));
   const app = $("#app"), y = scrollY, same = render.last === h; render.last = h;
