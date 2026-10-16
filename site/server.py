@@ -1945,7 +1945,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(out or {"ok": False})
         if action == "cancelado":  # the bot: a member wrote "cancelado" in the group on the game's day or the one before
             body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 2000)) or b"{}")
-            who = member_of(body.get("phone"))
+            who = member_of(body.get("phone") if isinstance(body, dict) else None)
             if not who:
                 return self.send_json({"ok": False, "why": "não é membro"})
             today = time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600))
@@ -2014,7 +2014,9 @@ class Handler(SimpleHTTPRequestHandler):
             if length > MAX_PHOTO * 2:
                 raise ValueError("payload grande demais")
             body = json.loads(self.rfile.read(length) or b"{}")
-            self.body = body if isinstance(body, dict) else {}
+            if not isinstance(body, dict):
+                return self.send_json({"error": "corpo deve ser um objeto JSON"}, 400)
+            self.body = body
             if action == "login/start":
                 too_many_fails(self.ip(), failed=True)  # every request counts: 10 an hour per IP
                 out, code = login_start(body.get("phone"), self.ip())  # no LOCK: the bot can take 10 s, sign-ups must not wait
