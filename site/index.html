@@ -17,11 +17,30 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/site.css">
 <style>#bell{position:relative;font-size:16px;line-height:1}#bell i{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:var(--acc);border:2px solid var(--bg)}#newsDlg ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}#newsDlg li small{color:var(--mut)}</style>
+<style>/* launch gift: 3D BioFut coins raining (CSS only) */
+.rain{position:fixed;inset:0;pointer-events:none;z-index:90;overflow:hidden;perspective:700px}
+.rain i{position:absolute;top:-90px;width:var(--s);height:var(--s);animation:fall var(--t) cubic-bezier(.4,0,.8,1) var(--d) forwards;transform-style:preserve-3d}
+.rain b{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff6c2,#f5c542 35%,#b8860b 75%,#7a5a08);box-shadow:inset 0 0 0 3px #e0a826,inset 0 0 0 5px #8a6510;display:grid;place-items:center;animation:spin var(--r) linear infinite;backface-visibility:visible}
+.rain b img{width:62%;filter:drop-shadow(0 1px 0 #7a5a08)}
+@keyframes fall{to{transform:translate3d(var(--x),calc(100vh + 120px),var(--z)) rotateZ(var(--rz))}}
+@keyframes spin{to{transform:rotateY(360deg) rotateX(25deg)}}
+.copa-hero{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin:22px 0 8px;padding:26px 24px;border-radius:18px;color:#fff;text-decoration:none;background:radial-gradient(120% 140% at 0% 0%,#f5c54255,transparent 55%),linear-gradient(135deg,#7a1a2e,#2a0b14 70%);border:1px solid #f5c54266;box-shadow:0 10px 40px #f5c54222}
+.copa-hero .kicker{color:#f5c542}.copa-hero h2{font:800 clamp(34px,8vw,56px)/1 var(--cond);margin:8px 0}.copa-hero h2 b{color:#f5c542}
+.copa-hero p{margin:0;opacity:.85}.copa-l{flex:1;min-width:240px}
+#giftDlg{text-align:center;border:2px solid #f5c542}
+#giftDlg .big{font:800 56px var(--cond);color:#f5c542;line-height:1}
+@media (prefers-reduced-motion:reduce){.rain{display:none}}
+</style>
 </head>
 <body>
 <script src="/site.js"></script>
 <main><div id="app"><div class="skel"></div></div><div id="radio" class="card pad sec" hidden></div></main>
 <footer><div><span>BioFut · Futebol da Biologia UFRGS · desde 2019</span><span id="foot"></span></div></footer>
+<dialog id="giftDlg"><form method="dialog">
+  <div class="big">+25</div><h3>moedas BioFut de presente</h3>
+  <p class="muted" style="font-size:14px;margin:8px 0 16px">O código do BioFut agora é aberto. Pra comemorar, 25 moedas pra você gastar em cartas, duelos e na BioBet.</p>
+  <button class="btn pri" value="ok">Valeu!</button>
+</form></dialog>
 <dialog id="pinDlg"><form method="dialog">
   <h3>PIN do grupo</h3>
   <p class="muted" style="font-size:14px;margin:8px 0 16px">Para salvar qualquer coisa aqui, use o PIN que está na descrição do grupo do WhatsApp.</p>
@@ -236,6 +255,7 @@ function pageHome() {
     <p class="lead">Tudo do BioFut num lugar só: a tabela de cada temporada, todos os jogos desde 2019, as cartas, o draft da semana e a BioBet.</p>
     <div class="counters num"><div><b>${fmt(G.length)}</b><span>Jogos</span></div><div><b>${fmt(goals)}</b><span>Gols</span></div><div><b>${fmt(pl.length)}</b><span>Jogadores</span></div><div><b>${seasons.length}</b><span>Temporadas</span></div></div>
   </section>
+  ${copaBanner()}
   ${onThisDay.length ? `<section class="sec"><div class="sec-h"><div><div class="kicker">Hoje na história</div><h2>Esta semana, em outros anos</h2></div><a class="link" href="#/duelo/dia">Duelo do dia →</a></div>
     <div class="grid g2">${onThisDay.map(matchRow).join("")}</div></section>` : ""}
 
@@ -686,6 +706,15 @@ function bindResenha() {  // "isso está errado": goes to the BioWiki's reports 
 
 // ---------- apoie ----------
 const COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform";  // ponytail: paste the public registration form link here; empty = "em breve"
+const COPA_DAY = "2026-11-21";
+function copaBanner() {  // home: the SuperCopa in evidence until the day after it (Gab, 2026-10-16)
+  const days = Math.ceil((new Date(COPA_DAY + "T08:30") - new Date()) / 864e5);
+  if (days < -1) return "";
+  return `<a class="copa-hero fade" href="#/copa"><div class="copa-l"><div class="kicker">5ª Copa BioFut · SuperCopa 2026</div>
+    <h2>${days > 0 ? `Faltam <b class="num">${days}</b> dia${days > 1 ? "s" : ""}` : days === 0 ? "É <b>hoje</b>!" : "Foi ontem!"}</h2>
+    <p>21 de novembro, 8:30 às 14:30 · Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos.</p></div>
+    <div class="copa-r"><span class="btn pri">${COPA_FORM && days > 0 ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
+}
 function pageCopa() {
   const feats = [
     ["📝", "Inscrição no site", "Nome, posição e time num lugar só: a comissão vê a lista pronta, sem caçar mensagem no grupo."],
@@ -1180,11 +1209,32 @@ setInterval(async () => {
   if (s && JSON.stringify(s.match) !== JSON.stringify(ST.match)) { setState(s); render(); }
 }, 8000);
 
+function coinRain(n = 40) {  // ponytail: CSS 3D coins, no WebGL; three.js only if Gab wants real physics
+  const r = document.createElement("div"); r.className = "rain";
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement("i"), s = 34 + Math.random() * 40;
+    c.style.cssText = `left:${Math.random() * 100}%;--s:${s}px;--t:${2.4 + Math.random() * 2}s;--d:${Math.random() * 1.8}s;--x:${(Math.random() - .5) * 160}px;--z:${(Math.random() - .5) * 300}px;--rz:${(Math.random() - .5) * 90}deg;--r:${.6 + Math.random() * .9}s`;
+    c.innerHTML = '<b><img src="/logo.png" alt=""></b>'; r.appendChild(c);
+  }
+  document.body.appendChild(r); setTimeout(() => r.remove(), 6500);
+}
+function gift() {  // launch gift: the server gives it once per member; localStorage only saves the extra call
+  if (!ME || store.get("bfGift")) return;
+  fetch("/api/bonus", {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: "{}"})
+    .then(r => r.ok ? r.json() : null).then(j => {
+      if (!j || j.error) return;
+      store.set("bfGift", "1");
+      if (!j.bonus) return;
+      coinRain(); setTimeout(() => $("#giftDlg").showModal(), 2600);  // modal backdrop would hide the rain
+      fetch("/api/state").then(r => r.json()).then(s => { setState(s); render(); });
+    }).catch(() => {});
+}
+
 Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r => r.json())]).then(([d, s]) => {
   D = d; setState(s);
   $("#foot").textContent = `${G.length} jogos registrados`;
   render(); bellInit();
-  BF.me.then(m => (ROLE = m.role, ME = m.user || null, m.tour && tour(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
+  BF.me.then(m => (ROLE = m.role, ME = m.user || null, m.tour && tour(), gift(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
 }).catch(() => $("#app").innerHTML = '<div class="empty">Não consegui carregar os dados. Tente recarregar.</div>');
 </script>
 </body>
