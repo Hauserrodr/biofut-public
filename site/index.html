@@ -41,6 +41,11 @@
   <p class="muted" style="font-size:14px;margin:8px 0 16px">O código do BioFut agora é aberto. Pra comemorar, 25 moedas pra você gastar em cartas, duelos e na BioBet.</p>
   <button class="btn pri" value="ok">Valeu!</button>
 </form></dialog>
+<dialog id="instaDlg" style="text-align:center"><form method="dialog">
+  <div style="font-size:44px;line-height:1">📸</div><h3>Saiu o reels do lançamento!</h3>
+  <p class="muted" style="font-size:14px;margin:8px 0 16px">Segue o BioFut no Instagram e compartilha o reels nos teus stories. Quanto mais gente vê, mais gente chega pra SuperCopa.</p>
+  <a class="btn pri" id="instaGo" target="_blank" rel="noopener">Abrir o reels</a> <button class="btn" value="no">Depois</button>
+</form></dialog>
 <dialog id="pinDlg"><form method="dialog">
   <h3>PIN do grupo</h3>
   <p class="muted" style="font-size:14px;margin:8px 0 16px">Para salvar qualquer coisa aqui, use o PIN que está na descrição do grupo do WhatsApp.</p>
@@ -763,8 +768,8 @@ function pageApoie() {
 // ponytail: the list lives here; "Coloque sua empresa aqui" sends a request (feedback kind "empresa") and Gab adds it
 const SHOPS = [  // [name, who, what, url]
   ["Torres Consultor I.A.", "Gab", "Deep learning e modelagem: IA sob medida, do dado ao produto. Portfólio do Gab.", "https://www.h-brain.org/"],
-  ["Dupla Fasi", "André", "", ""],
-  ["Baita Brownies", "Victor", "Os brownies do pós-jogo (e do MVP da partida).", ""],
+  ["Dupla Face", "André", "Estética de Mega Hair: 30 anos de história, especialista no Ponto Japonês. Av. Assis Brasil 1954, sala 201, Porto Alegre.", "https://www.instagram.com/duplaface/"],
+  ["Baita Doces", "Victor", "Um baita brownie, uma baita marca: os brownies do pós-jogo (e do MVP da partida). Mais de 70 pontos de revenda e no iFood.", "https://www.instagram.com/baitadoces_/"],
 ];
 function bindApoie() {
   const usd = v => "US$ " + (v || 0).toFixed(v < 0.01 && v ? 4 : 2);
@@ -1218,16 +1223,21 @@ function coinRain(n = 40) {  // ponytail: CSS 3D coins, no WebGL; three.js only 
   }
   document.body.appendChild(r); setTimeout(() => r.remove(), 6500);
 }
+const IG_REEL = "";  // launch reel URL; empty = the Instagram popup stays off
+function insta() {  // once per browser, after the gift (if any)
+  if (!IG_REEL || store.get("bfInsta")) return;
+  store.set("bfInsta", "1"); $("#instaGo").href = IG_REEL; $("#instaGo").onclick = () => $("#instaDlg").close(); $("#instaDlg").showModal();
+}
 function gift() {  // launch gift: the server gives it once per member; localStorage only saves the extra call
-  if (!ME || store.get("bfGift")) return;
+  const later = () => setTimeout(insta, 1500);
+  if (!ME || store.get("bfGift")) return later();
   fetch("/api/bonus", {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: "{}"})
     .then(r => r.ok ? r.json() : null).then(j => {
-      if (!j || j.error) return;
-      store.set("bfGift", "1");
-      if (!j.bonus) return;
-      coinRain(); setTimeout(() => $("#giftDlg").showModal(), 2600);  // modal backdrop would hide the rain
+      if (j && !j.error) store.set("bfGift", "1");
+      if (!j?.bonus) return later();
+      coinRain(); setTimeout(() => { $("#giftDlg").addEventListener("close", insta, {once: true}); $("#giftDlg").showModal(); }, 2600);  // modal backdrop would hide the rain
       fetch("/api/state").then(r => r.json()).then(s => { setState(s); render(); });
-    }).catch(() => {});
+    }).catch(later);
 }
 
 Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r => r.json())]).then(([d, s]) => {
