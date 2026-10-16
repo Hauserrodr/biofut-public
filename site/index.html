@@ -415,7 +415,7 @@ function pagePlayer(name) {
     : held && !cr.stat ? line("Você comprou esta carta primeiro: ela é a sua <b>cromada</b>. Escolha o atributo +1:") + stats()
       + `<button class="btn pri" style="width:100%;margin-top:10px" data-cromo ${pick ? "" : "disabled"}>Confirmar${pick ? ` +1 ${pick}` : ""}</button>`
     : mine.includes(name) ? line(`✓ Esta carta é sua${held ? ` · é a sua cromada (+1 ${cr.stat})` : ""} · ${myDeck().includes(name) ? "está no" : "fora do"} seu <a class="link" href="#/deck">deck</a>`) + (held ? "" : line(who))
-    : ME ? off + line(who) + (cr ? "" : stats()) + `<button class="btn pri" style="width:100%;margin-top:10px" data-buy="${esc(name)}" ${myBal < price || !cr && !pick ? "disabled" : ""}>${cr ? "Comprar" : `Comprar a cromada${pick ? ` +1 ${pick}` : ""}`} · ${price} moedas</button>
+    : ME ? off + line(who) + (cr ? "" : stats()) + `<button class="btn pri" style="width:100%;margin-top:10px" data-buy="${esc(name)}" ${myBal < price || !cr && !pick ? "disabled" : ""}>${cr ? "Comprar" : pick ? `Comprar a cromada +1 ${pick}` : "↑ Escolha o atributo +1 para comprar"} · ${price} moedas</button>
       <p class="dim" style="text-align:center;font-size:13px;margin:6px 0 0">Você ainda não tem esta carta · você tem ${coin(myBal)} moedas</p>`
     : line(who) + line(`Você ainda não tem esta carta · <a class="link" href="/entrar?next=${encodeURIComponent("/#/jogador/" + encodeURIComponent(name))}">entre para comprar</a> (${price} moedas)`);
   return `
