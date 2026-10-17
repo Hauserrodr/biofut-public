@@ -157,7 +157,13 @@ $Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot
 if (Test-Path $Json) { $Files += $Json } else { 'biofut.json not here: keeping the one on the server' }
 & scp -q -i $Key @Files "${Target}:/srv/biofut/"
 if ($LASTEXITCODE) { throw "scp failed ($LASTEXITCODE)" }
-$Extra = @(@('phones.json', 'mensagens.json') | Where-Object { $Data } | ForEach-Object { "$PSScriptRoot\data\$_" } | Where-Object { Test-Path $_ })  # @(): one file would splat as characters
+& python "$PSScriptRoot\og_copa.py"  # /copa's link preview: one countdown image per day left (needs Pillow here)
+if ($LASTEXITCODE) { 'og_copa.py failed: /copa keeps the images already on the server' } else {
+    Run-Ssh 'mkdir -p /srv/biofut/og && rm -f /srv/biofut/og/copa-*.jpg'
+    & scp -q -i $Key @(Get-ChildItem "$PSScriptRoot\og\copa-*.jpg" | ForEach-Object { $_.FullName }) "${Target}:/srv/biofut/og/"
+    if ($LASTEXITCODE) { throw "scp og failed ($LASTEXITCODE)" }
+}
+$Extra =@(@('phones.json', 'mensagens.json') | Where-Object { $Data } | ForEach-Object { "$PSScriptRoot\data\$_" } | Where-Object { Test-Path $_ })  # @(): one file would splat as characters
 if ($Extra) {
     & scp -q -i $Key @Extra "${Target}:/srv/biofut/data/"
     if ($LASTEXITCODE) { throw "scp data failed ($LASTEXITCODE)" }

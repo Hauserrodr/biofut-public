@@ -54,6 +54,19 @@ def card_cost(prices, user, card):
     """What `user` pays for `card`: the list price, 30% off (rounded down) when it is their own card."""
     return int(prices[card] * (1 - OWN_OFF)) if card == user else prices[card]
 BONUS, BONUS_WHY, BONUS_END = 25, "presente do lançamento", "2026-10-31"  # one gift per member, claimed on their first visit
+COPA_TS = calendar.timegm((2026, 11, 21, 11, 30, 0))  # 21/11 8:30 Brasília, same as COPA_DAY in index.html and og_copa.py
+
+
+def copa_page(now=None):
+    """/copa: the link to paste in the group. Its preview is today's countdown (og/copa-<days>.jpg by og_copa.py); people land on #/copa."""
+    days = max(0, math.ceil((COPA_TS - (now or time.time())) / 86400))
+    img = f"og/copa-{days}.jpg" if (HERE / "og" / f"copa-{days}.jpg").exists() and (now or time.time()) < COPA_TS + 86400 else "og.png"
+    title = "Copa BioFut: é hoje!" if not days else f"Copa BioFut: falta{'' if days == 1 else 'm'} {days} dia{'' if days == 1 else 's'}"
+    return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>{title}</title>
+<meta property="og:title" content="{title}"><meta property="og:description" content="5ª Copa BioFut, sábado 21/11 às 8:30. Garanta a vaga: quem jogar a Copa ganha 50 moedas no site.">
+<meta property="og:image" content="https://biofut.h-brain.org/{img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:url" content="https://biofut.h-brain.org/copa"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image">
+<meta http-equiv="refresh" content="0;url=/#/copa"></head><body><script>location.replace("/#/copa")</script><a href="/#/copa">Ver a Copa</a></body></html>""".encode()
 WELCOME = DECK * CARD_MIN  # coins everyone starts with: enough for a minimal deck (Gab, 2026-10-13), the stats coins come on top
 DUEL_WIN = 0.0001  # coins per Duelo won (Gab: "0.0001 (yes)")
 PLAY, LEAVE = 3, 1  # coins for playing a match, coins for leaving the list after confirming (Gab, 2026-10-14)
@@ -1830,6 +1843,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/wiki":
             self.path = "/wiki.html"
             return super().do_GET()
+        if path == "/copa":
+            return self.send_private(copa_page(), "text/html; charset=utf-8", "public, max-age=3600")  # the countdown changes once a day
         if path == "/api/wiki":
             f = WIKI / ("member.json" if user else "public.json")
             if not f.exists():
@@ -1935,7 +1950,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/state":
             with LOCK:
                 return self.send_json(public_state(load_state()))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml") or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml") or re.fullmatch(r"/og/copa-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
