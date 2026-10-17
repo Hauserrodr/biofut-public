@@ -743,7 +743,8 @@ function pageCopa() {
   <div class="kicker">5ª Copa BioFut · SuperCopa 2026</div><h1 style="font-size:52px;margin-top:8px">21 de novembro, 8:30 às 14:30</h1>
   <p class="muted" style="max-width:640px;font-size:17px">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Dan, Edu, Canova, Bruno M, Matte e Gab (só a parte tech).</p>
   <div class="copa-hero" style="margin-top:22px"><div class="copa-l"><div class="kicker">Começa em</div><div class="cd" id="cd">${copaClock()}</div></div>
-    <div class="copa-r">${COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}</div>
+    <div class="copa-r">${COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}
+      <p style="margin:10px 0 0;font-size:14px"><b>🪙 Jogou a Copa, ganhou 50 moedas.</b> Depois da Copa, a lista de quem jogou vem da comissão e as moedas caem no seu saldo.</p></div>
   </div>
   <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Vote em cada uma: o que vale a pena e o que é viagem. O voto é anônimo: só a contagem aparece, ninguém vê quem votou em quê.</p></div></div>
     <div class="grid g3">${feats.map(([i, t, d], n) => `<div class="card pad" style="display:flex;flex-direction:column"><div style="font-size:28px">${i}</div><h3 style="margin:8px 0 6px">${t}</h3><p class="muted" style="margin:0 0 12px;font-size:14px;flex:1">${d}</p>

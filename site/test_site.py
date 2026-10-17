@@ -577,6 +577,9 @@ assert json.loads(call("/api/avatar", {"phone": "5551900000000", "image": jpg})[
 assert json.loads(call("/api/avatar", {"phone": "5551998765432", "image": jpg})[1]) == {"ok": True}
 assert (server.AVATARS / "dan.jpg").read_bytes() == b"\xff\xd8 face"
 assert b"Disallow: /api/" in call("/robots.txt")[1] and b"/wiki</loc>" in call("/sitemap.xml")[1]  # SEO: Google reads both
+c = server.COPA_TS  # /copa: the countdown preview, then on to #/copa
+assert b"faltam 2 dias" in server.copa_page(c - 86400 - 60) and b"falta 1 dia<" in server.copa_page(c - 60) and b"hoje" in server.copa_page(c + 60)
+assert b"/og.png" in server.copa_page(c + 2 * 86400) and b'location.replace("/#/copa")' in call("/copa")[1]
 assert call("/api/avatars")[0] == 403 and call("/api/avatar/dan.jpg")[0] == 403
 me = "biofut=" + server.sign("Dan", "127.0.0.1")
 assert json.loads(call("/api/avatars", cookie=me)[1]) == ["dan"] and call("/api/avatar/dan.jpg", cookie=me)[1] == b"\xff\xd8 face"
