@@ -1258,6 +1258,18 @@ def load_votes():
     return json.loads(VOTES.read_text(encoding="utf-8")) if VOTES.exists() else {}
 
 
+def retry_list(st, now=None):
+    """A list that waited for this week's game ("próximo jogo: espera...") is read again once nothing holds it (the day
+    came, the bets went back, a deploy changed the rule), without anyone reposting it. -> what changed, or None."""
+    seen = st.get("last_list") or {}
+    if not str(seen.get("why", "")).startswith("próximo jogo"):
+        return None
+    at, now = seen["at"], max(now or time.time(), seen["at"])
+    out = sync_list(st, seen["text"], now, seen["by"])
+    st["last_list"]["at"] = at  # still the bot's message time, not ours
+    return out
+
+
 def hide_names(listas, hidden):
     """Transparência opt-out: the numbers stay, the name goes (None; the page says why on hover)."""
     h = lambda n: None if n in hidden else n
@@ -1949,7 +1961,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(None, raw=raw)
         if path == "/api/state":
             with LOCK:
-                return self.send_json(public_state(load_state()))
+                st = load_state()
+                if retry_list(st):
+                    save_state(st)
+                return self.send_json(public_state(st))
         if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml") or re.fullmatch(r"/og/copa-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path

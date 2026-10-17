@@ -512,7 +512,11 @@ assert resched["match"]["date"] == "2026-10-17" and resched["match"]["confirmed"
 st["match"]["bets"].append({"id": "b1", "bettor": "Dan", "pick": "A", "stake": 1, "odds": 2})  # with a bet the game stands
 assert server.sync_list(st, lst("22/10", "Zeca"), brt(10, 14), "Dan") is None and st["match"]["date"] == "2026-10-15", "game not played yet"
 assert st["last_list"] == {"text": lst("22/10", "Zeca"), "at": int(brt(10, 14)), "by": "Dan", "date": "2026-10-22", "why": "próximo jogo: espera o de 2026-10-15"}
+assert server.retry_list(st, brt(10, 14)) is None and st["match"]["date"] == "2026-10-15", "still held"
 st["match"]["bets"].clear()
+w = _copy.deepcopy(st)  # the hold cleared: the waiting list applies on the next read, nobody reposts
+assert server.retry_list(w, brt(10, 14)) and w["match"]["date"] == "2026-10-22" and w["last_list"]["at"] == int(brt(10, 14))
+assert server.retry_list(w, brt(10, 14)) is None, "applied once"
 server.sync_list(st, lst("22/10", "Zeca", "dan", "tito"), brt(10, 16), "Rafo")
 assert st["match"]["date"] == "2026-10-22" and st["match"]["confirmed"] == ["Zeca", "Dan", "Tito"] and st["match"]["lista"]["owner"] == "Dan"
 apply(st, "draft_start", {"captains": ["Zeca", "Dan"]})
