@@ -511,6 +511,13 @@ def truco_hand_end(rw, mao):
     return None
 
 
+def truco_ev(t, k, **kw):
+    """The replay list for #/truco: what just happened, with the table right after it (the machine's hand still hidden)."""
+    v = truco_view(t)
+    v.pop("ultima")
+    t.setdefault("ev", []).append({"k": k, **kw, "v": json.loads(json.dumps(v))})
+
+
 def truco_deal(t, cards, r):
     mine = {c["name"] for c in t["deck"]}
     lead = t["n"] % 2  # you are mão in the first hand, then it alternates
@@ -519,12 +526,14 @@ def truco_deal(t, cards, r):
     band = [c for c in rest if lo <= c["ovr"] <= hi]  # the machine plays cards as good as your deck, not the whole pile
     t["h"] = {"you": r.sample(t["deck"], 3), "cpu": r.sample(band if len(band) >= 6 else rest, 3), "usou": [[], []],
               "mesa": [None, None], "jogadas": [], "rw": [], "mao": lead, "turn": lead, "val": 1, "call": None, "pode": None, "aposta": None}
+    truco_ev(t, "da")
 
 
 def truco_end_hand(t, w, fugiu=False):
     h, a = t["h"], t["h"]["aposta"]
     pts = h["val"] if not (a and a["ok"]) else 2 * h["val"] if w == a["by"] else 0
     t["pts"][w] += pts
+    truco_ev(t, "mao", w=w, pts=pts, fugiu=fugiu)
     t["n"] += 1
     t["ultima"] = {"w": w, "pts": pts, "val": h["val"], "fugiu": fugiu, "aposta": a, "you": h["you"], "cpu": h["cpu"], "jogadas": h["jogadas"], "rw": h["rw"]}
     t["h"] = None
@@ -538,12 +547,14 @@ def truco_play(t, s, i):
     h["mesa"][s] = i
     if h["mesa"][1 - s] is None:
         h["turn"] = 1 - s
-        return
+        return truco_ev(t, "carta", s=s, i=i)
+    truco_ev(t, "carta", s=s, i=i)
     w = truco_round(t["ace"], h["you"][h["mesa"][0]], h["cpu"][h["mesa"][1]])
     h["rw"].append(w)
     h["jogadas"].append(h["mesa"])
     h["mesa"] = [None, None]
     h["turn"] = w if w is not None else 1 - s  # the round's winner leads the next; after a tie, who led it leads again
+    truco_ev(t, "rodada", w=w)
     end = truco_hand_end(h["rw"], h["mao"])
     if end is not None:
         truco_end_hand(t, end)
@@ -558,6 +569,7 @@ def truco_call(t, s):
         h["call"] = {"by": s, "to": h["val"] + 1}
     else:
         raise ValueError("agora não dá para pedir truco")
+    truco_ev(t, "pede", s=s, to=h["call"]["to"])
 
 
 def truco_answer(t, s, quero):
@@ -565,8 +577,10 @@ def truco_answer(t, s, quero):
     if not c or c["by"] == s:
         raise ValueError("ninguém pediu truco")
     if not quero:
+        truco_ev(t, "resp", s=s, quero=False, to=c["to"])
         return truco_end_hand(t, c["by"], fugiu=True)
     h["val"], h["pode"], h["call"] = c["to"], s, None  # who accepted is the one who may raise later
+    truco_ev(t, "resp", s=s, quero=True, to=c["to"])
 
 
 def truco_cpu(t, cards, r):
@@ -587,7 +601,7 @@ def truco_cpu(t, cards, r):
             truco_answer(t, 1, s > .5)
         elif not h["call"] and h["turn"] == 1:
             if h["val"] < 4 and h["pode"] in (None, 1) and s > .75 and r.random() < .5:
-                h["call"] = {"by": 1, "to": h["val"] + 1}
+                truco_call(t, 1)
                 return
             by = sorted(left, key=lambda i: pw.get(h["cpu"][i]["name"], .5))
             if on is not None:  # answering your card: the weakest that takes it, else the weakest of all
@@ -615,14 +629,13 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
         raise ValueError("entre para jogar o BioTruco")
     if len(cards) < 10:
         raise ValueError("poucas cartas para o BioTruco")
-    rec = state.setdefault("truco", {}).setdefault(user, {"v": 0, "d": 0, "run": 0, "top": 0})
-    games = state.setdefault("truco_aberto", {})
-    t, op = games.get(user), body.get("op")
+    t, op = state.get("truco_aberto", {}).get(user), body.get("op")
     if not op:
         return truco_view(t) if t else None
     if op == "novo" and not t:
         if body.get("alvo") not in TRUCO_ALVOS:
             raise ValueError("escolha 13, 25 ou 37 pontos")
+        games = state.setdefault("truco_aberto", {})
         mine = deck_of(state, user)
         deck = [c for c in cards if c["name"] in mine]
         own = len(deck) == DECK
@@ -633,6 +646,7 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
         raise ValueError("esta partida acabou: comece outra")
     elif op == "desisto":
         t["pts"][1] = t["alvo"]
+        truco_ev(t, "desisto")
     elif op != "novo":  # "novo" with a match open returns it: no dealing again for a better hand
         h = t["h"]
         if op == "jogar":
@@ -645,6 +659,7 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
             if h["aposta"] or h["usou"][0] or h["call"]:
                 raise ValueError("a aposta é antes da sua primeira carta da mão")
             h["aposta"] = {"by": 0, "ok": r.random() < TRUCO_ACEITA}
+            truco_ev(t, "aposta", ok=h["aposta"]["ok"])
         else:
             raise ValueError("jogada desconhecida")
     while max(t["pts"]) < t["alvo"]:
@@ -655,6 +670,7 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
             break
     if max(t["pts"]) >= t["alvo"]:
         won = t["pts"][0] >= t["alvo"]
+        rec = state.setdefault("truco", {}).setdefault(user, {"v": 0, "d": 0, "run": 0, "top": 0})
         rec["v" if won else "d"] += 1
         rec["run"] = rec["run"] + 1 if won else 0
         rec["top"] = max(rec["top"], rec["run"])
@@ -662,8 +678,9 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
         if coins:
             state["ledger"].append({"player": user, "amount": coins, "reason": f"biotruco {day} {t['pts'][0]}x{t['pts'][1]}"})
         t["fim"], t["h"] = {"won": won, "coins": coins}, None
-        del games[user]
-    return truco_view(t)
+        truco_ev(t, "fim")
+        del state["truco_aberto"][user]
+    return {**truco_view(t), "ev": t.pop("ev", [])}
 
 
 # --- match / draft state -------------------------------------------------------
@@ -2476,7 +2493,8 @@ class Handler(SimpleHTTPRequestHandler):
                 elif action == "truco":  # BioTruco v0.2: the server deals, plays the machine and judges
                     truco = truco_act(st, user, duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
                                       time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600)))
-                    save_state(st)
+                    if body.get("op"):  # the view alone changes nothing
+                        save_state(st)
                     return self.send_json({**public_state(st), "jogo_truco": truco})  # "truco" is the public ranking
                 elif action in ("mercado", "mercado_bet", "mercado_fim"):  # BioBet mercados: the logged-in member's own coins
                     note = mercado_act(st, action, body, user, self.role())

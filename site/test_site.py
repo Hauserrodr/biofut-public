@@ -744,21 +744,29 @@ for k in range(400):
         assert h["turn"] == 0 or h["call"] and h["call"]["by"] == 1, "the machine plays until it is your move"
         ops = [{"op": "quero"}, {"op": "nao"}, {"op": "truco"}] if h["call"] else [{"op": "jogar", "i": i} for i in range(3) if i not in h["usou"][0]] + [{"op": "truco"}, {"op": "aposta"}]
         try:
-            v = server.truco_act(st, "Eve", dc, rng.choice(ops), day, rng)
+            v = server.truco_act(st, "Eve", dc, op := rng.choice(ops), day, rng)
         except ValueError:
-            pass
+            continue
+        # the replay list (#/truco animates it): opens with your move, never shows the machine's hand, ends on the table returned
+        ev = v["ev"]
+        assert ev[0]["k"] == {"jogar": "carta", "truco": "pede", "quero": "resp", "nao": "resp", "aposta": "aposta"}[op["op"]] and ev[0].get("s", 0) == 0
+        assert all(x is None or i in e["v"]["h"]["usou"][1] for e in ev if e["v"].get("h") for i, x in enumerate(e["v"]["h"]["cpu"]))
+        assert ev[-1]["k"] == "fim" if v.get("fim") else ev[-1]["v"] == {k: x for k, x in v.items() if k not in ("ev", "ultima")}
     else:
         raise AssertionError("a BioTruco match that never ends")
     assert max(v["pts"]) >= v["alvo"] and v["fim"]["won"] == (v["pts"][0] >= v["alvo"]) and not st["truco_aberto"]
     assert sum(x["amount"] for x in st["ledger"]) == (server.TRUCO_WIN * (10 if k % 2 else 1) if v["fim"]["won"] else 0)
 assert server.truco_act(st, "Eve", dc, {}, day) is None and server.truco_act(st, "Eve", dc, {"op": "novo", "alvo": 13}, day)["h"]["cpu"] == [None] * 3
 for s0, body in (({"ledger": []}, {"op": "novo", "alvo": 12}), (st, {"op": "jogar", "i": 5}), ({"ledger": []}, {"op": "jogar", "i": 0})):
+    before = json.dumps(s0)
     try:
         server.truco_act(s0, "Eve", dc, body, day); raise AssertionError(body)
     except ValueError:
-        pass
+        assert json.dumps(s0) == before, "a refused BioTruco move changes nothing"
+s0 = {"ledger": []}
+assert server.truco_act(s0, "Eve", dc, {}, day) is None and s0 == {"ledger": []}, "opening #/truco writes no ranking row"
 o = json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie=me)[1])
-assert o["jogo_truco"]["alvo"] == 25 and "truco_aberto" not in o and json.loads(call("/api/truco", {}, cookie=me)[1])["jogo_truco"] == o["jogo_truco"]
+assert o["jogo_truco"]["alvo"] == 25 and "truco_aberto" not in o and {**json.loads(call("/api/truco", {}, cookie=me)[1])["jogo_truco"], "ev": o["jogo_truco"]["ev"]} == o["jogo_truco"]
 assert "error" in json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie="")[1])
 # Notifications: a phone's subscription (https only), Gab alone sends; the Pix bonus pays each name once per game.
 server.PUSH_SUBS = tmp / "push.json"
