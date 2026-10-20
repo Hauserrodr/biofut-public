@@ -34,7 +34,7 @@ details summary { cursor: pointer; color: var(--mut); font-size: 14px; }
 <script src="/site.js?v=20261016"></script>
 <main class="adm">
   <div class="kicker" id="who">Gab e Conselho</div><h1>Painel</h1>
-  <div class="row" id="bar" hidden><div class="seg" id="tabs"><button data-tab="rev" class="on">Revisão</button><button data-tab="pes">Pessoas</button><button data-tab="ati" data-only="admin">Atividade</button><button data-tab="pla">Planilha</button><button data-tab="ide" data-only="admin">Ideias</button></div>
+  <div class="row" id="bar" hidden><div class="seg" id="tabs"><button data-tab="rev" class="on">Revisão</button><button data-tab="pes">Pessoas</button><button data-tab="ati" data-only="admin">Atividade</button><button data-tab="pla">Planilha</button><button data-tab="ide" data-only="admin">Ideias</button><button data-tab="avi">Avisos</button></div>
     <button class="btn sm" id="reload">Atualizar</button></div>
   <div id="view" style="margin-top:18px"><p class="meta">Carregando…</p></div>
 </main>
@@ -172,9 +172,35 @@ async function ideias() {  // members' ideas and bugs from /#/eu: the server ope
       `<p style="margin:0 0 8px;white-space:pre-wrap">${esc(x.text)}</p>${x.issue ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x.issue)}">Issue #${esc(x.issue.split('/').pop())}</a>` : `<a class="btn sm" target="_blank" rel="noopener" href="https://github.com/Hauserrodr/biofut/issues/new?title=${encodeURIComponent(`[${x.kind}] ${x.text.slice(0, 70)}`)}&body=${encodeURIComponent(`${x.text}\n\nDe ${x.user} no site, ${x.ts}.`)}">Virar issue</a>`}</div>`).join('');
 }
 
+const RASCUNHOS = ['Quem pagar o pix hoje até meia noite ganha 10 moedas bonus na BioBet!', 'Bonus de x10 pra partidas de BioTruco na primeira semana do BioTruco V0.2'];  // Gab, 2026-10-20
+const post = (action, body) => fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()).catch(() => ({ error: 'sem conexão' }));
+function avisos() {  // Pix bonus (server.py pix_bonus: +10 once per name per game) and, for the Gab, a push to every phone that said yes (push_send)
+  $('view').innerHTML = `<div class="card pad" style="margin-bottom:14px"><h3>Pix em dia: +10 moedas</h3>
+    <p class="meta">Um nome por linha, como no site. Cada nome ganha uma vez por jogo; repetir não paga de novo.</p>
+    <input id="pixD" type="date" value="${new Date().toISOString().slice(0, 10)}"><textarea id="pixN" rows="6" style="width:100%;margin-top:8px"></textarea>
+    <button class="btn pri sm" id="pixGo" style="margin-top:8px">Dar as moedas</button><p class="meta" id="pixR"></p></div>` + (ROLE !== 'admin' ? '' :
+    `<div class="card pad"><h3>Notificação no celular</h3><p class="meta">Vai para todo mundo que tocou em "Quero" no site. Não tem como desfazer.</p>
+    <div class="row" style="flex-wrap:wrap;gap:6px">${RASCUNHOS.map((t, i) => `<button class="btn sm" data-rasc="${i}">Rascunho ${i + 1}</button>`).join('')}</div>
+    <input id="puT" value="BioFut" style="width:100%;margin-top:8px"><textarea id="puB" rows="3" style="width:100%;margin-top:8px"></textarea>
+    <input id="puU" value="/#/biobet" style="width:100%;margin-top:8px"><button class="btn pri sm" id="puGo" style="margin-top:8px">Enviar</button><p class="meta" id="puR"></p></div>`);
+  $('pixGo').onclick = async () => {
+    const names = $('pixN').value.split('\n').map(x => x.trim()).filter(Boolean);
+    if (!names.length || !confirm(`+10 moedas para ${names.length} pessoa${names.length > 1 ? 's' : ''}?`)) return;
+    const j = await post('pix_bonus', { names, date: $('pixD').value });
+    $('pixR').textContent = j.error || (j.pix_bonus.length ? 'Pago: ' + j.pix_bonus.join(', ') : 'Todos já tinham ganhado neste jogo.');
+  };
+  document.querySelectorAll('[data-rasc]').forEach(b => b.onclick = () => { $('puB').value = RASCUNHOS[b.dataset.rasc]; $('puU').value = b.dataset.rasc === '1' ? '/#/truco' : '/#/biobet'; });
+  if ($('puGo')) $('puGo').onclick = async () => {
+    const body = { title: $('puT').value, body: $('puB').value, url: $('puU').value };
+    if (!body.body.trim() || !confirm('Enviar para todos os celulares?\n\n' + body.body)) return;
+    const j = await post('push_send', body);
+    $('puR').textContent = j.error || `Enviada para ${j.sent} · ${j.gone} saíram · ${j.failed} falharam`;
+  };
+}
+
 function show() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB));
-  if (TAB === 'rev') render(); else if (TAB === 'pes') pessoas(); else if (TAB === 'ati') activity(); else if (TAB === 'ide') ideias(); else planilha();
+  if (TAB === 'rev') render(); else if (TAB === 'pes') pessoas(); else if (TAB === 'ati') activity(); else if (TAB === 'ide') ideias(); else if (TAB === 'avi') avisos(); else planilha();
 }
 
 async function load() {  // no key: the WhatsApp login cookie says who it is (server.py role_of)

@@ -54,6 +54,11 @@
   <p class="muted" style="font-size:14px;margin:8px 0 16px">Segue o BioFut no Instagram e compartilha o reels nos teus stories. Quanto mais gente vê, mais gente chega pra SuperCopa.</p>
   <a class="btn pri" id="instaGo" target="_blank" rel="noopener">Abrir o reels</a> <button class="btn" value="no">Depois</button>
 </form></dialog>
+<dialog id="trucoDlg" style="text-align:center"><form method="dialog">
+  <div style="font-size:44px;line-height:1">🃏</div><h3>Chegou o BioTruco v0.2!</h3>
+  <p class="muted" style="font-size:14px;margin:8px 0 16px">Truco Gaúcho com as suas cartas contra a máquina: melhor de 3 rodadas, truco, retruco, vale quatro e o novo <b>aposto que perco</b>. Partidas até 13, 25 ou 37, e moedas x10 na semana de lançamento.</p>
+  <button class="btn pri" value="tut">Ver tutorial</button> <button class="btn" value="no">Agora não</button>
+</form></dialog>
 <dialog id="pinDlg"><form method="dialog">
   <h3>PIN do grupo</h3>
   <p class="muted" style="font-size:14px;margin:8px 0 16px">Para salvar qualquer coisa aqui, use o PIN que está na descrição do grupo do WhatsApp.</p>
@@ -423,7 +428,7 @@ function pagePlayer(name) {
   <a class="link" href="#/tabela">← Tabela</a>
   <div class="prof" style="margin-top:16px">
     <div>${c ? fc(cromo(c)) : `<div class="card pad" style="display:grid;place-items:center;gap:12px">${av(name, "l")}<div class="muted" style="font-size:14px;text-align:center">Carta liberada com 10 jogos (${s.j}/10)</div></div>`}${buy}
-      <button class="btn" style="width:100%;margin-top:10px" id="photoBtn">${ST.photos.includes(slug(name)) ? "Trocar foto" : "Enviar foto"}</button></div>
+      <button class="btn" style="width:100%;margin-top:10px" id="photoBtn">${ST.photos.includes(slug(name)) ? "Trocar foto" : "Enviar foto"}</button>${adminBox(name)}</div>
     <div>
       <div class="kicker">${s.j} jogos · ${per.length ? `${esc(per[0][0])} a ${esc(per[per.length - 1][0])}` : ""}</div>
       <h1 style="margin:8px 0 12px">${esc(name)}${nick(name)}</h1>
@@ -449,7 +454,29 @@ function pagePlayer(name) {
     </div>
   </div>`;
 }
+function adminBox(name) {  // Gab only (server.py admin_give, push_send to): coins, a card, a notification to this member
+  if (ROLE !== "admin" || name === ME) return "";
+  const has = ST.cards?.[name] || [], inp = 'style="width:100%;margin-top:8px"';
+  return `<details class="card pad" style="margin-top:10px"><summary class="btn" style="width:100%">⚙ Admin: ${esc(name)}</summary>
+    <h3 style="margin-top:12px">Moedas</h3><input id="admC" type="number" step="any" placeholder="ex. 10 ou -5" ${inp}><input id="admW" maxlength="80" placeholder="motivo (aparece no extrato)" ${inp}>
+    <button class="btn pri" data-adm="coins" ${inp}>Dar moedas</button>
+    <h3 style="margin-top:14px">Carta de presente</h3><select id="admK" ${inp}>${CARDS().filter(c => !has.includes(c.name)).map(c => `<option>${esc(c.name)}</option>`).join("")}</select>
+    <button class="btn pri" data-adm="card" ${inp}>Dar carta</button>
+    <h3 style="margin-top:14px">Notificação</h3><input id="admT" maxlength="80" placeholder="título (BioFut)" ${inp}><textarea id="admB" maxlength="300" rows="3" placeholder="mensagem" ${inp}></textarea>
+    <button class="btn pri" data-adm="push" ${inp}>Mandar para ${esc(name)}</button></details>`;
+}
+function bindAdmin(name) {
+  const v = id => $("#" + id)?.value.trim();
+  document.querySelectorAll("[data-adm]").forEach(b => b.onclick = async () => {
+    const op = b.dataset.adm, body = op === "coins" ? {name, coins: +v("admC"), reason: v("admW")} : op === "card" ? {name, card: v("admK")} : {to: name, title: v("admT"), body: v("admB")};
+    if (!confirm(op === "coins" ? `Dar ${body.coins} moedas para ${name}?` : op === "card" ? `Dar a carta ${body.card} para ${name}?` : `Mandar a notificação para ${name}?`)) return;
+    const r = await post(op === "push" ? "push_send" : "admin_give", body); if (!r) return;
+    if (op === "push") return toast(r.sent ? `Enviada (${r.sent} aparelho${r.sent > 1 ? "s" : ""})` : "Não chegou: o aparelho saiu", !r.sent);
+    setState(r); render(); toast(op === "coins" ? "Moedas dadas" : "Carta dada");
+  });
+}
 function bindPlayer(name) {
+  bindAdmin(name);
   const bb = $("[data-buy]");
   const st = ui.cst?.[name] || "", first = !ST.cromadas?.[name];
   if (bb) bb.onclick = async () => { const r = await post("buy_card", {card: bb.dataset.buy, stat: st}); if (r) { setState(r); ui.lineup = null; render(); toast(first ? `Cromada na sua coleção: +1 ${st}` : "Carta na sua coleção"); } };
@@ -1092,7 +1119,7 @@ async function bindPlanilha() {
 }
 
 // ---------- member page: own stats, nickname/status, ideas for the site ----------
-let ME, ROLE, QUEM, MSG;  // QUEM: GET /api/quem, the doubtful names this member put on lists and their claim (server.py quem_view); MSG: /api/mensagens
+let ME, ROLE, QUEM, MSG, TT;  // TT: this member hasn't seen the BioTruco popup + tutorial (server.py tour_truco)  // QUEM: GET /api/quem, the doubtful names this member put on lists and their claim (server.py quem_view); MSG: /api/mensagens
 function pageEu() {
   if (ME === undefined || ME && QUEM === undefined) return '<div class="skel"></div>';
   if (!ME) return `<div class="empty">Esta é a sua página de membro. <a class="link" href="/entrar?next=${encodeURIComponent("/#/eu")}">Entrar com seu WhatsApp</a></div>`;
@@ -1201,8 +1228,116 @@ async function post(action, body) {
   return j;
 }
 
+// ---------- BioTruco v0.2 (#/truco): Truco Gaúcho with the cards against the machine; the server deals, plays and judges (server.py truco_act) ----------
+const X10 = () => localDay() >= "2026-10-22" && localDay() <= "2026-10-28";  // server.py TRUCO_V02..TRUCO_X10_END
+const CALL = {2: "Truco!", 3: "Retruco!", 4: "Vale quatro!"};
+function trucoRank() {
+  const R = Object.entries(ST.truco || {}).filter(([, r]) => r.v + r.d);
+  if (!R.length) return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><p class="muted" style="margin-top:8px">Ninguém terminou uma partida ainda: a primeira abre o ranking.</p></section>`;
+  return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><ul class="list card pad" style="margin-top:8px">${R.sort(([, a], [, b]) => b.v - a.v || b.top - a.top).slice(0, 10).map(([n, r], i) =>
+    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${r.v}V ${r.d}D</b><small>maior sequência ${r.top}</small></span></li>`).join("")}</ul></section>`;
+}
+function pageTruco() {
+  if (ME === undefined || ME && ui.truco === undefined) return '<div class="skel"></div>';
+  const t = ui.truco, h = t?.h, x10 = t ? t.x10 : X10();
+  const head = `<div class="sec-h"><div><div class="kicker">BioTruco v0.2 · Truco Gaúcho${x10 ? ' · <span class="pill g">moedas x10 nesta semana</span>' : ""}</div><h1 style="font-size:52px;margin-top:8px">BioTruco</h1><button class="btn sm" id="trucoTut" style="margin:6px 0 10px">Ver tutorial</button>
+    <p>Três das suas cartas contra três da máquina, melhor de 3 rodadas por mão. Maior OVR leva a rodada; o <b>Super Craque</b> (${esc(CARDS()[0]?.name || "")}) só perde para bronze.
+    Truco vale 2, retruco 3, vale quatro 4. Novo: <b>aposto que perco</b>, antes da sua primeira carta da mão. Se a máquina aceitar, perder a mão não dá ponto a ninguém e ganhar vale o dobro.
+    Cada partida vencida vale ${coin(0.001 * (x10 ? 10 : 1))} moeda.</p></div>
+    ${t && !t.fim ? `<div class="score num" style="font-size:34px">${t.pts[0]}<i>×</i>${t.pts[1]}</div>` : ""}</div>`;
+  if (!ME) return head + '<div class="empty"><a class="link" href="/entrar?next=%2F%23%2Ftruco">Entre</a> para jogar o BioTruco.</div>' + trucoRank();
+  const novo = `<div class="row" style="justify-content:center;margin-top:16px">${[13, 25, 37].map(a => `<button class="btn pri" data-alvo="${a}">Até ${a}</button>`).join("")}</div>`;
+  if (!h) return head + `<div class="card pad fade" style="text-align:center;max-width:560px;margin:0 auto">
+    ${t?.fim ? `<h2 style="font-size:44px">${t.fim.won ? "Vitória" : "Derrota"} ${t.pts[0]}×${t.pts[1]}</h2><p class="muted">${t.fim.coins ? `+${coin(t.fim.coins)} moeda` : "Sem moedas desta vez"}</p><h3 style="margin-top:16px">Outra partida?</h3>`
+      : "<h3>Jogar até quantos pontos?</h3>"}${novo}</div>` + trucoRank();
+  const u = t.ultima, said = u && `${u.w === 0 ? "Você levou" : "A máquina levou"} a última mão${u.fugiu ? " (o outro não quis)" : ""}: +${u.pts}${u.aposta?.ok ? (u.w === 0 ? " (aposta, dobro)" : " (aposta: ninguém pontua)") : ""}`;
+  const mine = h.turn === 0 && !h.call, mesa = [...h.jogadas, h.mesa];
+  const cardAt = (c, i, s) => {
+    const on = mesa.findIndex(m => m[s] === i), used = h.usou[s].includes(i);
+    return `<div class="tc${used ? " used" : ""}"${s === 0 && mine && !used ? ` data-i="${i}"` : ""}>${c ? fc(c, s === 0 && mine && !used) : '<div class="fc back"><div class="nm">?</div></div>'}${on >= 0 ? `<small class="dim">rodada ${on + 1}</small>` : ""}</div>`;
+  };
+  const marks = h.rw.map(w => w === 0 ? "🟩" : w === 1 ? "🟥" : "⬜").join("");
+  const c = h.call, btn = (op, l, pri) => `<button class="btn${pri ? " pri" : ""}" data-op="${op}">${l}</button>`;
+  const acts = c && c.by === 1 ? `<h3>A máquina pediu ${CALL[c.to]}</h3><div class="row" style="justify-content:center;margin-top:12px">${btn("quero", "Quero", 1)}${btn("nao", "Não quero")}${c.to < 4 ? btn("truco", CALL[c.to + 1]) : ""}</div>`
+    : c ? `<h3>Você pediu ${CALL[c.to]}</h3>`
+    : `<h3>${mine ? "Sua vez: jogue uma carta" : "A vez é da máquina"}</h3><div class="row" style="justify-content:center;margin-top:12px">
+      ${mine && h.val < 4 && (h.pode === null || h.pode === 0) ? btn("truco", CALL[h.val + 1], 1) : ""}${!h.aposta && !h.usou[0].length ? btn("aposta", "Aposto que perco") : ""}${btn("desisto", "Desisto")}</div>`;
+  return head + `<div class="truco">
+    <div class="kicker">Máquina</div><div class="grid g3">${h.cpu.map((x, i) => cardAt(x, i, 1)).join("")}</div>
+    <div class="card pad" style="text-align:center;margin:14px auto;max-width:600px">
+      <p class="muted" style="margin:0 0 8px">Mão ${t.n + 1} · vale ${h.val} · ${h.mao === 0 ? "você é mão" : "a máquina é mão"} · até ${t.alvo}${t.deck_proprio ? "" : " · deck emprestado (monte o seu em Deck)"}</p>
+      ${h.aposta ? `<p>${h.aposta.ok ? "A máquina aceitou a aposta: perder esta mão não dá ponto a ninguém, ganhar vale o dobro." : "A máquina recusou a aposta: a mão segue normal."}</p>` : ""}
+      ${acts}<p style="margin:12px 0 0">${marks || "&nbsp;"}</p>${said ? `<p class="muted" style="margin:6px 0 0">${said}</p>` : ""}</div>
+    <div class="kicker">Você</div><div class="grid g3">${h.you.map((x, i) => cardAt(x, i, 0)).join("")}</div></div>` + trucoRank();
+}
+function trucoNews() {  // once per member (saved on the server, so a new browser doesn't show it again), after the gift and the reels
+  if (!TT || $("#tour")) return;
+  TT = false; BF.ev("truco_tutorial", "popup");
+  $("#trucoDlg").addEventListener("close", () => $("#trucoDlg").returnValue === "tut" ? trucoTour(0)
+    : (BF.ev("truco_tutorial", "agora não"), post("tour", {which: "truco", done: false, step: 0})), {once: true});
+  $("#trucoDlg").showModal();
+}
+function trucoTour(i = 0, again = false) {  // the steps; analytics: completo / pulou no passo N (rever: from the Ver tutorial button)
+  const steps = [
+    ["Suas cartas contra as da máquina", `Cada mão você recebe 3 cartas do seu deck, e a máquina 3 das dela. Na rodada, a carta de maior OVR leva. O <b>Super Craque</b> (${esc(CARDS()[0]?.name || "")}) ganha de todas, menos de bronze.`],
+    ["Melhor de 3 rodadas", "Quem leva 2 rodadas leva a mão. Empate (parda) vai para quem ganhou a outra rodada; 3 pardas, para quem é mão. Toque numa carta sua para jogar."],
+    ["Truco!", "Na sua vez, peça <b>Truco</b>: a mão passa a valer 2. Quem aceita pode subir: retruco 3, vale quatro 4. Quem diz <b>não quero</b> entrega a mão pelo valor de antes."],
+    ["Novo: aposto que perco", "Antes da sua primeira carta da mão, aposte que perde. Se a máquina aceitar, perder a mão não dá ponto a ninguém, e ganhar vale o <b>dobro</b>. Se recusar, a mão segue normal."],
+    ["Até 13, 25 ou 37", `Escolha o tamanho da partida. Vitória vale ${coin(0.001 * (X10() ? 10 : 1))} moeda${X10() ? " (x10 na semana de lançamento)" : ""} e sobe você no ranking do BioTruco.`],
+  ], [t, x] = steps[i], last = i === steps.length - 1;
+  if (location.hash !== "#/truco") location.hash = "#/truco";
+  $("#tour")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="card pad tour" id="tour" role="dialog" aria-label="Tutorial do BioTruco">
+    <div class="kicker">Tutorial do BioTruco · ${i + 1}/${steps.length}</div><h3 style="margin:6px 0">${t}</h3><p class="dim" style="margin:0 0 14px">${x}</p>
+    <div class="row"><button class="btn sm" id="tourSkip">${last ? "Fechar" : "Pular"}</button><button class="btn pri sm" id="tourNext">${last ? "Bora jogar" : "Próximo"}</button></div></div>`);
+  const done = ok => { $("#tour").remove(); BF.ev("truco_tutorial", `${again ? "rever: " : ""}${ok ? "completo" : `pulou no passo ${i + 1}`}`); if (ME) post("tour", {which: "truco", done: ok, step: i + 1}); };
+  $("#tourSkip").onclick = () => done(last);
+  $("#tourNext").onclick = () => last ? done(true) : trucoTour(i + 1, again);
+}
+async function bindTruco() {
+  const tb = $("#trucoTut"); if (tb) tb.onclick = () => { BF.ev("truco_tutorial", "rever"); trucoTour(0, true); };
+  if (ME === undefined) { ME = (await BF.me).user || null; return render(); }
+  if (!ME) return;
+  const go = async body => {
+    if (ui.trucoBusy) return;
+    ui.trucoBusy = true; const j = await api("truco", body); ui.trucoBusy = false;
+    if (j) { ui.truco = j.jogo_truco; render(); }
+  };
+  if (ui.truco === undefined) return go({});
+  document.querySelectorAll(".truco [data-i]").forEach(b => b.onclick = () => go({op: "jogar", i: +b.dataset.i}));
+  document.querySelectorAll("[data-op]").forEach(b => b.onclick = () => (b.dataset.op !== "desisto" || confirm("Desistir desta partida?")) && go({op: b.dataset.op}));
+  document.querySelectorAll("[data-alvo]").forEach(b => b.onclick = () => { BF.ev("truco", "novo " + b.dataset.alvo); go({op: "novo", alvo: +b.dataset.alvo}); });
+}
+
+// ---------- notifications: a phone that says yes gets the BioFut pushes (sw.js; server.py push_sub, sent by Gab from /admin) ----------
+const pushOk = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+function pushCard() {
+  if (!pushOk() || Notification.permission !== "default" || store.get("biofutPushNo")) return "";
+  return `<div class="card pad fade" id="pushCard" style="margin-bottom:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <span style="flex:1;min-width:200px">🔔 Quer receber no celular os avisos do BioFut (lista, BioBet, BioTruco)?</span>
+    <button class="btn pri" id="pushYes">Quero</button><button class="btn" id="pushNo">Agora não</button></div>`;
+}
+async function pushSub() {  // once per visit when allowed: the server keeps the newest subscription of this phone
+  if (!pushOk() || Notification.permission !== "granted" || pushSub.done) return;
+  pushSub.done = true;
+  try {
+    const key = (await fetch("/api/push/key").then(r => r.json())).key; if (!key) return;
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    const raw = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(-key.length & 3)), ch => ch.charCodeAt(0));
+    const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: raw});
+    await fetch("/api/push_sub", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({sub: sub.toJSON()})});
+  } catch (e) { console.warn("push", e); }
+}
+function bindPush() {
+  pushSub();
+  const y = $("#pushYes"); if (!y) return;
+  y.onclick = async () => { const p = await Notification.requestPermission(); $("#pushCard")?.remove(); if (p === "granted") { await pushSub(); toast("Pronto: os avisos chegam neste celular"); } };
+  $("#pushNo").onclick = () => { store.set("biofutPushNo", "1"); $("#pushCard")?.remove(); };
+}
+
 // ---------- Novidades: 🔔 in the header; newest first, seen-state and visited routes in localStorage ----------
 const NEWS = [  // d = ISO date, h = route (or full URL), t = text
+  {d: "2026-10-22", h: "#/truco", t: "BioTruco v0.2: truco gaúcho com as suas cartas, até 13, 25 ou 37. Na primeira semana as vitórias valem x10."},
   {d: "2026-10-15", h: "https://github.com/Hauserrodr/biofut-public", t: "O código do site agora é aberto no GitHub."},
   {d: "2026-10-14", h: "#/duelo/dia", t: "Duelo do dia: o mesmo desafio de cartas para todo mundo, para comparar no grupo."},
   {d: "2026-10-14", h: "#/biobet", t: "BioBet: aposte suas moedas no jogo da semana e nos mercados do grupo."},
@@ -1238,13 +1373,15 @@ function render() {
     "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
     cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
     jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa, bindCopa],
-    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu],
+    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu], truco: [pageTruco, bindTruco],
   };
   const [view, bind] = pages[page ?? ""] || pages[""];
   app.innerHTML = view();
+  if (["", "jogo", "truco"].includes(page ?? "")) app.insertAdjacentHTML("afterbegin", pushCard());
   bind && bind();
+  bindPush();
   const r = $("#radio"); r.hidden = page !== "radio" && !r.dataset.played; r.classList.toggle("mini", page !== "radio");
-  document.title = (page ? ({jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página"}[page] + " · ") : "") + "BioFut";
+  document.title = (page ? ({jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco"}[page] + " · ") : "") + "BioFut";
   if (same) scrollTo(0, y); else scrollTo(0, 0);
 }
 addEventListener("hashchange", render);
@@ -1267,8 +1404,9 @@ function coinRain(n = 40) {  // ponytail: CSS 3D coins, no WebGL; three.js only 
 }
 const IG_REEL = "https://www.instagram.com/p/Dej3TUyp4BY/";  // launch reel URL; empty = the Instagram popup stays off
 function insta() {  // once per browser, after the gift (if any)
-  if (!IG_REEL || store.get("bfInsta")) return;
-  store.set("bfInsta", "1"); $("#instaGo").href = IG_REEL; $("#instaGo").onclick = () => $("#instaDlg").close(); $("#instaDlg").showModal();
+  if (!IG_REEL || store.get("bfInsta")) return trucoNews();
+  store.set("bfInsta", "1"); $("#instaGo").href = IG_REEL; $("#instaGo").onclick = () => $("#instaDlg").close();
+  $("#instaDlg").addEventListener("close", trucoNews, {once: true}); $("#instaDlg").showModal();
 }
 function gift() {  // launch gift: the server gives it once per member; localStorage only saves the extra call
   const later = () => setTimeout(insta, 1500);
@@ -1286,7 +1424,7 @@ Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r 
   D = d; setState(s);
   $("#foot").textContent = `${G.length} jogos registrados`;
   render(); bellInit();
-  BF.me.then(m => (ROLE = m.role, ME = m.user || null, m.tour && tour(), gift(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
+  BF.me.then(m => (ROLE = m.role, ME = m.user || null, TT = m.truco_tour && !m.tour, m.tour && tour(), gift(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
 }).catch(() => $("#app").innerHTML = '<div class="empty">Não consegui carregar os dados. Tente recarregar.</div>');
 </script>
 </body>

@@ -591,6 +591,11 @@ assert json.loads(call("/api/avatars", cookie=me)[1]) == ["dan"] and call("/api/
 g = server.load_state()["played"][-1]
 assert json.loads(call("/api/me", cookie=me)[1])["tour"] and not json.loads(call("/api/me")[1])["tour"]
 assert "tour" not in json.loads(call("/api/tour", {}, cookie=me)[1]) and not json.loads(call("/api/me", cookie=me)[1])["tour"]
+# The BioTruco popup + tutorial: its own flag, kept on the server (a new browser doesn't show it again); done stays true.
+assert json.loads(call("/api/me", cookie=me)[1])["truco_tour"]
+call("/api/tour", {"which": "truco", "done": True, "step": 5}, cookie=me); call("/api/tour", {"which": "truco", "done": False, "step": 2}, cookie=me)
+assert not json.loads(call("/api/me", cookie=me)[1])["truco_tour"] and server.load_state()["tour_truco"]["Dan"]["done"]
+assert "tour_truco" not in json.loads(call("/api/state")[1])
 assert call("/api/jogos")[0] == 403 and json.loads(call("/api/jogos", cookie=me)[1]) == {}
 assert json.loads(call("/api/jogo_errado", {"n": g["n"], "text": "o Victor fez 3"}, cookie=me)[1]) == {"ok": True}
 server.review_tick(now=9e9)
@@ -723,5 +728,70 @@ for body, who in (({"at": "XYZ"}, "Eve"), ({}, None)):
         raise AssertionError(body)
     except ValueError:
         pass
+# BioTruco v0.2: the rules of a hand, then 400 random matches that all end and pay only a win (x10 in the launch week).
+import random
+H = server.truco_hand_end
+assert H([0, 0], 1) == 0 and H([None, 1], 0) == 1 and H([0, None], 1) == 0 and H([1, 0, None], 0) == 1 and H([None, None, None], 1) == 1
+assert H([0, 1], 0) is None and H([None], 0) is None and H([None, None], 0) is None
+rng = random.Random(7)
+for k in range(400):
+    st, day = {"ledger": []}, "2026-10-23" if k % 2 else "2026-11-01"
+    v = server.truco_act(st, "Eve", dc, {"op": "novo", "alvo": rng.choice(server.TRUCO_ALVOS)}, day, rng)
+    for _ in range(3000):
+        if v.get("fim"):
+            break
+        h = v["h"]
+        assert h["turn"] == 0 or h["call"] and h["call"]["by"] == 1, "the machine plays until it is your move"
+        ops = [{"op": "quero"}, {"op": "nao"}, {"op": "truco"}] if h["call"] else [{"op": "jogar", "i": i} for i in range(3) if i not in h["usou"][0]] + [{"op": "truco"}, {"op": "aposta"}]
+        try:
+            v = server.truco_act(st, "Eve", dc, rng.choice(ops), day, rng)
+        except ValueError:
+            pass
+    else:
+        raise AssertionError("a BioTruco match that never ends")
+    assert max(v["pts"]) >= v["alvo"] and v["fim"]["won"] == (v["pts"][0] >= v["alvo"]) and not st["truco_aberto"]
+    assert sum(x["amount"] for x in st["ledger"]) == (server.TRUCO_WIN * (10 if k % 2 else 1) if v["fim"]["won"] else 0)
+assert server.truco_act(st, "Eve", dc, {}, day) is None and server.truco_act(st, "Eve", dc, {"op": "novo", "alvo": 13}, day)["h"]["cpu"] == [None] * 3
+for s0, body in (({"ledger": []}, {"op": "novo", "alvo": 12}), (st, {"op": "jogar", "i": 5}), ({"ledger": []}, {"op": "jogar", "i": 0})):
+    try:
+        server.truco_act(s0, "Eve", dc, body, day); raise AssertionError(body)
+    except ValueError:
+        pass
+o = json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie=me)[1])
+assert o["jogo_truco"]["alvo"] == 25 and "truco_aberto" not in o and json.loads(call("/api/truco", {}, cookie=me)[1])["jogo_truco"] == o["jogo_truco"]
+assert "error" in json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie="")[1])
+# Notifications: a phone's subscription (https only), Gab alone sends; the Pix bonus pays each name once per game.
+server.PUSH_SUBS = tmp / "push.json"
+sub = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "BPk", "auth": "xyz"}}
+assert "error" in json.loads(call("/api/push_sub", {"sub": {**sub, "endpoint": "http://evil"}})[1]) and "error" in json.loads(call("/api/push_sub", {"sub": {"endpoint": sub["endpoint"]}})[1])
+assert json.loads(call("/api/push_sub", {"sub": sub}, cookie=me)[1]) == {"ok": True} and json.loads(server.PUSH_SUBS.read_text())[sub["endpoint"]]["user"] == "Dan"
+assert json.loads(call("/api/push_sub", {"sub": sub, "off": True})[1]) == {"ok": True} and json.loads(server.PUSH_SUBS.read_text()) == {}
+assert "error" in json.loads(call("/api/push_send", {"body": "oi"}, cookie=me)[1])
+if server.push:
+    assert len(json.loads(call("/api/push/key")[1])["key"]) == 87
+eve = "biofut=" + server.sign("Eve", "127.0.0.1")  # Dan is Conselho: a plain member can't pay the bonus, nor push
+assert "error" in json.loads(call("/api/pix_bonus", {"names": ["Eve"]}, cookie=eve)[1]) and "error" in json.loads(call("/api/push_send", {"body": "oi"}, cookie=eve)[1])
+server.ADMIN = "adm"
+def staff(path, body):
+    rq = urllib.request.Request(url + path, json.dumps(body).encode(), {"Content-Type": "application/json", "X-BioFut-Admin": "adm"})
+    try:
+        with urllib.request.urlopen(rq) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return json.loads(e.read())
+assert staff("/api/pix_bonus", {"names": ["Dan", "Dan", " ", "Eve"], "date": "2026-10-22"})["pix_bonus"] == ["Dan", "Eve"]
+assert staff("/api/pix_bonus", {"names": ["Dan"], "date": "2026-10-22"})["pix_bonus"] == [] and staff("/api/pix_bonus", {"names": ["Dan"], "date": "2026-10-29"})["pix_bonus"] == ["Dan"]
+# Gab's buttons on a member's page: coins and a gift card (admin only: the Conselho can't), a push to one member's phones.
+assert "error" in json.loads(call("/api/admin_give", {"name": "Eve", "coins": 5}, cookie=me)[1])
+b0, k = staff("/api/admin_give", {"name": "Eve", "coins": 0, "card": ""}), None
+assert "error" in b0 and "error" in staff("/api/admin_give", {"name": "Eve", "coins": 5000})
+o = staff("/api/admin_give", {"name": "Eve", "coins": 7.5, "reason": "teste"})
+k = next(n for n in o["prices"] if n not in (o["cards"].get("Eve") or []))
+o2 = staff("/api/admin_give", {"name": "Eve", "card": k})
+assert o2["balances"]["Eve"] == o["balances"]["Eve"] and k in o2["cards"]["Eve"] and "error" in staff("/api/admin_give", {"name": "Eve", "card": k})
+assert "error" in staff("/api/admin_give", {"name": "Eve", "card": "Ninguém Assim"})
+if server.push:
+    assert "não ativou" in staff("/api/push_send", {"to": "Eve", "body": "oi"})["error"]
+server.ADMIN = ""
 httpd.shutdown()
 print("ok")

@@ -38,6 +38,10 @@ from itertools import combinations
 from pathlib import Path
 
 import costs, lista, sheet, sumula
+try:
+    import push  # Web Push needs the cryptography package; without it the site runs and push is off
+except ImportError:
+    push = None
 
 HERE = Path(__file__).parent
 SRC = Path(os.environ.get("BIOFUT_DATA", HERE / "biofut.json"))
@@ -120,6 +124,8 @@ BOT_TOKEN = os.environ.get("BIOFUT_BOT_TOKEN", "")  # shared with the bot, both 
 REVIEW_MEDIA = HERE / "data" / "review" / "media"
 OCR_BUDGET = HERE / "data" / "ocr_budget.json"
 PROFILES = HERE / "data" / "profiles.json"  # name -> {nick, status, hide}: each member edits only their own (#/eu, /transparencia)
+PUSH_SUBS, VAPID = HERE / "data" / "push.json", HERE / "data" / "vapid.pem"  # the phones that said yes; the server's push key
+PIX_BONUS = 10  # coins for paying the Pix on the game's night (Gab, 2026-10-20), staff marks who paid in /admin Avisos
 VOTES = WIKI / "votes.json"  # "f:<feedback id>" -> {user: 1 | -1} (concordo / discordo), "b:<bit id>" -> {user: 1..5} (graça)
 LEADS = WIKI / "leads.json"  # slug -> media file: the main photo a member proposed and staff approved (kind "foto")
 HIDDEN = "esta pessoa escolheu não aparecer, respeitamos a privacidade de cada um"
@@ -471,6 +477,193 @@ def duel_act(state, user, cards, body, day):
                 rec["dia"] = [d["day"], sc]
     n = len(d["log"])
     return {**d, "cpu": d["cpu"][:n] + [None] * (5 - n)}
+
+
+# --- BioTruco v0.2: Truco Gaúcho with the cards, against the machine (Gab, 2026-10-20) -------------------------------
+# A hand is 3 rounds, best of 3 (the tie rules of the Truco Gaúcho), played with 3 of the member's 5 deck cards against
+# 3 of the machine's. Higher OVR takes the round; the Super Craque beats everyone except a bronze card, as in the Duelo.
+# Truco 2, retruco 3, vale quatro 4; "não quero" gives the caller the hand at its value before the call. New: "aposto
+# que perco" before your first card of a hand. Refused, the hand goes on; accepted, losing the hand scores nobody and
+# winning it scores double. A match goes to 13, 25 or 37. Envido and flor come later (Gab: "start with truco").
+TRUCO_ALVOS = (13, 25, 37)
+TRUCO_WIN = 0.001  # coins per match won (10 Duelos' worth: one match is ~10 hands)
+TRUCO_V02, TRUCO_X10_END = "2026-10-22", "2026-10-28"  # launch week: x10 coins per win (Gab, 2026-10-20)
+TRUCO_ACEITA = 1 / 3  # how often the machine takes "aposto que perco"
+
+
+def truco_round(ace, x, y):
+    """0: your card x takes the round, 1: the machine's y, None: a tie (parda)."""
+    if x["name"] == ace:
+        return 1 if y["tier"] == "bronze" else 0
+    if y["name"] == ace:
+        return 0 if x["tier"] == "bronze" else 1
+    return None if x["ovr"] == y["ovr"] else 0 if x["ovr"] > y["ovr"] else 1
+
+
+def truco_hand_end(rw, mao):
+    """Who takes the hand after these rounds (None: play on). Two rounds win it; a tie goes to whoever won the other
+    round, or the first round won; all three tied go to the mão (who led the hand)."""
+    a, b = rw.count(0), rw.count(1)
+    if a >= 2 or b >= 2 or len(rw) == 2 and a + b == 1 or len(rw) == 3 and a != b:
+        return 0 if a > b else 1
+    if len(rw) == 3:
+        return next((w for w in rw if w is not None), mao)
+    return None
+
+
+def truco_deal(t, cards, r):
+    mine = {c["name"] for c in t["deck"]}
+    lead = t["n"] % 2  # you are mão in the first hand, then it alternates
+    lo, hi = min(c["ovr"] for c in t["deck"]), max(c["ovr"] for c in t["deck"])
+    rest = [c for c in cards if c["name"] not in mine]
+    band = [c for c in rest if lo <= c["ovr"] <= hi]  # the machine plays cards as good as your deck, not the whole pile
+    t["h"] = {"you": r.sample(t["deck"], 3), "cpu": r.sample(band if len(band) >= 6 else rest, 3), "usou": [[], []],
+              "mesa": [None, None], "jogadas": [], "rw": [], "mao": lead, "turn": lead, "val": 1, "call": None, "pode": None, "aposta": None}
+
+
+def truco_end_hand(t, w, fugiu=False):
+    h, a = t["h"], t["h"]["aposta"]
+    pts = h["val"] if not (a and a["ok"]) else 2 * h["val"] if w == a["by"] else 0
+    t["pts"][w] += pts
+    t["n"] += 1
+    t["ultima"] = {"w": w, "pts": pts, "val": h["val"], "fugiu": fugiu, "aposta": a, "you": h["you"], "cpu": h["cpu"], "jogadas": h["jogadas"], "rw": h["rw"]}
+    t["h"] = None
+
+
+def truco_play(t, s, i):
+    h = t["h"]
+    if h["call"] or h["turn"] != s or type(i) is not int or not 0 <= i < 3 or i in h["usou"][s]:
+        raise ValueError("essa carta não dá para jogar agora")
+    h["usou"][s].append(i)
+    h["mesa"][s] = i
+    if h["mesa"][1 - s] is None:
+        h["turn"] = 1 - s
+        return
+    w = truco_round(t["ace"], h["you"][h["mesa"][0]], h["cpu"][h["mesa"][1]])
+    h["rw"].append(w)
+    h["jogadas"].append(h["mesa"])
+    h["mesa"] = [None, None]
+    h["turn"] = w if w is not None else 1 - s  # the round's winner leads the next; after a tie, who led it leads again
+    end = truco_hand_end(h["rw"], h["mao"])
+    if end is not None:
+        truco_end_hand(t, end)
+
+
+def truco_call(t, s):
+    """Side s says truco (or raises the call made to it: retruco, vale quatro)."""
+    h, c = t["h"], t["h"]["call"]
+    if c and c["by"] != s and c["to"] < 4:
+        h["val"], h["call"] = c["to"], {"by": s, "to": c["to"] + 1}
+    elif not c and h["val"] < 4 and h["pode"] in (None, s) and h["turn"] == s:
+        h["call"] = {"by": s, "to": h["val"] + 1}
+    else:
+        raise ValueError("agora não dá para pedir truco")
+
+
+def truco_answer(t, s, quero):
+    h, c = t["h"], t["h"]["call"]
+    if not c or c["by"] == s:
+        raise ValueError("ninguém pediu truco")
+    if not quero:
+        return truco_end_hand(t, c["by"], fugiu=True)
+    h["val"], h["pode"], h["call"] = c["to"], s, None  # who accepted is the one who may raise later
+
+
+def truco_cpu(t, cards, r):
+    """The machine's moves until it is your turn: answer a call, maybe call, play a card."""
+    pw = {c["name"]: 1 - i / len(cards) for i, c in enumerate(cards)}  # cards come strongest first
+    pw[t["ace"]] = 1.0
+    while t["h"]:
+        h = t["h"]
+        left = [i for i in range(3) if i not in h["usou"][1]]
+        s = sum(pw.get(h["cpu"][i]["name"], .5) for i in left) / max(len(left), 1) + .3 * (h["rw"].count(1) - h["rw"].count(0)) + r.uniform(-.1, .1)
+        on = h["mesa"][0]
+        if on is not None and any(truco_round(t["ace"], h["you"][on], h["cpu"][i]) == 1 for i in left):
+            s += .2
+        if h["call"] and h["call"]["by"] == 0:
+            if s > .85 and h["call"]["to"] < 4:
+                truco_call(t, 1)
+                return
+            truco_answer(t, 1, s > .5)
+        elif not h["call"] and h["turn"] == 1:
+            if h["val"] < 4 and h["pode"] in (None, 1) and s > .75 and r.random() < .5:
+                h["call"] = {"by": 1, "to": h["val"] + 1}
+                return
+            by = sorted(left, key=lambda i: pw.get(h["cpu"][i]["name"], .5))
+            if on is not None:  # answering your card: the weakest that takes it, else the weakest of all
+                by = [i for i in by if truco_round(t["ace"], h["you"][on], h["cpu"][i]) == 1] or by
+                truco_play(t, 1, by[0])
+            else:
+                truco_play(t, 1, by[-1])
+        else:
+            return
+
+
+def truco_view(t):
+    h = t["h"]
+    v = {k: t.get(k) for k in ("alvo", "pts", "n", "ace", "ultima", "fim", "x10", "deck_proprio")}
+    if h:
+        v["h"] = {**h, "cpu": [c if i in h["usou"][1] else None for i, c in enumerate(h["cpu"])]}
+    return v
+
+
+def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
+    """#/truco for a logged-in member. op: (none) the open match or None, "novo" {alvo}, "jogar" {i}, "truco", "quero",
+    "nao", "aposta", "desisto". One open match each. A finished match goes to state truco (public): wins, losses, the run
+    of wins and the longest; a win pays TRUCO_WIN coins (x10 in the launch week) through the ledger."""
+    if not user:
+        raise ValueError("entre para jogar o BioTruco")
+    if len(cards) < 10:
+        raise ValueError("poucas cartas para o BioTruco")
+    rec = state.setdefault("truco", {}).setdefault(user, {"v": 0, "d": 0, "run": 0, "top": 0})
+    games = state.setdefault("truco_aberto", {})
+    t, op = games.get(user), body.get("op")
+    if not op:
+        return truco_view(t) if t else None
+    if op == "novo" and not t:
+        if body.get("alvo") not in TRUCO_ALVOS:
+            raise ValueError("escolha 13, 25 ou 37 pontos")
+        mine = deck_of(state, user)
+        deck = [c for c in cards if c["name"] in mine]
+        own = len(deck) == DECK
+        t = games[user] = {"alvo": body["alvo"], "pts": [0, 0], "n": 0, "ace": cards[0]["name"], "ultima": None,
+                           "deck": deck if own else r.sample(cards, DECK), "deck_proprio": own, "x10": TRUCO_V02 <= day <= TRUCO_X10_END}
+        truco_deal(t, cards, r)
+    elif not t:
+        raise ValueError("esta partida acabou: comece outra")
+    elif op == "desisto":
+        t["pts"][1] = t["alvo"]
+    elif op != "novo":  # "novo" with a match open returns it: no dealing again for a better hand
+        h = t["h"]
+        if op == "jogar":
+            truco_play(t, 0, body.get("i"))
+        elif op == "truco":
+            truco_call(t, 0)
+        elif op in ("quero", "nao"):
+            truco_answer(t, 0, op == "quero")
+        elif op == "aposta":
+            if h["aposta"] or h["usou"][0] or h["call"]:
+                raise ValueError("a aposta é antes da sua primeira carta da mão")
+            h["aposta"] = {"by": 0, "ok": r.random() < TRUCO_ACEITA}
+        else:
+            raise ValueError("jogada desconhecida")
+    while max(t["pts"]) < t["alvo"]:
+        if not t["h"]:
+            truco_deal(t, cards, r)
+        truco_cpu(t, cards, r)
+        if t["h"]:
+            break
+    if max(t["pts"]) >= t["alvo"]:
+        won = t["pts"][0] >= t["alvo"]
+        rec["v" if won else "d"] += 1
+        rec["run"] = rec["run"] + 1 if won else 0
+        rec["top"] = max(rec["top"], rec["run"])
+        coins = TRUCO_WIN * (10 if t["x10"] else 1) if won else 0
+        if coins:
+            state["ledger"].append({"player": user, "amount": coins, "reason": f"biotruco {day} {t['pts'][0]}x{t['pts'][1]}"})
+        t["fim"], t["h"] = {"won": won, "coins": coins}, None
+        del games[user]
+    return truco_view(t)
 
 
 # --- match / draft state -------------------------------------------------------
@@ -932,7 +1125,7 @@ def base_of(st, data):
 def public_state(st):
     d = st["match"]["draft"]
     base = base_of(st, DATA)
-    out = {k: v for k, v in st.items() if k not in ("ledger", "owners", "cromo", "fechados", "duelo_aberto", "tour")}  # owners hold phone_pk
+    out = {k: v for k, v in st.items() if k not in ("ledger", "owners", "cromo", "fechados", "duelo_aberto", "truco_aberto", "tour", "tour_truco")}  # owners hold phone_pk
     out["cromadas"] = {c: {"by": p, "stat": st.get("cromo", {}).get(c, "")} for c, p in first_buyers(st).items()}
     out["profiles"] = load_profiles()
     out["photos"] = sorted(p.stem for p in PHOTOS.glob("*.jpg")) if PHOTOS.exists() else []
@@ -1851,7 +2044,8 @@ class Handler(SimpleHTTPRequestHandler):
         user = self.user()
         if path == "/api/me":  # why "ip": a valid cookie from another IP, so the site can say why you are out
             return self.send_json({"user": user, "role": self.role(), "why": "ip" if not user and session(self.cookie()) else None,
-                                   "tour": bool(user) and user not in load_state().get("tour", {})})  # the TCG tour: once per member, from its deploy on
+                                   "tour": bool(user) and user not in load_state().get("tour", {}),  # the TCG tour: once per member, from its deploy on
+                                   "truco_tour": bool(user) and user not in load_state().get("tour_truco", {})})  # the BioTruco popup + tutorial, same
         if path == "/wiki":
             self.path = "/wiki.html"
             return super().do_GET()
@@ -1948,6 +2142,8 @@ class Handler(SimpleHTTPRequestHandler):
             avisos = [json.loads(l) for l in AVISOS.open(encoding="utf-8")][-50:][::-1] if AVISOS.exists() else []
             return self.send_json({"user": user, "hide": bool(profs.get(user, {}).get("hide")), "listas": listas, "log": log_view(), "avisos": avisos if user else [],
                                    "pix": DATA.get("pix", {}).get("key"), "custos": costs.totals()})
+        if path == "/api/push/key":  # the applicationServerKey a phone subscribes with (null: push off)
+            return self.send_json({"key": push.public_key(push.vapid(VAPID)) if push else None})
         if path == "/api/custos":  # what the AI calls cost, public: the Apoie page shows it next to the Pix
             return self.send_json(costs.totals())
         if path == "/api/planilha":  # games the sheet lacks, ready to paste (#/planilha): no Gmail, no Apps Script
@@ -1965,7 +2161,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml") or re.fullmatch(r"/og/copa-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js") or re.fullmatch(r"/og/copa-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
@@ -2170,6 +2366,42 @@ class Handler(SimpleHTTPRequestHandler):
                         k[user] = v
                     write_json(VOTES, votes)
                 return self.send_json({"key": key, "votes": [sum(k.values()), len(k), v]})
+            if action == "push_sub":  # a phone said yes to notifications ({sub}: its PushSubscription) or no ({sub, off})
+                sub = body.get("sub") if isinstance(body.get("sub"), dict) else {}
+                ep, k = str(sub.get("endpoint") or ""), sub.get("keys") if isinstance(sub.get("keys"), dict) else {}
+                if not ep.startswith("https://") or len(ep) > 1000 or not body.get("off") and not all(type(k.get(x)) is str for x in ("p256dh", "auth")):
+                    raise ValueError("inscrição inválida")
+                with LOCK:
+                    subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
+                    subs.pop(ep, None)
+                    if not body.get("off"):
+                        subs[ep] = {"keys": {"p256dh": k["p256dh"][:200], "auth": k["auth"][:100]}, "user": user, "at": int(time.time())}
+                    write_json(PUSH_SUBS, subs)
+                return self.send_json({"ok": True})
+            if action == "push_send":  # Gab: {title, body, url, to?} to every phone that said yes (or only to's); the ones that left are dropped
+                if not self.admin() or not push:
+                    raise ValueError("só o Gab manda notificação" if push else "push desligado: falta o pacote cryptography")
+                url = str(body.get("url") or "/")
+                msg = {"title": str(body.get("title") or "BioFut")[:80], "body": str(body.get("body") or "").strip()[:300], "url": url if url.startswith("/") else "/"}
+                if not msg["body"]:
+                    raise ValueError("escreva a notificação")
+                with LOCK:
+                    subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
+                to = clean_name(body.get("to")) if body.get("to") else None
+                if to:
+                    subs = {ep: x for ep, x in subs.items() if x["user"] == to}
+                    if not subs:
+                        raise ValueError(f"{to} não ativou as notificações")
+                key = push.vapid(VAPID)
+                codes = {ep: push.send(key, {"endpoint": ep, **x}, msg) for ep, x in subs.items()}  # ponytail: one by one, fine for ~70 phones
+                with LOCK:
+                    subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
+                    for ep in [ep for ep, c in codes.items() if c in (404, 410)]:
+                        subs.pop(ep, None)
+                    write_json(PUSH_SUBS, subs)
+                notify(f"🔔 {to + ': ' if to else ''}{msg['body']}", post=False)
+                ok, gone = sum(200 <= c < 300 for c in codes.values()), sum(c in (404, 410) for c in codes.values())
+                return self.send_json({"sent": ok, "gone": gone, "failed": len(codes) - ok - gone})
             with LOCK:
                 st = load_state()
                 if action == "photo":
@@ -2194,7 +2426,11 @@ class Handler(SimpleHTTPRequestHandler):
                 elif action == "tour":  # the member saw (or skipped) the first-login tour
                     if not user:
                         raise ValueError("entre primeiro")
-                    st.setdefault("tour", {})[user] = time.strftime("%Y-%m-%d")
+                    if body.get("which") == "truco":  # {which, done, step}: done stays true once the member went through it all
+                        old = st.setdefault("tour_truco", {}).get(user, {})
+                        st["tour_truco"][user] = {"at": time.strftime("%Y-%m-%d"), "done": bool(old.get("done") or body.get("done")), "step": int(body.get("step") or 0)}
+                    else:
+                        st.setdefault("tour", {})[user] = time.strftime("%Y-%m-%d")
                     save_state(st)
                 elif action == "cromo":
                     claim_cromo(st, user, clean_name(body.get("card")), str(body.get("stat") or ""))
@@ -2204,6 +2440,44 @@ class Handler(SimpleHTTPRequestHandler):
                                     time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600)))  # the group's day
                     save_state(st)
                     return self.send_json({**public_state(st), "duel": duel})
+                elif action == "pix_bonus":  # staff: who paid the Pix on the game's night, {names, date}: PIX_BONUS coins once per game
+                    if self.role() not in ("admin", "conselho"):
+                        raise ValueError("só o Gab e o Conselho")
+                    date = str(body.get("date") or st["match"]["date"] or time.strftime("%Y-%m-%d"))[:10]
+                    why = f"pix em dia {date}"
+                    got = [n for n in dict.fromkeys(clean_name(x) for x in (body.get("names") or [])[:40] if str(x).strip())
+                           if not any(x["player"] == n and x["reason"] == why for x in st["ledger"])]
+                    st["ledger"] += [{"player": n, "amount": PIX_BONUS, "reason": why} for n in got]
+                    save_state(st)
+                    return self.send_json({**public_state(st), "pix_bonus": got})
+                elif action == "admin_give":  # Gab, on a member's page: {name, coins?, reason?, card?} coins (+ or -) and/or a card as a gift
+                    if not self.admin():
+                        raise ValueError("só o Gab")
+                    name, card = clean_name(body.get("name")), clean_name(body.get("card")) if body.get("card") else ""
+                    try:
+                        coins = round(float(body.get("coins") or 0), 4)
+                    except (TypeError, ValueError):
+                        raise ValueError("moedas: um número")
+                    if not name or not coins and not card or abs(coins) > 1000:
+                        raise ValueError("diga quem, e moedas (até 1000) ou uma carta")
+                    deck = st.setdefault("cards", {}).get(name, [])
+                    if card and (card not in card_prices(DATA["games"] + unsynced(st["played"], DATA["games"])) or card in deck):
+                        raise ValueError(f"{name} já tem essa carta, ou ela não existe")
+                    if coins:
+                        st["ledger"].append({"player": name, "amount": coins, "reason": "Gab: " + (str(body.get("reason") or "").strip()[:80] or "presente")})
+                    if card:  # a gift is not a buy: no cromada, no ledger line (first_buyers reads "carta ..." reasons)
+                        st["cards"][name] = deck + [card]
+                        team = st.setdefault("deck", {}).setdefault(name, [])
+                        if len(team) < DECK:
+                            team.append(card)
+                    save_state(st)
+                    notify(f"🎁 {name}: {f'{coins:+g} moedas ' if coins else ''}{'carta ' + card if card else ''}", post=False)
+                    return self.send_json(public_state(st))
+                elif action == "truco":  # BioTruco v0.2: the server deals, plays the machine and judges
+                    truco = truco_act(st, user, duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
+                                      time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600)))
+                    save_state(st)
+                    return self.send_json({**public_state(st), "jogo_truco": truco})  # "truco" is the public ranking
                 elif action in ("mercado", "mercado_bet", "mercado_fim"):  # BioBet mercados: the logged-in member's own coins
                     note = mercado_act(st, action, body, user, self.role())
                     save_state(st)
