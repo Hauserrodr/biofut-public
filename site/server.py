@@ -488,7 +488,8 @@ def duel_act(state, user, cards, body, day):
 TRUCO_ALVOS = (13, 25, 37)
 TRUCO_WIN = 0.001  # coins per match won (10 Duelos' worth: one match is ~10 hands)
 TRUCO_V02, TRUCO_X10_END = "2026-10-22", "2026-10-28"  # launch week: x10 coins per win (Gab, 2026-10-20)
-TRUCO_ACEITA = 1 / 3  # how often the machine takes "aposto que perco"
+TRUCO_APOSTA = .8  # the machine takes "aposto que perco" only when it expects to win the hand anyway
+TRUCO_BLEFE = .1  # how often it says truco on a weak hand, so a call does not always mean strength
 
 
 def truco_round(ace, x, y):
@@ -583,32 +584,74 @@ def truco_answer(t, s, quero):
     truco_ev(t, "resp", s=s, quero=True, to=c["to"])
 
 
+def truco_odds(t, h):
+    """The machine's chance to take the hand, and per card it may play now, from what it may know: its own cards, the
+    cards on the table and the member's deck (public in #/deck) minus the cards already played, never your hand. Each
+    hand you could hold is played out with both sides picking their best cards (you knowing the machine's), averaged."""
+    ace, M, usou = t["ace"], h["cpu"], h["usou"]
+    seen = {h["you"][j]["name"] for j in usou[0]}
+    Y = [c for c in t["deck"] if c["name"] not in seen]
+    yon = None
+    if h["mesa"][0] is not None:
+        yon = len(Y)
+        Y.append(h["you"][h["mesa"][0]])
+    ml = frozenset(i for i in range(3) if i not in usou[1])
+    W = {(a, b): truco_round(ace, Y[a], M[b]) for a in range(len(Y)) for b in range(3)}
+    memo = {}
+
+    def val(ys, ms, rw, yo, mo, turn):  # 1: the machine takes the hand with best play from here, 0: you do
+        end = truco_hand_end(list(rw), h["mao"])
+        if end is not None:
+            return float(end)
+        k = (ys, ms, rw, yo, mo, turn)
+        if k not in memo:
+            memo[k] = (max if turn else min)(move(ys, ms, rw, yo, mo, turn, x) for x in (ms if turn else ys))
+        return memo[k]
+
+    def move(ys, ms, rw, yo, mo, turn, x):
+        if turn:
+            if yo is None:
+                return val(ys, ms - {x}, rw, None, x, 0)
+            w = W[yo, x]
+            return val(ys, ms - {x}, rw + (w,), None, None, 0 if w is None else w)
+        if mo is None:
+            return val(ys - {x}, ms, rw, x, None, 1)
+        w = W[x, mo]
+        return val(ys - {x}, ms, rw + (w,), None, None, 1 if w is None else w)
+
+    hands = [frozenset(c) for c in combinations(range(len(Y) - (yon is not None)), 3 - len(usou[0]))]
+    rw, mo = tuple(h["rw"]), h["mesa"][1]
+    p = sum(val(ys, ml, rw, yon, mo, h["turn"]) for ys in hands) / len(hands)
+    per = {x: sum(move(ys, ml, rw, yon, mo, 1, x) for ys in hands) / len(hands) for x in ml} if h["turn"] == 1 else {}
+    return p, per
+
+
 def truco_cpu(t, cards, r):
-    """The machine's moves until it is your turn: answer a call, maybe call, play a card."""
-    pw = {c["name"]: 1 - i / len(cards) for i, c in enumerate(cards)}  # cards come strongest first
-    pw[t["ace"]] = 1.0
+    """The machine's moves until it is your turn: answer a call, maybe call, play a card. It weighs its chance to take
+    the hand (truco_odds) against the points at stake; a bet you accepted means it cannot score, so it never calls then."""
+    rank = {c["name"]: i for i, c in enumerate(cards)}  # cards come strongest first
+    rank[t["ace"]] = -1
     while t["h"]:
-        h = t["h"]
-        left = [i for i in range(3) if i not in h["usou"][1]]
-        s = sum(pw.get(h["cpu"][i]["name"], .5) for i in left) / max(len(left), 1) + .3 * (h["rw"].count(1) - h["rw"].count(0)) + r.uniform(-.1, .1)
-        on = h["mesa"][0]
-        if on is not None and any(truco_round(t["ace"], h["you"][on], h["cpu"][i]) == 1 for i in left):
-            s += .2
-        if h["call"] and h["call"]["by"] == 0:
-            if s > .85 and h["call"]["to"] < 4:
+        h, c = t["h"], t["h"]["call"]
+        safe = h["aposta"] and h["aposta"]["ok"]  # you bet you lose and it took the bet: you win double or nobody scores
+        if c and c["by"] == 0:
+            p, _ = truco_odds(t, h)
+            v, to = h["val"], c["to"]
+            if not safe and to < 4 and p > .78:
                 truco_call(t, 1)
                 return
-            truco_answer(t, 1, s > .5)
-        elif not h["call"] and h["turn"] == 1:
-            if h["val"] < 4 and h["pode"] in (None, 1) and s > .75 and r.random() < .5:
+            if safe:
+                quero = (1 - p) * to <= v  # refusing hands you 2 x the value now; accepting risks 2 x the new one
+            else:  # accept when the expected points beat giving you the hand now, or when refusing ends the match
+                quero = p > (to - v) / (2 * to) + .1 or t["pts"][0] + v >= t["alvo"]
+            truco_answer(t, 1, quero)
+        elif not c and h["turn"] == 1:
+            p, per = truco_odds(t, h)
+            if not safe and h["val"] < 4 and h["pode"] in (None, 1) and (p > .66 or p < .35 and h["val"] == 1 and r.random() < TRUCO_BLEFE):
                 truco_call(t, 1)
                 return
-            by = sorted(left, key=lambda i: pw.get(h["cpu"][i]["name"], .5))
-            if on is not None:  # answering your card: the weakest that takes it, else the weakest of all
-                by = [i for i in by if truco_round(t["ace"], h["you"][on], h["cpu"][i]) == 1] or by
-                truco_play(t, 1, by[0])
-            else:
-                truco_play(t, 1, by[-1])
+            best = max(per.values())  # of the cards that do best, the weakest: strong cards stay for later
+            truco_play(t, 1, max((x for x in per if per[x] > best - 1e-9), key=lambda x: rank.get(h["cpu"][x]["name"], len(cards))))
         else:
             return
 
@@ -658,7 +701,7 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
         elif op == "aposta":
             if h["aposta"] or h["usou"][0] or h["call"]:
                 raise ValueError("a aposta é antes da sua primeira carta da mão")
-            h["aposta"] = {"by": 0, "ok": r.random() < TRUCO_ACEITA}
+            h["aposta"] = {"by": 0, "ok": truco_odds(t, h)[0] >= TRUCO_APOSTA}
             truco_ev(t, "aposta", ok=h["aposta"]["ok"])
         else:
             raise ValueError("jogada desconhecida")

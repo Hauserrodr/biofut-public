@@ -765,6 +765,48 @@ for s0, body in (({"ledger": []}, {"op": "novo", "alvo": 12}), (st, {"op": "joga
         assert json.dumps(s0) == before, "a refused BioTruco move changes nothing"
 s0 = {"ledger": []}
 assert server.truco_act(s0, "Eve", dc, {}, day) is None and s0 == {"ledger": []}, "opening #/truco writes no ranking row"
+# The machine's decisions: it reads only its cards, the table and your public deck, never your hand.
+nb = [c for c in dc[1:] if c["tier"] != "bronze"]  # no Super Craque, no bronze: plain OVR fights
+
+
+def tt(deck, you, cpu, **h):
+    t = {"alvo": 13, "pts": [0, 0], "n": 0, "ace": dc[0]["name"], "ultima": None, "fim": None, "x10": False, "deck_proprio": True, "deck": deck}
+    t["h"] = {"you": you, "cpu": cpu, "usou": [[], []], "mesa": [None, None], "jogadas": [], "rw": [], "mao": 0, "turn": 0, "val": 1, "call": None, "pode": None, "aposta": None, **json.loads(json.dumps(h))}
+    return t
+
+
+def cpu_moves(t, seed=3):
+    server.truco_cpu(t, dc, random.Random(seed))
+    return [(e["k"], e.get("i"), e.get("quero"), e.get("to")) for e in t.pop("ev", [])]
+
+
+strong, weak = nb[:5], nb[-5:]
+for deck, cpu, ok in ((strong, weak[:3], False), (weak, strong[:3], True)):
+    s1 = {"ledger": [], "truco_aberto": {"Eve": tt(deck, deck[:3], cpu)}}
+    assert server.truco_act(s1, "Eve", dc, {"op": "aposta"}, day)["h"]["aposta"]["ok"] is ok, "the machine takes 'aposto que perco' only when it expects to win"
+t = tt(strong, strong[:3], weak[:3], call={"by": 0, "to": 2})
+assert cpu_moves(t)[0] == ("resp", None, False, 2), "the machine refuses a truco it cannot win"
+t = tt(weak, weak[:3], strong[:3], call={"by": 0, "to": 2})
+assert cpu_moves(t)[0][0] == "pede", "the machine raises a truco it is sure to win"
+t = tt(strong, [dc[0]] + strong[:2], weak[:3], mesa=[0, None], usou=[[0], []], turn=1, pode=0)
+t["deck"] = [dc[0]] + strong[:4]
+assert cpu_moves(t)[0] == ("carta", 2, None, None), "the machine throws its weakest card on a round it cannot take"
+mid = nb[len(nb) // 2]
+cpu = [c for c in nb if c["ovr"] > mid["ovr"]][-1:] + nb[:1] + nb[-1:]  # takes it cheaply, the best one, cannot take it
+t = tt([mid] + nb[1:5], [mid] + nb[1:3], cpu, mesa=[0, None], usou=[[0], []], turn=1, pode=0)  # pode=0: no truco from it now
+assert cpu_moves(t)[0] == ("carta", 0, None, None), "the machine takes a round with its cheapest winning card"
+for k in range(40):  # same table, different hands in your deck: the machine plays the same (no peeking)
+    g = random.Random(k)
+    deck, cpu, lead = g.sample(dc, 5), g.sample(dc, 3), k % 2
+    a = g.sample(deck, 3)
+    b = g.sample(deck, 3) if lead else a[:1] + g.sample([c for c in deck if c is not a[0]], 2)  # your card on the table stays
+    kw = dict(mao=lead, turn=1, mesa=[None if lead else 0, None], usou=[[] if lead else [0], []])
+    if k % 4 == 3:
+        kw.update(turn=0, mesa=[None, None], usou=[[], []], call={"by": 0, "to": 2})
+    assert cpu_moves(tt(deck, a, cpu, **kw), k) == cpu_moves(tt(deck, b, cpu, **kw), k), "the machine never looks at your hand"
+assert all(m[0] != "pede" for k in range(20) for m in cpu_moves(tt(weak, weak[:3], strong[:3], mao=1, turn=1, aposta={"by": 0, "ok": True}), k)), "no truco when it cannot score"
+r1, r2 = ({"ledger": []} for _ in range(2))
+assert server.truco_act(r1, "Eve", dc, {"op": "novo", "alvo": 13}, day, random.Random(9)) == server.truco_act(r2, "Eve", dc, {"op": "novo", "alvo": 13}, day, random.Random(9)), "a seed replays a match"
 o = json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie=me)[1])
 assert o["jogo_truco"]["alvo"] == 25 and "truco_aberto" not in o and {**json.loads(call("/api/truco", {}, cookie=me)[1])["jogo_truco"], "ev": o["jogo_truco"]["ev"]} == o["jogo_truco"]
 assert "error" in json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie="")[1])
