@@ -3,7 +3,7 @@
  *
  * Dry-run by default: every outgoing message is appended to outbox.jsonl, nothing is sent.
  * Live (--live) runs on Gab's own number as an extra linked device (Gab, 2026-10-05: no SIM,
- * the bot speaks as him, every message tagged "[ESQUIZOFUT]"). It uses its own session dir and
+ * the bot speaks as him, every message tagged with PREFIX, the bot "AG"). It uses its own session dir and
  * refuses the read-only ingest session (~/.whatsapp-secrets). Live answers only in cfg.groupJid.
  *
  * Site -> bot contract (site/server.py calls this on every new sign-up):
@@ -16,7 +16,7 @@
  *   pick. DMs the other captain the teams so far, who is still free and whose turn it is. -> 200 {"ok":true,"notified":K}.
  *   POST /login (same header) {"id", "phone", "code"}: site login. 404 if the number is not in cfg.groupJid; else DMs
  *   the member the code, which the member types on the site (server.py login_code checks it).
- *   POST /group (same header) {"text": "..."} posts to cfg.groupJid untagged: the site's "Tô dentro" and the list to copy.
+ *   POST /group (same header) {"text": "..."} posts to cfg.groupJid, tagged when it starts with 🤖, else as is (the list to copy).
  *   POST /notify (same header) {"text": "..."} posts to cfg.avisosJid, the "BioFut Avisos" group
  *   (pipeline news: wiki proposals, súmulas, approvals). Live, an empty avisosJid is filled by itself with the
  *   group whose name matches "BioFut Avisos" (Gab only has to create it). 503 until there is one.
@@ -55,11 +55,14 @@ async function siteState(cfg) {
   } catch { return null; }
 }
 
-// every outgoing message is tagged so the group knows it is the bot, not Gab typing
-const tag = (text, cfg) => `${cfg.prefix ?? '[ESQUIZOFUT]'} ${text}`;
+// every outgoing message is tagged so the group knows it is the bot, not Gab typing. The bot is "AG" (Gab, 2026-10-23;
+// the group may give it a nickname later): change it here, the one place. *bold* in WhatsApp. A site text's own leading
+// 🤖 (server.py group_post: "tag this") folds into the tag.
+const PREFIX = '🤖 *AG*';
+const tag = (text) => `${PREFIX} ${String(text).replace(/^🤖\s*/u, '')}`;
 // the admin group Gab creates: "BioFut Avisos", "biofut avisos", "BIOFUT - avisos"... (groups: {jid: {id, subject}})
 const findAvisos = (groups) => Object.values(groups || {}).find((g) => /bio\s*fut.*avisos/i.test(g.subject || ''))?.id;
-const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text) => transport.send(to, tag(text, cfg)) });
+const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text) => transport.send(to, tag(text)) });
 // "cancelado" / "jogo cancelado hoje" in the group on the game's day -> the site gives the bets back. A question is not a call.
 const isCancel = (text) => /\bcancelad[ao]\b/i.test(String(text || '')) && String(text).length < 120 && !/\?/.test(text);
 
@@ -200,7 +203,7 @@ async function liveTransport(cfg, onText) {
         const text = m.message?.conversation || m.message?.extendedTextMessage?.text;
         const chat = m.key.remoteJid;
         // fromMe is allowed: the bot is Gab's number, so Gab's own !commands count. Its tagged replies are skipped (no loop).
-        if (!text || text.startsWith(cfg.prefix ?? '[ESQUIZOFUT]')) continue;
+        if (!text || text.startsWith(PREFIX)) continue;
         if (chat !== cfg.groupJid) continue; // only the BioFut group, never Gab's private chats
         onText(chat, text);
         // the poster's phone JID (Baileys 7: participant may be a LID, its phone JID is then participantAlt)
@@ -352,4 +355,4 @@ if (require.main === module) {
   })().catch((e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
+module.exports = { PREFIX, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
