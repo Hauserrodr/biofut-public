@@ -580,6 +580,69 @@ st["owners"]["2026-10-29"] = "Victor"
 server.sync_list(st, lst("29/10", "Zeca"), brt(10, 21), "Leo Saul", "pk1")
 assert st["match"]["lista"]["owner"] == "Victor" and st["owners"]["2026-10-29"] == ["Victor", ""]
 assert server.wa_check("~Fulano", "Leonardo Saul", ["Leo Saul"]) is None and server.wa_check("Dan", "", ["Leo Saul"]) is None
+# Chat draft (Gab, 2026-10-23): a list with 2 full team blocks is the site draft, closed, BioBet open, "Times fechados"
+# once. The same teams again post nothing; a switch reposts and gives the bets back; a give-up without a replacement keeps
+# the last full teams; a site draft is never touched; a short block does nothing.
+sent = []
+server.bot_post = lambda route, obj: sent.append((route, obj))
+A = ["Abel (C)", "Bruno", "Caio", "Davi", "Edu", "Fabio", "Gil"]
+B = ["Hugo (c)", "Igor", "Joca", "Kaue", "Lino", "Mauro", "Nilo"]
+blocks = lambda a, b: "🚨 [QUINTA - 05/11 18:30]🚨\nTime Abel\n" + "\n".join(a) + "\n\nTime Hugo\n" + "\n".join(b) + "\n\nBom jogo\n"
+nm = lambda xs: [x.split(" (")[0] for x in xs]
+st = new_state()
+server.sync_list(st, blocks(A, B), brt(11, 4), "Rafo"); time.sleep(0.2)
+d = st["match"]["draft"]
+assert d["captains"] == ["Abel", "Hugo"] and d["teams"] == {"Abel": nm(A), "Hugo": nm(B)} and d["ok"] == ["Abel", "Hugo"] and d["chat"], d
+assert len(sent) == 1 and sent[0][0] == "/group" and "Times fechados!\nTime Abel: Abel, Bruno" in sent[0][1]["text"] and "BioBet: Abel" in sent[0][1]["text"], sent
+b0 = balance(st, BASE, "Bruno")
+apply(st, "bet", {"bettor": "Bruno", "pick": "A", "stake": 5}, DATA, BASE)
+for again in (blocks(A, B), blocks(B, A)):  # the same list, or the blocks the other way round
+    server.sync_list(st, again, brt(11, 4), "Dan")
+time.sleep(0.2)
+assert len(sent) == 1 and len(st["match"]["bets"]) == 1 and st["match"]["draft"]["captains"] == ["Abel", "Hugo"], sent
+try:
+    apply(st, "draft_confirm", {"captain": "Abel"}); raise AssertionError("a chat draft changes in the group only")
+except ValueError as e:
+    assert "lista do grupo" in str(e)
+server.mercado_act(st, "mercado", {"kind": "jogo", "side": "sim", "stake": 2}, "Igor", "membro", now=brt(11, 4))
+m0 = _copy.deepcopy(st["mercados"])  # a list mercado rides out a team change: its bets and status stay (Gab, 2026-10-23)
+B2 = B[:-1] + ["Gil"]  # Gil switched sides, Nilo is out
+server.sync_list(st, blocks(A[:-1] + ["Nilo"], B2), brt(11, 5), "Dan"); time.sleep(0.2)
+assert st["mercados"] == m0 and m0[0]["bets"] and m0[0]["status"] == "aberta", st["mercados"]
+assert st["match"]["draft"]["teams"]["Hugo"] == nm(B2) and st["match"]["bets"] == [] and st["cancelados"][-1]["bets"][0]["bettor"] == "Bruno", (st["match"]["draft"], st["match"]["bets"], st.get("cancelados"), st["last_list"])
+assert st["ledger"][-1] == {"player": "Bruno", "amount": 5, "reason": "times mudaram 2026-11-05"} and balance(st, BASE, "Bruno") == b0
+assert len(sent) == 2 and sent[1][1]["text"].startswith("🤖 🔁 Os times mudaram na lista: 1 aposta devolvida, apostem de novo.\nTimes fechados!"), sent[1]
+server.sync_list(st, blocks(A[:-1], B2), brt(11, 5), "Dan"); time.sleep(0.2)  # Nilo gave up, nobody in yet: 6 in team Abel
+assert st["match"]["draft"]["teams"]["Abel"] == nm(A[:-1]) + ["Nilo"] and len(sent) == 2 and st["last_list"]["why"].endswith("times incompletos: ficam os últimos completos")
+server.sync_list(st, blocks(A[:-1] + ["Otto"], B2), brt(11, 5), "Dan"); time.sleep(0.2)  # Otto takes the spot
+assert st["match"]["draft"]["teams"]["Abel"][-1] == "Otto" and "Nilo" not in st["match"]["confirmed"] and len(sent) == 3 and "devolvida" not in sent[2][1]["text"], sent[2]
+st = new_state()  # the captains drafted on the site: the group's teams don't overwrite it
+server.sync_list(st, lst("05/11", "Abel", "Hugo", "Bruno"), brt(11, 4), "Rafo")
+apply(st, "draft_start", {"captains": ["Abel", "Hugo"]})
+server.sync_list(st, blocks(A, B), brt(11, 5), "Rafo"); time.sleep(0.2)
+assert st["match"]["draft"]["teams"] == {"Abel": ["Abel"], "Hugo": ["Hugo"]} and "chat" not in st["match"]["draft"] and len(sent) == 3
+st = new_state()  # one short block: no draft
+server.sync_list(st, blocks(A[:-1], B), brt(11, 4), "Rafo"); time.sleep(0.2)
+assert st["match"]["draft"] is None and len(sent) == 3 and len(st["match"]["confirmed"]) == 13
+# A site sign-up during a chat draft (Gab, 2026-10-23): room left -> in, the draft is undone, the bets go back, the
+# group redraws on the list; no room -> waits on the captains as before; a site draft is untouched.
+st = new_state()
+server.sync_list(st, blocks(A, B), brt(11, 4), "Rafo"); time.sleep(0.2)
+apply(st, "bet", {"bettor": "Bruno", "pick": "A", "stake": 5}, DATA, BASE)
+sent.clear(); apply(st, "signup", {"name": "Zeca"}); time.sleep(0.2)
+assert st["match"]["draft"] is None and st["match"]["confirmed"][-1] == "Zeca" and st["match"]["bets"] == [], st["match"]
+assert st["ledger"][-1] == {"player": "Bruno", "amount": 5, "reason": "draft refeito 2026-11-05"}
+assert sent == [("/group", {"text": "🤖 Zeca entrou pelo site durante o draft. O draft foi refeito: montem os times de novo na lista. 1 aposta devolvida."})], sent
+st = new_state()  # 16 on the list already: no room, Zeca waits
+server.sync_list(st, blocks(A + ["Otto"], B + ["Pepe"]), brt(11, 4), "Rafo"); time.sleep(0.2)
+sent.clear(); apply(st, "signup", {"name": "Zeca"}); time.sleep(0.2)
+assert st["match"]["draft"]["chat"] and st["match"]["draft"]["pending"] == {"Zeca": []} and "Zeca" not in st["match"]["confirmed"] and sent == []
+st = new_state()  # a site draft: the name waits on the captains, nothing posted
+server.sync_list(st, lst("05/11", "Abel", "Hugo", "Bruno"), brt(11, 4), "Rafo")
+apply(st, "draft_start", {"captains": ["Abel", "Hugo"]})
+sent.clear(); apply(st, "signup", {"name": "Zeca"}); time.sleep(0.2)
+assert "chat" not in st["match"]["draft"] and st["match"]["draft"]["pending"] == {"Zeca": []} and sent == []
+server.bot_post = BOT_POST0
 server.use_games(G0)
 # #/eu: a member reads their own messages only, with a spelling merged since the phones.py build
 server.MSGS = tmp / "mensagens.json"
