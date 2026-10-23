@@ -1567,6 +1567,15 @@ def sumula_games(payload, n0):
     return out
 
 
+def sumula_of(game):
+    """A site game -> one súmula game (sumula_games' input): a "súmula não bate" report carries it to the queue to be edited."""
+    out = {}
+    for x, t in zip("ab", game["teams"]):
+        out.update({f"team_{x}": t["name"], f"score_{x}": t["gf"], f"players_{x}": [
+            dict(zip(("name", "goals", "assists", "own_goals", "captain"), (list(p) + [0, 0, 0])[:5])) for p in t["players"]]})
+    return out
+
+
 def night_photos():
     f = WIKI / "jogos.json"
     return json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
@@ -1575,7 +1584,8 @@ def night_photos():
 def held(item):
     """A súmula without a single goal is a lineup photo or tallies the OCR missed (a 0 x 0 went in alone on 9 Oct 2026):
     it never ships on its own, someone has to approve, edit or reject it. Same for a new photo of someone (kind foto) and a report
-    that a game is wrong (kind jogo: approving only marks it checked, the fix goes into the sheet)."""
+    that a game is wrong (kind jogo: it carries a copy of the game to edit when the game is the site's own, else approving
+    only marks it checked and the fix goes into the sheet)."""
     return item["kind"] in ("foto", "jogo") or item["kind"] == "sumula" and not any(g.get("score_a") or g.get("score_b") for g in item["payload"].get("games", []))
 
 
@@ -1626,6 +1636,19 @@ def release(item, how):
         if p.get("player"):
             PHOTOS.mkdir(parents=True, exist_ok=True)
             (PHOTOS / f"{slug(p['player'])}.jpg").write_bytes(f.read_bytes())
+    elif item["kind"] == "jogo" and "games" in item["payload"]:  # the edited copy takes game n's place in played (same n)
+        p, st = item["payload"], load_state()
+        i = next((i for i, g in enumerate(st["played"]) if g["n"] == p["n"]), None)
+        if i is None or len(p["games"]) != 1:
+            raise ValueError(f"jogo {p['n']} não está no site" if i is None else "um jogo só")
+        old = st["played"][i]
+        new = st["played"][i] = {**old, **{k: v for k, v in sumula_games(p, p["n"])[0].items() if k in ("season", "date", "teams")}}
+        save_state(st)  # G/A coins and card prices are derived from played; bets, the photo and "jogou" coins stay as they were
+        a, b = new["teams"]
+        item["note"] = f"jogo {p['n']} agora: {a['name']} {a['gf']} × {b['gf']} {b['name']}" + (
+            ". A BioBet já pagou pelo resultado antigo e não paga de novo" if old.get("bets") and old["teams"][0]["res"] != a["res"] else "")
+        if sheet.ID or {old["date"], new["date"]} & {g["date"] for g in DATA["games"]}:
+            item["sheet"] = "o jogo já foi para a planilha: corrija lá também"
     item.update(status=how, decided=time.strftime("%Y-%m-%dT%H:%M:%S"))
 
 
@@ -1727,7 +1750,7 @@ def review_act(item_id, action, payload=None, kinds=None, by=""):
             raise ValueError("ação desconhecida")
         write_json(REVIEW, items, 1)
     verb = {"reject": "❌ rejeitado", "approve": "✅ aprovado", "edit": "✏️ editado e liberado"}[action]
-    notify(f"{verb}{' por ' + by if by else ''}: #{it['id']} {it['title']}")
+    notify(f"{verb}{' por ' + by if by else ''}: #{it['id']} {it['title']}" + (f" · {it['note']}" if it.get("note") else ""))
     return {k: v for k, v in it.items() if k != "payload"}
 
 
@@ -2402,7 +2425,8 @@ class Handler(SimpleHTTPRequestHandler):
                     notify(f"⚑ {user} reportou em {row['page']}{' · ' + row['ref'] if row['ref'] else ''}: {text[:300]}")
                 return self.send_json({"ok": True, "id": fid(row)})
             if action == "jogo_errado":  # #34: "a súmula não bate com a tabela" -> the review queue, held for the Gab and the Conselho
-                g = next((g for g in DATA["games"] + load_state()["played"] if g["n"] == body.get("n")), None)
+                played = load_state()["played"]
+                g = next((g for g in DATA["games"] + played if g["n"] == body.get("n")), None)
                 if not user or not g:
                     raise ValueError("entre e abra um jogo")
                 a, b = g["teams"]
@@ -2411,7 +2435,8 @@ class Handler(SimpleHTTPRequestHandler):
                 write_json(INBOX / f"{time.strftime('%Y%m%d-%H%M%S')}-jogo{g['n']}.json", {"kind": "jogo",
                            "title": f"Súmula não bate: jogo {g['n']} de {g['date']} (de {user})",
                            "payload": {"n": g["n"], "date": g["date"], "placar": f"{a['name']} {a['gf']} × {b['gf']} {b['name']}",
-                                       "text": str(body.get("text") or "").strip()[:1000], "user": user, "fotos": fotos}})
+                                       "text": str(body.get("text") or "").strip()[:1000], "user": user, "fotos": fotos,
+                                       **({"games": [sumula_of(g)]} if g in played else {})}})  # a site game: edit the copy, it replaces game n
                 return self.send_json({"ok": True})
             if action == "vote":  # concordo/discordo on a report ("f:<id>", ±1), how funny a wiki bit is ("b:<id>", 1-5), a Copa idea ("c:<n>", 1-3); 0 takes it back
                 key, v = str(body.get("key") or ""), body.get("v")

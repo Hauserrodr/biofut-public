@@ -602,6 +602,20 @@ server.review_tick(now=9e9)
 it = server.load_review()[-1]
 assert it["kind"] == "jogo" and it["status"] == "pending" and server.held(it) and it["payload"]["fotos"] == [g["sumula"]], it
 assert "error" in json.loads(call("/api/jogo_errado", {"n": 1}, cookie="")[1])
+# Phase 0 item 5: the report carries a copy of the site game; edited and released, it replaces game n (same n, no
+# duplicate). Bets already paid on the old result stay paid once: nothing is paid or taken back.
+st0 = server.load_state()
+st0["played"][-1]["bets"] = [{"id": 1, "bettor": "Dan", "pick": "A", "stake": 4, "odds": 2.0, "payout": 8}]
+server.save_state(st0)
+p = it["payload"]
+assert p["games"][0]["score_a"] == g["teams"][0]["gf"] and p["games"][0]["players_a"][0]["name"] == g["teams"][0]["players"][0][0], p
+p["games"][0].update(score_a=0, score_b=3)
+server.review_act(it["id"], "edit", p)
+st1, it = server.load_state(), server.load_review()[-1]
+assert [x["n"] for x in st1["played"]] == [x["n"] for x in st0["played"]], "same games, same n, no duplicate"
+g2 = next(x for x in st1["played"] if x["n"] == g["n"])
+assert [t["gf"] for t in g2["teams"]] == [0, 3] and [t["res"] for t in g2["teams"]] == ["D", "V"] and g2["sumula"] == g["sumula"], g2
+assert st1["ledger"] == st0["ledger"] and g2["bets"] == st0["played"][-1]["bets"] and it["status"] == "approved" and "não paga de novo" in it["note"], it
 # #36: a member buys a card with their points; it joins their deck once, and only for whoever is logged in.
 server.card_prices = lambda games: {"Victor": 7, "Regio": 5}  # the few test games here give nobody 10 jogos
 s0 = json.loads(call("/api/state")[1])
