@@ -1367,11 +1367,15 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
         mt["date"] = lst["date"]
     recent, alias, names, caps = sumula.roster_of(DATA["games"]), name_fixes()[0], [], []
     roster = recent + [n for n in sumula.roster_of(DATA["games"], "") if n not in recent]  # then old-timers coming back
-    for e in lst["goalies"] + lst["players"]:
+    k = len(lst["goalies"]) + len(lst["players"])
+    for i, e in enumerate(lst["goalies"] + lst["players"] + [e for t in lst["teams"] for e in t["players"]]):  # 'Time MK': its players are in
         n = sumula.canon(e["name"], mt["confirmed"])  # someone already in (signed up on the site as "Leo Saul": "Saul")
         if n not in mt["confirmed"]:
             n = sumula.canon(e["name"], roster)
             n = alias.get(n, n)
+        if i >= k and n in names:  # the teams repeat the numbered list's names
+            caps += [n] * e["captain"]
+            continue
         names.append(e["name"] if n in names else n)  # two list names on one tabela name: the second stays as written
         if e["captain"]:
             caps.append(names[-1])  # 'Fulano (C)': the players pick the captains on the list, close to the game (Gab)

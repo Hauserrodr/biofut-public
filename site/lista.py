@@ -71,7 +71,7 @@ def parse_list(text, ts):
         low = fold(l)
         t = TEAM.match(l)
         if t and not SLOT.match(l):
-            section = 'team'
+            section, bare = 'team', True  # 22/10: bare names under 'Time MK', up to the first blank line after them
             out['teams'].append({'name': re.sub(r"[^\w\s.'-]", '', t.group(1)).strip(), 'players': []})
             continue
         hit = next((v for k, v in SECTION.items() if low.startswith(k) or low.startswith('* ' + k)), None)
@@ -88,9 +88,11 @@ def parse_list(text, ts):
                 out['teams'][-1]['players'].append(e)
             elif e:
                 (out['goalies'] if re.match(r'goleiro|gk', m.group(1), re.I) else out[section]).append(e)
-        elif section == 'team' and re.match(r'^\s*[-•]\s*\S', l):
-            e = parse_entry(l.strip()[1:])
+        elif section == 'team' and (re.match(r'^\s*[-•]\s*\S', l) or bare and low not in ('', 'x', 'vs')):
+            e = parse_entry(re.sub(r'^\s*[-•]', '', l))
             if e: out['teams'][-1]['players'].append(e)
+        elif section == 'team' and not l.strip() and out['teams'][-1]['players']:
+            bare = False  # the team is over: a closing 'bom jogo' is not a player
         elif section in ('waiting', 'corneta', 'guests') and re.match(r'^\s*[-•]\s*\S', l):
             e = parse_entry(l.strip()[1:])
             if e: out[section].append(e)
@@ -112,6 +114,13 @@ def selftest():  # made-up names
     assert [e['name'] for e in p['waiting']] == ['Vavá'] and [e['name'] for e in p['corneta']] == ['Dodô']
     assert p['season'] == 'Temporada 26/1' and p['court'] == 'Quadra 4'
     assert parse_list(t.replace('19/03', '02/01'), dt.datetime(2025, 12, 30).timestamp())['date'] == '2026-01-02'  # New Year
+    k = parse_list('[QUINTA - 22/10 18:30]\nTime MK\nTuca\nBino (C) ✅\n- Caco\nx\nTime Nego Dei ⚫\nDuda\nFefo (c)\n\nBom jogo a todos',
+                   dt.datetime(2026, 10, 21).timestamp())  # 22/10: bare names under the team headers
+    assert [(g['name'], [e['name'] for e in g['players']]) for g in k['teams']] == [
+        ('MK', ['Tuca', 'Bino', 'Caco']), ('Nego Dei', ['Duda', 'Fefo'])], k['teams']
+    assert k['teams'][0]['players'][1]['captain'] and k['teams'][1]['players'][1]['captain'] and not k['players']
+    o = parse_list(t + '\nTime Azul\n- Tito\n- Zeca\nTime Verde\n- Lalo\n- Otto: 2G\n', dt.datetime(2026, 3, 16).timestamp())
+    assert [[e['name'] for e in g['players']] for g in o['teams']] == [['Tito', 'Zeca'], ['Lalo', 'Otto']] and o['players'] == p['players']
     assert parse_list('oi\n1 - a\n2 - b', 0) is None and fold(' Vavá  Jr ') == 'vava jr'
     print('selftest ok')
 
