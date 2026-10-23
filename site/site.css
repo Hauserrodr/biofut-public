@@ -389,3 +389,16 @@ button.tk:hover,button.tk:focus-visible{transform:translateY(-6px)}
 @keyframes tk-bump{40%{transform:scale(1.6);color:var(--acc)}}
 @keyframes tk-pop{from{opacity:0;transform:scale(.6)}}
 @media (prefers-reduced-motion:reduce){.truco *{animation:none!important;transition:none!important}}
+/* Phones: tap targets at least ~40px tall. Small links keep their look and grow an invisible hit area
+   (padding-block + equal negative margin-block, so nothing moves); segmented tabs and chips just get taller.
+   Header/nav (header.top, .bar, nav.tabs) are styled elsewhere. */
+@media (max-width:920px){
+  .seg button,.seg a{min-height:40px;display:inline-flex;align-items:center;justify-content:center}
+  .cv button{min-height:40px}
+  td.l>a{min-height:40px;margin-block:-6px}
+  .lineups li>a,.list li>a:not(.link){padding-block:8px;margin-block:-8px}
+  .link{padding-block:12px;margin-block:-12px}
+  .wrong{min-width:32px;padding-block:12px;margin-block:-12px}
+  .fc .at button{min-height:40px;align-items:center}
+  label.meta input[type=checkbox]{width:22px;height:22px;vertical-align:middle}
+}
