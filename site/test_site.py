@@ -382,6 +382,21 @@ assert server.push_sheet([]).startswith("falhou") and "planilha não foi atualiz
 server.ocr_photo(b"sheet", "2026-10-09", "Fulano")  # same photo again: refused by the budget, no queue item
 assert not list(server.INBOX.glob("*.json"))
 server.sheet.push, server.sheet.ID = real_push, ""
+# The day's list goes first: RAFA on a súmula is the Rafo who signed up that day, not Rafael M (more games, a prefix match).
+real_games, st_before = server.DATA["games"], server.load_state()
+server.DATA["games"] = [{"date": "2026-10-01", "teams": [{"players": [["Rafael M"], ["Rafael M"], ["Tavares"]]}, {"players": [["Rafo"]]}]}]
+st = server.load_state(); st["match"] = {**server.new_match("2026-10-22"), "confirmed": ["Rafo"]}; server.save_state(st)
+fake = {"is_sumula": True, "date": None, "games": [{"team_a": "A", "team_b": "B", "score_a": None, "score_b": None,
+        "players_a": [{"name": "RAFA", "goals": 1}], "players_b": [{"name": "TAVA", "goals": 1}]}]}
+import copy as _copy
+sumula.ask = lambda img, roster: _copy.deepcopy(fake)  # read() writes the names back into it
+for img, day, rafa in ((b"listed", "2026-10-22", "Rafo"), (b"after midnight", "2026-10-23", "Rafo"), (b"other week", "2026-10-30", "Rafael M")):
+    server.ocr_photo(img, day, "Fulano")
+    server.review_tick(now=6000)
+    g = server.load_review()[-1]["payload"]["games"][0]
+    assert (g["players_a"][0]["name"], g["players_b"][0]["name"]) == (rafa, "Tavares"), (day, g)  # TAVA: not listed, full roster as before
+server.DATA["games"] = real_games
+server.save_state(st_before)
 # Public photos: only what public.json lists; the cache follows the file.
 assert server.public_media() == set()
 (server.WIKI / "public.json").write_text(json.dumps({"media": ["IMG-1.jpg"]}))
@@ -696,6 +711,20 @@ server.review_tick(now=9e9)
 it = server.load_review()[-1]
 assert it["kind"] == "jogo" and it["status"] == "pending" and server.held(it) and it["payload"]["fotos"] == [g["sumula"]], it
 assert "error" in json.loads(call("/api/jogo_errado", {"n": 1}, cookie="")[1])
+# Phase 0 item 5: the report carries a copy of the site game; edited and released, it replaces game n (same n, no
+# duplicate). Bets already paid on the old result stay paid once: nothing is paid or taken back.
+st0 = server.load_state()
+st0["played"][-1]["bets"] = [{"id": 1, "bettor": "Dan", "pick": "A", "stake": 4, "odds": 2.0, "payout": 8}]
+server.save_state(st0)
+p = it["payload"]
+assert p["games"][0]["score_a"] == g["teams"][0]["gf"] and p["games"][0]["players_a"][0]["name"] == g["teams"][0]["players"][0][0], p
+p["games"][0].update(score_a=0, score_b=3)
+server.review_act(it["id"], "edit", p)
+st1, it = server.load_state(), server.load_review()[-1]
+assert [x["n"] for x in st1["played"]] == [x["n"] for x in st0["played"]], "same games, same n, no duplicate"
+g2 = next(x for x in st1["played"] if x["n"] == g["n"])
+assert [t["gf"] for t in g2["teams"]] == [0, 3] and [t["res"] for t in g2["teams"]] == ["D", "V"] and g2["sumula"] == g["sumula"], g2
+assert st1["ledger"] == st0["ledger"] and g2["bets"] == st0["played"][-1]["bets"] and it["status"] == "approved" and "não paga de novo" in it["note"], it
 # #36: a member buys a card with their points; it joins their deck once, and only for whoever is logged in.
 server.card_prices = lambda games: {"Victor": 7, "Regio": 5}  # the few test games here give nobody 10 jogos
 s0 = json.loads(call("/api/state")[1])
