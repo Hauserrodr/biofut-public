@@ -69,7 +69,8 @@ const fotoView = p => `<img class="sumula" src="/wiki/media/${esc(p.file)}" alt=
   (p.player ? ` · vira também a foto do jogador <b>${esc(p.player)}</b> no site` : '') + '</p>';
 const jogoView = p => `<p><b>${esc(p.placar)}</b> · ${esc(p.date)} · jogo ${esc(p.n)}</p><p>${esc(p.user)}: ${esc(p.text || 'sem comentário')}</p>` +
   (p.fotos || []).map(f => `<img class="sumula" src="/wiki/media/${esc(f)}" alt="súmula da noite">`).join('') +
-  '<p class="meta">Aprovar = conferido: a correção vai na planilha, e a tabela do site atualiza sozinha.</p>';
+  (p.games ? '<p class="meta">Corrija o jogo em “Editar JSON” (games: placar, gols, assistências) e libere: ele substitui o jogo ' + esc(p.n) + ' no site. Aprovar sem editar = conferido, nada muda.</p>' + sumulaView(p)
+    : '<p class="meta">Aprovar = conferido: a correção vai na planilha, e a tabela do site atualiza sozinha.</p>');
 const VIEWS = { wiki: wikiView, sumula: sumulaView, tabela: tabelaView, listas: listasView, foto: fotoView, jogo: jogoView };
 
 function render() {
@@ -81,7 +82,7 @@ function render() {
       (x.status === 'pending' ? `<details><summary>Editar JSON</summary><textarea id="j${x.id}">${esc(JSON.stringify(x.payload, null, 1))}</textarea></details>` +
         `<div class="row" style="margin-top:10px"><button class="btn pri sm" data-act="approve" data-id="${x.id}">Aprovar</button><button class="btn sm" data-act="edit" data-id="${x.id}">Salvar edição e liberar</button>` +
         `<button class="btn sm no" data-act="reject" data-id="${x.id}">Rejeitar</button></div><div class="err" id="e${x.id}"></div>` : '') +
-      (x.sheet ? `<div class="meta">planilha: ${esc(x.sheet)}</div>` : '') + '</div>').join('');
+      (x.note ? `<div class="meta">${esc(x.note)}</div>` : '') + (x.sheet ? `<div class="meta">planilha: ${esc(x.sheet)}</div>` : '') + '</div>').join('');
 }
 
 // ---------- Pessoas: phones.py's questions (who a list name was, same player?, number switches) + claims; answers -> data/quem.json ----------
