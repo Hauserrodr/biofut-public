@@ -15,12 +15,16 @@ $ErrorActionPreference = 'Stop'
 $Key    = $env:BIOFUT_SSH_KEY  # path to the server's ssh key
 $HostIp = $env:BIOFUT_HOST_IP
 $Target = "ubuntu@$HostIp"
-$Json   = "$PSScriptRoot\biofut.json"  # built by build_data.py: history, BioBet model, lexicon, Pix
+$Json   = "$PSScriptRoot\biofut.json"  # built by build_data.py: history, BioBet GLM coefficients, lexicon, Pix
 
 # Everything on the server runs as one bash script. It is sent base64-encoded because
 # Windows PowerShell 5.1 mangles double quotes in native args and pipes CRLF to stdin.
 $Remote = @'
 set -euo pipefail
+
+# BioBet runs the Poisson GLM (glm.py) since 2026-10-23: a biofut.json with the old logistic block would break the odds.
+# Stop before the restart (the running server keeps the old code): rebuild it with build_data.py (--refit) and deploy it.
+grep -q '"kind":"poisson_glm"' /srv/biofut/biofut.json || { echo 'biofut.json on the server has no GLM model: python build_data.py --refit biofut.json, then deploy again from here'; exit 1; }
 
 # Group PIN, made once. Every save (sign-up, draft, photo, new match) needs it.
 sudo test -f /etc/biofut.env || {
@@ -152,7 +156,7 @@ function Run-Ssh($cmd) {
 
 # 1. Files.
 Run-Ssh 'sudo mkdir -p /srv/biofut/data && sudo chown -R ubuntu:ubuntu /srv/biofut'
-$Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot\wiki.html", "$PSScriptRoot\transparencia.html", "$PSScriptRoot\entrar.html", "$PSScriptRoot\admin.html", "$PSScriptRoot\sumula.py", "$PSScriptRoot\costs.py", "$PSScriptRoot\sheet.py", "$PSScriptRoot\lista.py", "$PSScriptRoot\backup.sh", "$PSScriptRoot\db.py",
+$Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot\wiki.html", "$PSScriptRoot\transparencia.html", "$PSScriptRoot\entrar.html", "$PSScriptRoot\admin.html", "$PSScriptRoot\sumula.py", "$PSScriptRoot\glm.py", "$PSScriptRoot\costs.py", "$PSScriptRoot\sheet.py", "$PSScriptRoot\lista.py", "$PSScriptRoot\backup.sh", "$PSScriptRoot\db.py",
   "$PSScriptRoot\site.css", "$PSScriptRoot\site.js", "$PSScriptRoot\og.png", "$PSScriptRoot\logo.png", "$PSScriptRoot\robots.txt", "$PSScriptRoot\sitemap.xml", "$PSScriptRoot\push.py", "$PSScriptRoot\sw.js")
 if (Test-Path $Json) { $Files += $Json } else { 'biofut.json not here: keeping the one on the server' }
 & scp -q -i $Key @Files "${Target}:/srv/biofut/"
