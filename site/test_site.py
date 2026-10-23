@@ -844,4 +844,50 @@ if server.push:
     assert "não ativou" in staff("/api/push_send", {"to": "Eve", "body": "oi"})["error"]
 server.ADMIN = ""
 httpd.shutdown()
+
+# Pix reminder: the day after a game, from 10:00, once per game (a flag in the state), never on the game's day, never muted,
+# never a name (the joke comes from the wiki at runtime; a title with a name of the state, or a capital, is skipped).
+ptmp = Path(tempfile.mkdtemp())
+server.STATE, server.WIKI, server.AVISOS, server.PIX_JOKES = ptmp / "state.json", ptmp / "wiki", ptmp / "avisos.jsonl", ptmp / "piadas.txt"
+server.WIKI.mkdir()
+(server.WIKI / "public.json").write_text(json.dumps({"bits": {
+    "a": {"title": "A bola foi parar no telhado", "score": 9}, "b": {"title": "Zezinho Teste sumiu", "score": 10},
+    "c": {"title": "Chegou o Fulanão", "score": 10}, "d": {"title": "Ninguém riu", "score": 3}}}), encoding="utf-8")
+DATA.setdefault("pix", {"key": "pix@example.com"})
+key = DATA["pix"]["key"]
+pst = new_state()
+pst["match"].update(date="2026-10-22", confirmed=[f"Jog{i}" for i in range(11)] + ["Zezinho Teste"])
+pst["ledger"].append({"player": "Devedor Silva", "amount": -40, "reason": "teste"})
+server.save_state(pst)
+sent = []
+server.bot_post = lambda route, obj: sent.append((route, obj))
+assert server.pix_tick(server.kickoff("2026-10-22", "23:00")) == [] and not sent, "not on the game's day"
+assert server.pix_tick(server.kickoff("2026-10-23", "09:59")) == [] and not sent, "not before 10:00"
+pst["silencio"] = server.kickoff("2026-10-23", "12:00")
+server.save_state(pst)
+server.pix_tick(server.kickoff("2026-10-23", "10:30"))
+assert not sent and "pix_lembrete" not in server.load_state(), "muted: nothing, and it still owes the reminder"
+server.pix_tick(server.kickoff("2026-10-23", "12:01"))
+assert len(sent) == 1 and sent[0][0] == "/group", sent
+text = sent[0][1]["text"]
+assert text.startswith("🤖 ") and text.endswith(f"Pix da quadra: {key}") and "telhado" in text, text  # 🤖 = the bot puts its AG tag on it
+names = server.name_words(server.load_state())
+assert {"zezinho", "devedor", "silva", "jog0"} <= names and not names & {w.lower() for w in __import__("re").findall(r"\w{3,}", text)}, text
+for t in ("12:30", "23:59"):
+    server.pix_tick(server.kickoff("2026-10-23", t))
+assert len(sent) == 1 and server.load_state()["pix_lembrete"] == "2026-10-22", "once per game, the flag survives a restart"
+server.pix_tick(server.kickoff("2026-10-24", "10:30"))
+assert len(sent) == 1, "two days later: nothing"
+# no clean joke anywhere -> the neutral line; Gab's own file goes first, still without names
+(server.WIKI / "public.json").write_text(json.dumps({"bits": {"b": {"title": "Zezinho Teste sumiu", "score": 10}}}), encoding="utf-8")
+assert server.pix_jokes(server.load_state()) == []
+server.PIX_JOKES.write_text("Zezinho Teste pagou\nQuadra paga, consciência leve\n", encoding="utf-8")
+assert server.pix_jokes(server.load_state()) == ["Quadra paga, consciência leve"]
+st2 = server.load_state(); st2["match"]["date"], st2["pix_lembrete"] = "2026-10-29", None; server.PIX_JOKES.unlink(); server.save_state(st2)
+server.pix_tick(server.kickoff("2026-10-30", "10:00"))
+assert len(sent) == 2 and server.PIX_FALLBACK in sent[1][1]["text"], sent
+st2["match"]["confirmed"] = st2["match"]["confirmed"][:3]; st2["match"]["date"] = "2026-11-05"; server.save_state(st2)
+server.pix_tick(server.kickoff("2026-11-06", "10:00"))
+assert len(sent) == 2, "3 on the list and not in the tabela: no game, no reminder"
+server.bot_post = BOT_POST0
 print("ok")

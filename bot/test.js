@@ -20,7 +20,8 @@ assert.match(reply('!capitaes', cfg, m0), /ainda não/);
 assert.match(reply('!times', cfg, m1), /^Time Victor: Victor, Zé\nTime Canova: Canova\n/);
 assert.match(reply('!lista', cfg, null), /fora do ar/);
 assert.strictEqual(reply('bora jogar', cfg, null), null);
-assert.strictEqual(tag('oi', cfg), '[ESQUIZOFUT] oi');
+assert.strictEqual(tag('oi'), '🤖 *AG* oi');
+assert.strictEqual(tag('🤖 Zé disse no site'), '🤖 *AG* Zé disse no site', "the site's 🤖 folds into the tag");
 assert.strictEqual(toJid('+55 51 90000-0001'), '5551900000001@s.whatsapp.net');
 assert.strictEqual(findAvisos({ a: { id: 'a@g.us', subject: 'BioFut ⚽' }, b: { id: 'b@g.us', subject: 'BIOFUT - Avisos' } }), 'b@g.us');
 assert.strictEqual(findAvisos({ a: { id: 'a@g.us', subject: 'Avisos do condomínio' } }), undefined);
@@ -58,7 +59,7 @@ srv.stdout.once('data', async () => {
     const lines = fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
     assert.strictEqual(lines.length, 2);
     assert.strictEqual(lines[0].to, '5551900000001@s.whatsapp.net');
-    assert.match(lines[0].text, /^\[ESQUIZOFUT\] ⚽ Zé entrou/);
+    assert.match(lines[0].text, /^🤖 \*AG\* ⚽ Zé entrou/u);
     assert.strictEqual((await post('/draft/join', {})).status, 400);
     const p = await post('/draft/pick', { captain: 'Zé', player: 'Bia', turn: 'Victor', teams: { 'Zé': ['Zé', 'Bia'], Victor: ['Victor'] }, available: ['Leo', 'Dan'] });
     assert.deepStrictEqual(await p.json(), { ok: true, notified: 1 });
