@@ -16,6 +16,3 @@ bot/config.json
 bot/draft-state.json
 bot/outbox.jsonl
 site/og/
-
-# the built site data (history, model): rebuilt by build_data.py, uploaded by deploy.ps1, never in git
-site/biofut.json
