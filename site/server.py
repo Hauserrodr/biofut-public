@@ -1274,8 +1274,73 @@ def pick_ping(st, cap):
 
 
 def group_post(text):
-    """The site tells the BioFut group; the 🤖 makes the bot tag it. Never blocks the request."""
+    """The site tells the BioFut group; the 🤖 makes the bot tag it (bot.js PREFIX, the bot "AG"). Never blocks the request."""
     threading.Thread(target=bot_post, daemon=True, args=("/group", {"text": "🤖 " + text})).start()
+
+
+PIX_AFTER = "10:00"  # the Pix reminder: the day after a game, from this time (Brasília), one line in the group (Gab, 2026-10-23)
+PIX_JOKES = HERE / "data" / "pix_piadas.txt"  # optional, one joke per line, never in git: Gab's own picks go before the wiki's
+PIX_FALLBACK = "A resenha de ontem foi de graça. A quadra, infelizmente, não 😅"
+
+
+def muted(st, now=None):
+    """The kill switch: st["silencio"] = epoch until which the bot keeps quiet in the group (plan, Phase 2: !silencio, 24 h)."""
+    return (st.get("silencio") or 0) > (now or time.time())
+
+
+def name_words(st):
+    """Every word (3+ letters) of every name the site knows: the tabela, the lists, the ledger, the nicknames."""
+    names = set(st["match"]["confirmed"]) | {x.get("player", "") for x in st.get("ledger", [])}
+    for f in st.get("fechados", {}).values():
+        names |= set(f.get("confirmed", []))
+    for g in DATA["games"] + st.get("played", []):
+        for t in g.get("teams", []):
+            names |= {p[0] if isinstance(p, list) else p.get("name", "") for p in t.get("players", [])}
+    for row in DATA.get("nicknames", []):
+        names |= set(row[:1] + str(row[0]).split(","))
+    return {w.lower() for n in names for w in re.findall(r"\w{3,}", str(n))}
+
+
+def pix_jokes(st):
+    """The lines the Pix reminder picks from: data/pix_piadas.txt, else the wiki's funniest bits (their titles). None with a
+    name in it: the group message never points at anyone. A wiki title with a capital past its first word is a name too."""
+    bad = name_words(st)
+    clean = lambda t: not bad & {w.lower() for w in re.findall(r"\w{3,}", t)}
+    lines = [l.strip() for l in PIX_JOKES.read_text(encoding="utf-8").splitlines()] if PIX_JOKES.exists() else []
+    if not any(lines):
+        try:
+            bits = json.loads((WIKI / "public.json").read_text(encoding="utf-8")).get("bits", {}).values()
+        except (OSError, ValueError, AttributeError):
+            bits = []
+        ok = {"BioFut", "Biofut", "Pix"} | {w for t, _ in DATA.get("glossary", []) for w in re.findall(r"\w+", t)}
+        bad |= {w.lower() for b in bits for w in re.findall(r"\w{3,}", str(b.get("who") or ""))}
+        lines = [f"\"{t}\" já virou lenda. O jogo de ontem só vira lenda com a quadra paga." for b in bits
+                 if (b.get("score") or 0) >= 7 and (t := str(b.get("title") or "").strip()) and clean(t)
+                 and not any(w[0].isupper() and w not in ok for w in t.split()[1:])]
+    return [l for l in lines if l and clean(l)]
+
+
+def pix_tick(now=None):
+    """The day after a game, from PIX_AFTER: one funny line + the Pix key in the group. Once per game (st["pix_lembrete"]
+    holds the game's date, so a restart never repeats it), never while muted, no debtor's name. -> [] (no notices)."""
+    now, key = now or time.time(), DATA.get("pix", {}).get("key")
+    local = now - 3 * 3600  # Brasília
+    if not key or time.strftime("%H:%M", time.gmtime(local)) < PIX_AFTER:
+        return []
+    game = time.strftime("%Y-%m-%d", time.gmtime(local - 86400))
+    with LOCK:
+        st = load_state()
+        mt = st["match"]
+        held = {g.get("date") for g in DATA["games"] + st["played"]} | ({mt["date"]} if len(mt["confirmed"]) >= MIN_PLAYERS else set())
+        if game not in held or st.get("pix_lembrete") == game or muted(st, now):
+            return []
+        jokes = pix_jokes(st)
+        text = f"🤖 {random.Random(game).choice(jokes) if jokes else PIX_FALLBACK} Pix da quadra: {key}"
+        st["pix_lembrete"] = game
+        save_state(st)
+    bot_post("/group", {"text": text})
+    notify(f"💸 lembrete do Pix no grupo: {text}", post=False)
+    return []
 
 
 def draft_news(st, action, d0):
@@ -1728,7 +1793,7 @@ def review_tick(now=None):
 
 def review_loop():
     while True:
-        for tick in (review_tick, mercado_tick):
+        for tick in (review_tick, mercado_tick, pix_tick):
             try:
                 for n in tick():
                     notify(n)
