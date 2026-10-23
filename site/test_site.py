@@ -1,5 +1,5 @@
-"""Self-check: python test_site.py  (needs biofut.json; the odds parity check also needs numpy + sklearn)"""
-import sys
+"""Self-check: python test_site.py  (needs biofut.json with the GLM block: build_data.py, or --refit)"""
+import math, sys
 
 import server
 from server import DATA, sign, signed_name, too_many_fails, WELCOME, apply, balance, minted, new_state, odds, sheet_games, unsynced
@@ -40,6 +40,8 @@ apply(st, "draft_flip", {"captain": "Canova", "choice": "coroa"}); apply(st, "dr
 assert d["first"] == {"cara": "Victor", "coroa": "Canova"}[d["coin"]["result"]] and d["captains"][0] == d["first"] and "note" not in d, d
 pub = server.public_state(st)["match"]["draft"]
 assert pub["flip"] == ["Canova", "Victor"] and pub["votes"] == 0 and pub["first"] == d["first"], "the choices and the ballots stay on the server"
+pub = server.public_state(st)
+assert len(pub["gols"]) == 2 and set(pub["odds"]) == {"A", "E", "B"}, "the draft shows the odds and the expected score"
 d["first"] = d["captains"][0] = "Victor"; d["captains"][1] = "Canova"; d["teams"] = {"Victor": ["Victor"], "Canova": ["Canova"]}  # a known order for the rest
 for p in ["c", "d", "e", "f"]:
     apply(st, "draft_pick", {"captain": "Victor" if p in ("c", "f") else "Canova", "player": p})
@@ -203,16 +205,39 @@ assert sg[2]["teams"][0]["players"] == [["Victor", 2, 0, 0, 1]] and sg[2]["teams
 assert unsynced(st["played"], sg) == st["played"]
 assert unsynced(st["played"], sg + [{**g, "n": 302}]) == []
 
-# Odds match the original numpy/sklearn BioBet model.
-try:
-    sys.path.insert(0, "L:/GAB/Agents/Handoffs/claude-biobet/2026-10-03")
-    import biobet
-    m = biobet.Model().fit(biobet.load_games())
-    a, b = ["Victor", "Regio", "Dan", "Matte", "Rafo"], ["Canova", "Guih", "Andrei", "Fachel", "Douglas"]
-    ref, got = m.odds(a, b), odds(DATA["model"], a, b)
-    assert all(abs(ref[k] - got[k]) < 0.03 for k in "AEB"), (ref, got)
-except ImportError:
-    print("(skipped odds parity: no numpy/sklearn)")
+# BioBet GLM (glm.py with the shipped coefficients): the odds are a distribution, symmetric, and favour the stronger team.
+import glm
+M = DATA["model"]
+assert M["kind"] == "poisson_glm" and len(M["coef"]) == len(M["mu"]) == len(M["sd"]) == len(glm.FEATURES), "biofut.json has no GLM block"
+for la, lb in ((0.5, 0.5), (6.1, 5.4), (1.0, 9.0), (12.0, 3.0)):
+    w, e, l = glm.outcome(la, lb)
+    assert abs(w + e + l - 1) < 1e-9 and min(w, e, l) > 0, (la, lb, w, e, l)
+    pois = lambda lam, k: math.exp(-lam) * lam ** k / math.factorial(k)  # brute force over the score grid
+    assert abs(e - sum(pois(la, k) * pois(lb, k) for k in range(60))) < 1e-9
+    assert abs(w - sum(pois(la, i) * pois(lb, j) for i in range(60) for j in range(i))) < 1e-9
+assert glm.outcome(4, 4)[0] == glm.outcome(4, 4)[2] and glm.outcome(5, 3)[0] > glm.outcome(3, 5)[0]
+a, b = [p[0] for p in DATA["games"][-1]["teams"][0]["players"]], [p[0] for p in DATA["games"][-1]["teams"][1]["players"]]
+pa, pe, pb, ga, gb = server.predict(DATA, a, b)
+qa, qe, qb, hb, ha = server.predict(DATA, b, a)
+assert abs(pa + pe + pb - 1) < 1e-9 and 0 < ga < 30 and 0 < gb < 30, (pa, pe, pb, ga, gb)
+assert abs(pa - qb) < 1e-12 and abs(pe - qe) < 1e-12 and abs(ga - ha) < 1e-12, "swapping the teams swaps the odds"
+pa, pe, pb, ga, gb = server.predict(DATA, a, list(a))
+assert abs(pa - pb) < 1e-12 and abs(ga - gb) < 1e-12, "the same team on both sides is a coin flip"
+o = odds(DATA, a, b)
+assert set(o) == {"A", "E", "B"} and abs(sum(1 / v for v in o.values()) - 1) < 0.01 and all(v > 1 for v in o.values()), o
+# The six regulars (20+ games) with the best win rate against the six with the worst: the first must be the favourite,
+# and a team of three of each sits in between.
+tab, _ = glm.player_table(DATA["games"])
+games_of = {}
+for _g in DATA["games"]:
+    for _t in _g["teams"]:
+        for _p in _t["players"]:
+            games_of[_p[0]] = games_of.get(_p[0], 0) + 1
+reg = sorted((p for p in tab if games_of[p] >= 20 and p != "Sombra"), key=lambda p: tab[p]["win"])
+weak, strong, mixed = reg[:6], reg[-6:], reg[:3] + reg[-3:]
+pa, pe, pb, ga, gb = server.predict(DATA, strong, weak)
+assert pa > 0.6 > pb and ga > gb, (pa, pe, pb, ga, gb)
+assert server.predict(DATA, strong, mixed)[0] > 0.5 > server.predict(DATA, weak, mixed)[0], "half-strong sits in between"
 
 # login cookie: round trip, tamper, expiry, bound to the IP; PIN lockout
 assert server.session(sign("Dan", "1.1.1.1", now=server.STALE_BEFORE - 1)) is None, "signed under the stale phones.json"

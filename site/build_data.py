@@ -1,8 +1,11 @@
-"""Build site/biofut.json: full match history, BioBet model weights, lexicon, Pix payload.
+"""Build site/biofut.json: full match history, BioBet model coefficients, lexicon, Pix payload.
 
 Run locally (needs numpy + sklearn for the odds model; the server itself is stdlib only):
     python build_data.py
 Sources (read-only): the other agents' handoffs from 2026-10-03.
+Refit only the model (no handoffs needed), on the games of one or more JSON files ({"games": [...]} like biofut.json
+or a saved /api/data, or a plain list of games), a later file's game winning on the same date:
+    python build_data.py --refit biofut.json [more_games.json ...]   -> rewrites biofut.json's "model" only
 """
 import json, sqlite3, sys
 from pathlib import Path
@@ -10,8 +13,8 @@ from pathlib import Path
 H = Path("L:/GAB/Agents/Handoffs")
 DB = H / "claude-biofut-data/2026-10-03/biofut.db"
 TERMS = H / "claude-biofut-data/2026-10-03/terms.csv"
-sys.path[:0] = [str(Path(__file__).parent), str(H / "claude-biobet/2026-10-03"), str(H / "claude-code-biofoot-community/2026-10-03/repo/site")]
-import biobet, pix  # noqa: E402
+sys.path.insert(0, str(Path(__file__).parent))
+import glm, pix  # noqa: E402
 
 PIX_KEY = "biofutufrgs@gmail.com"  # the group's own payment key, posted in every weekly list
 OUT = Path(__file__).parent / "biofut.json"
@@ -30,12 +33,41 @@ def games():
     return list(out.values())
 
 
-def model():
-    gs = biobet.load_games()
-    m = biobet.Model().fit(gs)
-    return {"games": len(gs), "classes": [str(k) for k in m.clf.classes_], "coef": m.clf.coef_.round(5).tolist(),
-            "intercept": m.clf.intercept_.round(5).tolist(), "players": m.players, "shrink": m.SHRINK,
-            "pairs": {f"{p}|{q}": v for (p, q), v in m.pair.items() if v[1]}}
+def fit(games, alpha=1.0, skip=20):
+    """Poisson GLM (glm.py) on `games` in play order -> the "model" block of biofut.json. Each game from the 21st on is
+    a row twice, A scoring on B and B on A, with the table of the games before it. Same fit as backtest.py."""
+    import numpy as np
+    from sklearn.linear_model import PoissonRegressor
+    X, y = [], []
+    for i in range(skip, len(games)):
+        tab, mean = glm.player_table(games[:i])
+        a, b = games[i]["teams"]
+        for s, o in ((a, b), (b, a)):
+            X.append(glm.match_x(tab, mean, [p[0] for p in s["players"]], [p[0] for p in o["players"]])); y.append(s["gf"])
+    X, y = np.array(X, float), np.array(y, float)
+    mu, sd = X.mean(0), X.std(0) + 1e-9
+    m = PoissonRegressor(alpha=alpha, max_iter=1000).fit((X - mu) / sd, y)
+    r = lambda v: [round(float(x), 6) for x in v]
+    return {"kind": "poisson_glm", "games": len(games), "shrink": glm.SHRINK, "alpha": alpha, "features": glm.FEATURES,
+            "mu": r(mu), "sd": r(sd), "coef": r(m.coef_), "intercept": round(float(m.intercept_), 6)}
+
+
+def merged_games(paths):
+    """Games of every file, later files winning on the same date (a site-closed game vs the sheet's copy), in n order."""
+    out = {}
+    for path in paths:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+        for g in d["games"] if isinstance(d, dict) else d:
+            out[g.get("date") or f"n{g['n']}"] = g
+    return sorted(out.values(), key=lambda g: g["n"])
+
+
+def refit(out, *more):
+    data = json.loads(Path(out).read_text(encoding="utf-8"))
+    gs = merged_games([out, *more])
+    data["model"] = fit(gs)
+    Path(out).write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"{out}: model refit on {len(gs)} games (intercept {data['model']['intercept']})")
 
 
 # Portuguese version of the curated parts of lexicon.md (the vault copy stays English).
@@ -92,14 +124,17 @@ def main():
     terms = [l.split(",") for l in TERMS.read_text(encoding="utf-8").splitlines()[1:121]]
     data = {
         "games": gs,
-        "model": model(),
+        "model": fit(sorted(gs, key=lambda g: g["n"])),
         "terms": [[t, int(c)] for t, c in terms],
         "nicknames": NICKNAMES, "glossary": GLOSSARY, "songs": SONGS, "songs_url": SONGS_URL,
         "pix": {"key": PIX_KEY, "payload": pix.payload(PIX_KEY, "BIOFUT", "PORTO ALEGRE", "APOIESITE", "Apoio pelo site BioFut, aba Apoie")},
     }
     OUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"{OUT}: {len(gs)} games, {len(data['model']['players'])} model players, {OUT.stat().st_size // 1024} KB")
+    print(f"{OUT}: {len(gs)} games, model on {data['model']['games']}, {OUT.stat().st_size // 1024} KB")
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--refit"] and len(sys.argv) > 2:
+        refit(*sys.argv[2:])
+    else:
+        main()
