@@ -357,6 +357,21 @@ assert server.push_sheet([]).startswith("falhou") and "planilha não foi atualiz
 server.ocr_photo(b"sheet", "2026-10-09", "Fulano")  # same photo again: refused by the budget, no queue item
 assert not list(server.INBOX.glob("*.json"))
 server.sheet.push, server.sheet.ID = real_push, ""
+# The day's list goes first: RAFA on a súmula is the Rafo who signed up that day, not Rafael M (more games, a prefix match).
+real_games, st_before = server.DATA["games"], server.load_state()
+server.DATA["games"] = [{"date": "2026-10-01", "teams": [{"players": [["Rafael M"], ["Rafael M"], ["Tavares"]]}, {"players": [["Rafo"]]}]}]
+st = server.load_state(); st["match"] = {**server.new_match("2026-10-22"), "confirmed": ["Rafo"]}; server.save_state(st)
+fake = {"is_sumula": True, "date": None, "games": [{"team_a": "A", "team_b": "B", "score_a": None, "score_b": None,
+        "players_a": [{"name": "RAFA", "goals": 1}], "players_b": [{"name": "TAVA", "goals": 1}]}]}
+import copy as _copy
+sumula.ask = lambda img, roster: _copy.deepcopy(fake)  # read() writes the names back into it
+for img, day, rafa in ((b"listed", "2026-10-22", "Rafo"), (b"after midnight", "2026-10-23", "Rafo"), (b"other week", "2026-10-30", "Rafael M")):
+    server.ocr_photo(img, day, "Fulano")
+    server.review_tick(now=6000)
+    g = server.load_review()[-1]["payload"]["games"][0]
+    assert (g["players_a"][0]["name"], g["players_b"][0]["name"]) == (rafa, "Tavares"), (day, g)  # TAVA: not listed, full roster as before
+server.DATA["games"] = real_games
+server.save_state(st_before)
 # Public photos: only what public.json lists; the cache follows the file.
 assert server.public_media() == set()
 (server.WIKI / "public.json").write_text(json.dumps({"media": ["IMG-1.jpg"]}))

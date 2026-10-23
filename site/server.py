@@ -1666,10 +1666,22 @@ def push_sheet(games):
         return f"falhou: {e}"
 
 
+def listed_on(date):
+    """That day's confirmed list (the live match or what keep() saved of it), else the day before's: a súmula posted
+    after midnight. Read the photo against it first, so RAFA is the Rafo who signed up, not another Rafa."""
+    with LOCK:
+        st = load_state()
+    try:
+        before = time.strftime("%Y-%m-%d", time.gmtime(calendar.timegm(time.strptime(date, "%Y-%m-%d")) - 86400))
+    except ValueError:
+        before = date
+    return snap(st, date).get("confirmed") or snap(st, before).get("confirmed") or []
+
+
 def ocr_photo(image, date, sender):
     """Bot -> here, in a thread: read the photo, queue it if it is a súmula. Every outcome goes to the log."""
     try:
-        payload = sumula.read(image, sumula.roster_of(DATA["games"]), date, OCR_BUDGET)
+        payload = sumula.read(image, sumula.roster_of(DATA["games"]), date, OCR_BUDGET, listed=listed_on(date))
     except Exception as e:
         print("ocr failed:", e, flush=True)
         if "repetida" not in str(e):

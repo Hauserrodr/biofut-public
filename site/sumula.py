@@ -84,11 +84,13 @@ def take_slot(budget_file, sha, today=None):
     return None
 
 
-def read(image, roster, date_hint, budget_file, call=None):
-    """Photo -> súmula payload, or None when it isn't one. Raises ValueError when the budget says no."""
+def read(image, roster, date_hint, budget_file, call=None, listed=()):
+    """Photo -> súmula payload, or None when it isn't one. Raises ValueError when the budget says no.
+    listed: that day's confirmed list; the model sees those names first and canon() prefers them."""
     why = take_slot(budget_file, hashlib.sha256(image).hexdigest())
     if why:
         raise ValueError(why)
+    roster = list(listed) + [r for r in roster if r not in listed]
     d = (call or ask)(image, roster)
     if not d.get("is_sumula") or not d.get("games"):
         return None
@@ -98,7 +100,7 @@ def read(image, roster, date_hint, budget_file, call=None):
     for g in d["games"]:
         for s in "ab":
             for p in g[f"players_{s}"]:
-                written, p["name"] = p["name"], canon(p["name"], roster)
+                written, p["name"] = p["name"], canon(p["name"], roster, listed)
                 if written != p["name"]:
                     p["written"] = written  # shown in /admin next to the guess
     return scores(d)
@@ -110,21 +112,38 @@ def _norm(s):
     return re.sub(r"\bgoleiro\b|\bgol\b", "gk", re.sub(r"[^a-z ]+", " ", s)).split()
 
 
-def canon(name, roster):
+def _prefix(w, rw):
+    return all(any(x.startswith(t) or (len(x) >= 3 and t.startswith(x)) for x in rw) for t in w)
+
+
+def _near(w, rw):
+    """One written word, 4+ letters, one letter off a word of the name, same first letter (RAFA -> Rafo)."""
+    return len(w) == 1 and len(w[0]) >= 4 and any(
+        len(x) == len(w[0]) and x[0] == w[0][0] and sum(a != b for a, b in zip(x, w[0])) == 1 for x in rw)
+
+
+def canon(name, roster, listed=()):
     """Handwritten name -> the sheet's spelling. Exact match first, then every written word a prefix of a word of
-    the sheet name (or the reverse: DANIEL -> Dan), most frequent player wins (SAUL -> Leo Saul, GAB S. -> Gabi Steinhaus).
+    the sheet name (or the reverse: DANIEL -> Dan), earliest in roster wins (roster_of: most frequent first, so
+    SAUL -> Leo Saul, GAB S. -> Gabi Steinhaus). listed (that day's confirmed list) goes ahead of the roster, and a
+    listed name one letter off also beats a prefix of someone not listed (RAFA -> Rafo on the list, not Rafael M).
     ponytail: prefix heuristic; an alias file learned from Gab's edits if it keeps guessing wrong."""
     w = _norm(name)
     if "sombra" in w:  # the sheet books every stand-in as "Sombra"
         return "Sombra"
     if not w:
         return name
-    for r in roster:
+    for r in [*listed, *roster]:
         if _norm(r) == w:
             return r
+    for r in listed:
+        if _prefix(w, _norm(r)):
+            return r
+    for r in listed:
+        if _near(w, _norm(r)):
+            return r
     for r in roster:
-        rw = _norm(r)
-        if all(any(x.startswith(t) or (len(x) >= 3 and t.startswith(x)) for x in rw) for t in w):
+        if _prefix(w, _norm(r)):
             return r
     return name
 
@@ -170,6 +189,17 @@ def selftest():
             "Doug": "Douglas", "Bruno M.": "Bruno M", "Pedro (Gol)": "Pedro GK", "Leo Corecco": "Leo Corecco", "Nego Dei": "Nego Dei",
             "Victor (sombra)": "Sombra"}
     assert {k: canon(k, roster) for k in want} == want, {k: canon(k, roster) for k in want}
+    roster = ["Rafael M", "Tavares", "Rafo", "Tato", "Leo Saul"]  # most frequent first
+    assert canon("RAFA", roster) == "Rafael M" and canon("RAFA", roster, ["Rafo"]) == "Rafo"  # the day's list wins
+    assert canon("TA", roster) == "Tavares" and canon("TA", roster, ["Tato", "Leo Saul"]) == "Tato"  # tie on a prefix
+    assert canon("Tavares", roster, ["Tato"]) == "Tavares" and canon("RAFA", roster, ["Tato"]) == "Rafael M"  # not listed: as before
+    assert canon("SAUL", roster, ["Rafo"]) == "Leo Saul" and canon("Rafael", roster, ["Rafo"]) == "Rafael M"
+    seen = []
+    fake = lambda img, r: seen.append(r) or {"is_sumula": True, "date": "2026-10-22", "games": [{"team_a": "A", "team_b": "B",
+        "score_a": None, "score_b": None, "players_a": [{"name": "RAFA", "goals": 1}], "players_b": [{"name": "Tavares", "goals": 0}]}]}
+    out = read(b"listed", roster, "2026-10-22", f, fake, ["Rafo", "Tato"])
+    assert seen[0][:3] == ["Rafo", "Tato", "Rafael M"] and len(seen[0]) == len(roster), seen  # listed first, nobody twice
+    assert [p["name"] for s in "ab" for p in out["games"][0][f"players_{s}"]] == ["Rafo", "Tavares"], out
     print("selftest ok")
 
 

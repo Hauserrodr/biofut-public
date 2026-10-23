@@ -16,3 +16,4 @@ bot/config.json
 bot/draft-state.json
 bot/outbox.jsonl
 site/og/
+biofut.json
