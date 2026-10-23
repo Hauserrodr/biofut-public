@@ -741,14 +741,21 @@ def snake_turn(draft):
     return draft["captains"][[0, 1, 1, 0][n % 4]]
 
 
+def refund(state, reason):
+    """The match's bets go back: a ledger entry each (append-only), the BioBet history keeps them. -> how many."""
+    mt = state["match"]
+    if mt["bets"]:
+        state.setdefault("cancelados", []).append({"date": mt["date"], "at": int(time.time()), "bets": mt["bets"]})
+    for bet in mt["bets"]:
+        state["ledger"].append({"player": bet["bettor"], "amount": bet["stake"], "reason": reason})
+    n, mt["bets"] = len(mt["bets"]), []
+    return n
+
+
 def redraft(state, why):
     """Teams back to the captains only (the first picker stays); the bets, if any, go back. Leaves draft["redraft"] for the group."""
     mt, d = state["match"], state["match"]["draft"]
-    if mt["bets"]:  # the BioBet history keeps them
-        state.setdefault("cancelados", []).append({"date": mt["date"], "at": int(time.time()), "bets": mt["bets"]})
-    for bet in mt["bets"]:
-        state["ledger"].append({"player": bet["bettor"], "amount": bet["stake"], "reason": f"redraft {mt['date']}"})
-    n, mt["bets"] = len(mt["bets"]), []
+    n = refund(state, f"redraft {mt['date']}")
     d.update(teams={c: [c] for c in d["captains"]}, ok=[], votes={})
     d["redraft"] = why + (f". {n} aposta{'s' * (n != 1)} devolvida{'s' * (n != 1)}" if n else "")
 
@@ -783,6 +790,8 @@ def apply(state, action, body, data=None, base=None):
     conf, draft = mt["confirmed"], mt["draft"]
     if action in ("unconfirm", "draft_start", "draft_pick", "draft_undo") and mt["bets"]:
         raise ValueError("já tem aposta neste jogo; o draft está travado")
+    if (draft or {}).get("chat") and action in ("draft_undo", "draft_admit", "draft_confirm", "draft_ditador"):
+        raise ValueError("os times vêm da lista do grupo: mudem lá")
     if action == "signup":
         name = clean_name(body.get("name"))
         if name.lower() in (c.lower() for c in conf + list((draft or {}).get("pending", {}))):
@@ -944,10 +953,7 @@ def apply(state, action, body, data=None, base=None):
         state["match"] = new_match()
     elif action == "new_match":
         keep(state)
-        if mt["bets"]:  # the BioBet history keeps them
-            state.setdefault("cancelados", []).append({"date": mt["date"], "at": int(time.time()), "bets": mt["bets"]})
-        for bet in mt["bets"]:  # abandoned match: give the stakes back
-            state["ledger"].append({"player": bet["bettor"], "amount": bet["stake"], "reason": "jogo cancelado"})
+        refund(state, "jogo cancelado")  # abandoned match: give the stakes back
         state["match"] = new_match(str(body.get("date", ""))[:10])
     else:
         raise ValueError("ação desconhecida")
@@ -1282,6 +1288,15 @@ def group_post(text):
     threading.Thread(target=bot_post, daemon=True, args=("/group", {"text": "🤖 " + text})).start()
 
 
+def teams_news(d):
+    """Teams closed (site draft or the group's list): the teams and the BioBet odds, for the group."""
+    o = offered(DATA["model"], *(d["teams"][c] for c in d["captains"]))
+    inv = {k: 1 / v for k, v in o.items()}
+    pct = {k: round(100 * v / sum(inv.values())) for k, v in inv.items()}
+    teams = "\n".join(f"Time {c}: {', '.join(d['teams'][c])}" for c in d["captains"])
+    return f"Times fechados!\n{teams}\n\nBioBet: {d['captains'][0]} {pct['A']}% · empate {pct['E']}% · {d['captains'][1]} {pct['B']}%. Apostas abertas: {SITE}/#/jogo"
+
+
 def draft_news(st, action, d0):
     """What the group hears after a draft action (d0: the draft before it). -> text or None."""
     mt, d = st["match"], st["match"]["draft"]
@@ -1292,11 +1307,7 @@ def draft_news(st, action, d0):
         c = d.get("coin")
         return (f"Moeda no ar... deu {c['result']}! {d['first']} escolhe primeiro." if c else f"Capitães combinaram: {d['first']} escolhe primeiro.") + f" {url}"
     if action == "draft_confirm" and len(d["ok"]) == 2 and len((d0 or {}).get("ok", [])) < 2:
-        o = offered(DATA["model"], *(d["teams"][c] for c in d["captains"]))
-        inv = {k: 1 / v for k, v in o.items()}
-        pct = {k: round(100 * v / sum(inv.values())) for k, v in inv.items()}
-        teams = "\n".join(f"Time {c}: {', '.join(d['teams'][c])}" for c in d["captains"])
-        return f"Times fechados!\n{teams}\n\nBioBet: {d['captains'][0]} {pct['A']}% · empate {pct['E']}% · {d['captains'][1]} {pct['B']}%. Apostas abertas: {url}"
+        return teams_news(d)
     if (why := d.pop("redraft", None)):
         return f"🔁 Redraft: {why}. Capitães, de novo: {url}"
     if action == "draft_ditador" and len(d.get("ditador", [])) == 2:
@@ -1367,7 +1378,7 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
         mt["date"] = lst["date"]
     recent, alias, names, caps = sumula.roster_of(DATA["games"]), name_fixes()[0], [], []
     roster = recent + [n for n in sumula.roster_of(DATA["games"], "") if n not in recent]  # then old-timers coming back
-    k = len(lst["goalies"]) + len(lst["players"])
+    k, got = len(lst["goalies"]) + len(lst["players"]), []  # got: each entry's name as the site keeps it
     for i, e in enumerate(lst["goalies"] + lst["players"] + [e for t in lst["teams"] for e in t["players"]]):  # 'Time MK': its players are in
         n = sumula.canon(e["name"], mt["confirmed"])  # someone already in (signed up on the site as "Leo Saul": "Saul")
         if n not in mt["confirmed"]:
@@ -1375,8 +1386,10 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
             n = alias.get(n, n)
         if i >= k and n in names:  # the teams repeat the numbered list's names
             caps += [n] * e["captain"]
+            got.append(n)
             continue
         names.append(e["name"] if n in names else n)  # two list names on one tabela name: the second stays as written
+        got.append(names[-1])
         if e["captain"]:
             caps.append(names[-1])  # 'Fulano (C)': the players pick the captains on the list, close to the game (Gab)
     names = list(dict.fromkeys(names))
@@ -1385,6 +1398,11 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
     reset = len(gone) if len(gone) > lista.RESET else 0
     if reset:  # a reset or a truncated copy: nobody leaves, the full list comes back on the next repost
         names, gone = prev + [n for n in names if n not in prev], []
+    teams, d0 = chat_teams(lst, got[k:]), mt["draft"] or {"teams": {}}
+    if news := chat_draft(st, teams, ts):
+        group_post(news)
+        if not reset:  # left the group's teams while a short block held them: off the list now (bet-free, refund just ran)
+            gone += [p for t in d0["teams"].values() for p in t if p not in names and p not in gone]
     drafted = {p for t in (mt["draft"] or {"teams": {}})["teams"].values() for p in t}
     removed = [] if mt["bets"] else [n for n in gone if n in mt["confirmed"] and n not in drafted]
     have = {c.lower() for c in mt["confirmed"]}
@@ -1395,7 +1413,51 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
     if lst["teams"]:
         mt.setdefault("caps_at", int(ts))  # the teams are out, so the captains are (BioBet capitao)
     seen["why"] = f"aplicada: +{len(added)} -{len(removed)}" + (f", ninguém saiu ({reset} nomes sumiram: lista cortada?)" if reset else "")
+    if lst["teams"] and not teams and (mt["draft"] or {}).get("chat"):
+        seen["why"] += ", times incompletos: ficam os últimos completos"  # someone gave up and nobody took the spot yet
     return {"date": lst["date"], "added": added, "removed": removed}
+
+
+FULL, MOST = 7, 16  # a team block is full with 7 names (7 x 7 = the 14 that make the game; a goalie listed in a block counts); 16 is the most a game takes
+
+
+def chat_teams(lst, names):
+    """The list's team blocks as [(captain, [captain, players...])] when it has exactly 2 full ones: each with FULL names
+    or more, nobody in both, MOST or fewer in all (Gab, 2026-10-23: 14 + goalies is a game, 16 the most). Else None.
+    names: the block players' site names, in block order. The captain is the block's '(C)', else the player the block is
+    named after, else its first."""
+    if len(lst["teams"]) != 2:
+        return None
+    out, i = [], 0
+    for t in lst["teams"]:
+        raw, i = names[i:i + len(t["players"])], i + len(t["players"])
+        cap = next((n for n, e in zip(raw, t["players"]) if e["captain"]), None) or next(
+            (n for n in raw if lista.fold(n) == lista.fold(t["name"])), raw[0])
+        out.append((cap, [cap] + [n for n in dict.fromkeys(raw) if n != cap]))
+    a, b = (set(ps) for _, ps in out)
+    return out if min(len(a), len(b)) >= FULL and not a & b and len(a | b) <= MOST else None
+
+
+def chat_draft(st, teams, ts):
+    """The group drafted on WhatsApp: its 2 full team blocks are the site draft, closed, BioBet open. A site draft (one
+    the captains started here) wins and is never touched. Later lists with other teams (someone switched, gave up, came
+    in) replace them: the bets on the old teams go back (refund, the ledger only grows) and BioBet reopens with the new
+    odds. The same teams again change nothing. -> the text for the group, or None."""
+    mt = st["match"]
+    d = mt["draft"]
+    if not teams or d and not d.get("chat"):
+        return None
+    if d and {frozenset(t) for t in d["teams"].values()} == {frozenset(ps) for _, ps in teams}:
+        return None
+    if d and len(set(d["teams"][d["captains"][0]]) & set(teams[1][1])) > len(set(d["teams"][d["captains"][0]]) & set(teams[0][1])):
+        teams = teams[::-1]  # the list swapped the blocks: team A stays team A
+    n = refund(st, f"times mudaram {mt['date']}")
+    caps = [c for c, _ in teams]
+    mt["draft"] = {"captains": caps, "teams": dict(teams), "ok": list(caps), "first": caps[0], "flip": {}, "votes": {},
+                   "pending": (d or {}).get("pending", {}), "ditador": list(caps), "chat": int(ts)}  # ok: closed; ditador: no site redraft
+    mt.setdefault("caps_at", int(ts))
+    back = f": {n} aposta{'s' * (n != 1)} devolvida{'s' * (n != 1)}, apostem de novo" if n else ""
+    return (f"🔁 Os times mudaram na lista{back}.\n" if d else "") + teams_news(mt["draft"])
 
 
 def load_profiles():
