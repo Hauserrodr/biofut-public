@@ -500,6 +500,12 @@ assert r["added"] == ["Zeca", "Dan", "MK", "Fulano", "Tito"] and st["match"]["co
 import copy as _copy  # '(C)' on the list: the players' captains, preselected on the draft and DM'd by the bot
 c = _copy.deepcopy(st); server.sync_list(c, lst("15/10", "Zeca", "Saul (C)", "dan", "mk (c)", "Fulano", "tito"), brt(10, 10), "Rafo")
 assert c["match"]["lista"]["captains"] == ["Leo Saul", "MK"], c["match"]["lista"]
+c = new_state()  # 22/10: the list as team blocks, bare names; their players are in
+assert server.sync_list(c, "🚨 [QUINTA - 15/10 18:30]🚨\nTime MK\nmk (C)\nSaul\nTime Nego Dei\n- dan\nZeca (c)\n", brt(10, 10), "Rafo")["added"] == ["MK", "Leo Saul", "Dan", "Zeca"]
+assert c["match"]["confirmed"] == ["MK", "Leo Saul", "Dan", "Zeca"] and c["match"]["lista"]["captains"] == ["MK", "Zeca"], c["match"]
+c = new_state()  # teams under the numbered list repeat its names: counted once, their '(C)' still counts
+server.sync_list(c, lst("15/10", "Zeca", "Saul", "dan") + "Time A\nSaul (C)\nZeca\nTime B\nDan\nNovo\n", brt(10, 10), "Rafo")
+assert c["match"]["confirmed"] == ["Zeca", "Leo Saul", "Dan", "Novo"] and c["match"]["lista"]["captains"] == ["Leo Saul"], c["match"]
 assert st["match"]["lista"]["owner"] == "Andrei" and st["match"]["lista"]["by"] == "Rafo" and st["match"]["lista"]["waiting"] == ["Vavá"]
 assert server.sync_list(st, lst("15/10", "Zeca", "Saul", "dan", "mk", "tito"), brt(10, 11), "Rafo")["removed"] == ["Fulano"]
 r = server.sync_list(st, lst("15/10", "Zeca", "Novo"), brt(10, 11), "Rafo")
