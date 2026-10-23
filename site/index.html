@@ -575,7 +575,7 @@ function redraftBlock(d) {
 }
 function oddsBar(o, d) {
   const inv = {A: 1 / o.A, E: 1 / o.E, B: 1 / o.B}, t = inv.A + inv.E + inv.B, p = k => Math.round(100 * inv[k] / t);
-  return `<div class="card pad" style="margin-top:14px"><div class="sec-h" style="margin-bottom:10px"><h3>O que a BioBet acha</h3><p class="dim" style="margin:0;font-size:13px">Modelo treinado em ${D.model.games} jogos: força de cada um + química das duplas</p></div>
+  return `<div class="card pad" style="margin-top:14px"><div class="sec-h" style="margin-bottom:10px"><h3>O que a BioBet acha</h3><p class="dim" style="margin:0;font-size:13px">Modelo treinado em ${D.model.games} jogos: as estatísticas da tabela de cada um${ST.gols ? ` · placar provável ${ST.gols.map(x => x.toFixed(1).replace(".", ",")).join(" × ")}` : ""}</p></div>
     <div class="probs"><div style="flex:${p("A")};background:var(--win)">${esc(d.captains[0])} ${p("A")}%</div><div style="flex:${p("E")};background:var(--draw)">Empate ${p("E")}%</div><div style="flex:${p("B")};background:var(--loss)">${esc(d.captains[1])} ${p("B")}%</div></div></div>`;
 }
 function betsBlock(d) {
@@ -702,7 +702,7 @@ function pageBioBet() {
   const trophies = SEASONS().map(s => { const x = Object.values(agg(G.filter(g => g.season === s))).sort((a, b) => b.ga - a.ga)[0]; return [s, x]; });
   return `
   <div class="kicker">Apostas com moeda de gol</div><h1 style="font-size:52px;margin-top:8px">BioBet</h1>
-  <p class="muted" style="max-width:640px">Cada gol ou assistência que você fez na história do BioFut vale 1 moeda, e todo mundo ganha 25 de boas-vindas. As odds vêm de um modelo treinado em ${D.model.games} jogos da planilha: força de cada jogador mais a química de cada dupla. A casa fica com 4,2% de tudo que é apostado e já guardou <b>${ST.casa || 0}</b> moedas. Apostas no placar abrem no <a class="link" href="#/jogo">Jogo da semana</a> quando os times fecham.</p>
+  <p class="muted" style="max-width:640px">Cada gol ou assistência que você fez na história do BioFut vale 1 moeda, e todo mundo ganha 25 de boas-vindas. As odds vêm de um modelo treinado em ${D.model.games} jogos da planilha: ele soma as estatísticas da tabela de cada time (gols, assistências, vitórias, pontos e forma de cada jogador) e prevê os gols de cada lado. A casa fica com 4,2% de tudo que é apostado e já guardou <b>${ST.casa || 0}</b> moedas. Apostas no placar abrem no <a class="link" href="#/jogo">Jogo da semana</a> quando os times fecham.</p>
   <section class="sec"><div class="sec-h"><h2>Apostas abertas</h2><p>Abrem com a lista e fecham 24 h antes do jogo</p></div>
     <p class="muted" style="max-width:640px;font-size:14px">Cada aposta tem um pote. As odds de cada lado vêm da probabilidade que o pote dá a ele e mudam até a aposta fechar: quem acerta divide o pote, menos os 4,2% da casa, na proporção do que apostou. Se ninguém entrar do outro lado, as moedas voltam. Ninguém aposta sobre o próprio nome, quem está na lista não aposta no número de jogadores, e quem aposta no prazo dos capitães não pode ser capitão antes dele. A BioBet decide sozinha pela lista, pela tabela e pelo draft; o Gab ou o Conselho decide quando precisa.</p>
     <div class="grid g2">${abertas.map(mercadoCard).join("") || '<div class="empty">Nenhuma aposta aberta agora.</div>'}<div class="card pad"><h3>Abrir uma aposta</h3>${novoMercado()}</div></div></section>

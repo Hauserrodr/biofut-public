@@ -37,7 +37,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
 from pathlib import Path
 
-import costs, lista, sheet, sumula
+import costs, glm, lista, sheet, sumula
 try:
     import push  # Web Push needs the cryptography package; without it the site runs and push is off
 except ImportError:
@@ -251,24 +251,17 @@ def sync_sheet():
         time.sleep(SYNC_EVERY)
 
 
-# --- BioBet: odds from the exported logistic model, coins from goals + assists --------------
+# --- BioBet: odds from the Poisson GLM (glm.py, coefficients in biofut.json "model"), coins from goals + assists ----
 
-def odds(model, a, b):
-    """Fair decimal odds {A, E, B} for team a vs team b. Same math as biobet.Model.odds, no numpy."""
-    idx = {p: i for i, p in enumerate(model["players"])}
-    pairs, k = model["pairs"], model["shrink"]
+def predict(data, a, b, played=()):
+    """Team a vs team b on the table of every game the site knows -> (P(A), P(E), P(B), goals a, goals b).
+    a is the first captain's team: the model is symmetric, so swapping the teams swaps the odds."""
+    return glm.predict(data["model"], data["games"] + unsynced(played, data["games"]), a, b)
 
-    def chem(team):
-        ps = list(combinations(sorted(set(team)), 2))
-        if not ps:
-            return 0.5
-        return sum((w + .5 * k) / (n + k) for w, n in (pairs.get(f"{p}|{q}", (0, 0)) for p, q in ps)) / len(ps)
 
-    c = 10 * (chem(a) - chem(b))
-    z = [b0 + sum(w[idx[p]] for p in a if p in idx) - sum(w[idx[p]] for p in b if p in idx) + w[-1] * c
-         for w, b0 in zip(model["coef"], model["intercept"])]
-    e = [math.exp(v - max(z)) for v in z]
-    return {cls: round(1 / max(v / sum(e), 0.02), 2) for cls, v in zip(model["classes"], e)}
+def odds(data, a, b, played=(), pr=None):
+    """Fair decimal odds {A, E, B} for team a vs team b (pr: predict()'s answer, when already at hand)."""
+    return {k: round(1 / max(p, 0.02), 2) for k, p in zip("AEB", pr or predict(data, a, b, played))}
 
 
 HOUSE = 0.042  # the house (BioBet) keeps 4.2% of what is bet, in state["casa"]; what it does with it comes later
@@ -279,9 +272,9 @@ def take(coins):
     return int(coins * HOUSE + .5)
 
 
-def offered(model, a, b):
+def offered(data, a, b, played=(), pr=None):
     """The odds a member gets on the game: the model's fair odds less the house's 4.2%."""
-    return {k: round(v * (1 - HOUSE), 2) for k, v in odds(model, a, b).items()}
+    return {k: round(v * (1 - HOUSE), 2) for k, v in odds(data, a, b, played, pr).items()}
 
 
 def unsynced(played, games):
@@ -911,7 +904,7 @@ def apply(state, action, body, data=None, base=None):
             raise ValueError(f"{bettor} tem {balance(state, base, bettor)} moedas")
         a, b = (draft["teams"][c] for c in draft["captains"])
         bid = state["next_bet"]
-        mt["bets"].append({"id": bid, "bettor": bettor, "pick": pick, "stake": stake, "odds": offered(data["model"], a, b)[pick]})
+        mt["bets"].append({"id": bid, "bettor": bettor, "pick": pick, "stake": stake, "odds": offered(data, a, b, state["played"])[pick]})
         state["ledger"].append({"player": bettor, "amount": -stake, "reason": f"aposta {bid}"})
         state["next_bet"] += 1
     elif action == "close_match":
@@ -1194,7 +1187,10 @@ def public_state(st):
     out["alias"], out["quem"] = name_fixes()
     if d:
         out["match"] = {**st["match"], "draft": {**d, "flip": sorted(d.get("flip", {})), "votes": len(d.get("votes", {}))}}
-        out["odds"] = offered(DATA["model"], *(d["teams"][c] for c in d["captains"]))
+        teams = [d["teams"][c] for c in d["captains"]]
+        pr = predict(DATA, *teams, st["played"])
+        out["odds"] = offered(DATA, *teams, pr=pr)
+        out["gols"] = [round(x, 1) for x in pr[3:]]  # the model's expected score, first captain first
     return out
 
 
@@ -1292,7 +1288,7 @@ def draft_news(st, action, d0):
         c = d.get("coin")
         return (f"Moeda no ar... deu {c['result']}! {d['first']} escolhe primeiro." if c else f"Capitães combinaram: {d['first']} escolhe primeiro.") + f" {url}"
     if action == "draft_confirm" and len(d["ok"]) == 2 and len((d0 or {}).get("ok", [])) < 2:
-        o = offered(DATA["model"], *(d["teams"][c] for c in d["captains"]))
+        o = offered(DATA, *(d["teams"][c] for c in d["captains"]), st["played"])
         inv = {k: 1 / v for k, v in o.items()}
         pct = {k: round(100 * v / sum(inv.values())) for k, v in inv.items()}
         teams = "\n".join(f"Time {c}: {', '.join(d['teams'][c])}" for c in d["captains"])
