@@ -589,8 +589,11 @@ try:
     apply(st, "draft_confirm", {"captain": "Abel"}); raise AssertionError("a chat draft changes in the group only")
 except ValueError as e:
     assert "lista do grupo" in str(e)
+server.mercado_act(st, "mercado", {"kind": "jogo", "side": "sim", "stake": 2}, "Igor", "membro", now=brt(11, 4))
+m0 = _copy.deepcopy(st["mercados"])  # a list mercado rides out a team change: its bets and status stay (Gab, 2026-10-23)
 B2 = B[:-1] + ["Gil"]  # Gil switched sides, Nilo is out
 server.sync_list(st, blocks(A[:-1] + ["Nilo"], B2), brt(11, 5), "Dan"); time.sleep(0.2)
+assert st["mercados"] == m0 and m0[0]["bets"] and m0[0]["status"] == "aberta", st["mercados"]
 assert st["match"]["draft"]["teams"]["Hugo"] == nm(B2) and st["match"]["bets"] == [] and st["cancelados"][-1]["bets"][0]["bettor"] == "Bruno", (st["match"]["draft"], st["match"]["bets"], st.get("cancelados"), st["last_list"])
 assert st["ledger"][-1] == {"player": "Bruno", "amount": 5, "reason": "times mudaram 2026-11-05"} and balance(st, BASE, "Bruno") == b0
 assert len(sent) == 2 and sent[1][1]["text"].startswith("🤖 🔁 Os times mudaram na lista: 1 aposta devolvida, apostem de novo.\nTimes fechados!"), sent[1]
@@ -606,6 +609,24 @@ assert st["match"]["draft"]["teams"] == {"Abel": ["Abel"], "Hugo": ["Hugo"]} and
 st = new_state()  # one short block: no draft
 server.sync_list(st, blocks(A[:-1], B), brt(11, 4), "Rafo"); time.sleep(0.2)
 assert st["match"]["draft"] is None and len(sent) == 3 and len(st["match"]["confirmed"]) == 13
+# A site sign-up during a chat draft (Gab, 2026-10-23): room left -> in, the draft is undone, the bets go back, the
+# group redraws on the list; no room -> waits on the captains as before; a site draft is untouched.
+st = new_state()
+server.sync_list(st, blocks(A, B), brt(11, 4), "Rafo"); time.sleep(0.2)
+apply(st, "bet", {"bettor": "Bruno", "pick": "A", "stake": 5}, DATA, BASE)
+sent.clear(); apply(st, "signup", {"name": "Zeca"}); time.sleep(0.2)
+assert st["match"]["draft"] is None and st["match"]["confirmed"][-1] == "Zeca" and st["match"]["bets"] == [], st["match"]
+assert st["ledger"][-1] == {"player": "Bruno", "amount": 5, "reason": "draft refeito 2026-11-05"}
+assert sent == [("/group", {"text": "🤖 Zeca entrou pelo site durante o draft. O draft foi refeito: montem os times de novo na lista. 1 aposta devolvida."})], sent
+st = new_state()  # 16 on the list already: no room, Zeca waits
+server.sync_list(st, blocks(A + ["Otto"], B + ["Pepe"]), brt(11, 4), "Rafo"); time.sleep(0.2)
+sent.clear(); apply(st, "signup", {"name": "Zeca"}); time.sleep(0.2)
+assert st["match"]["draft"]["chat"] and st["match"]["draft"]["pending"] == {"Zeca": []} and "Zeca" not in st["match"]["confirmed"] and sent == []
+st = new_state()  # a site draft: the name waits on the captains, nothing posted
+server.sync_list(st, lst("05/11", "Abel", "Hugo", "Bruno"), brt(11, 4), "Rafo")
+apply(st, "draft_start", {"captains": ["Abel", "Hugo"]})
+sent.clear(); apply(st, "signup", {"name": "Zeca"}); time.sleep(0.2)
+assert "chat" not in st["match"]["draft"] and st["match"]["draft"]["pending"] == {"Zeca": []} and sent == []
 server.bot_post = BOT_POST0
 server.use_games(G0)
 # #/eu: a member reads their own messages only, with a spelling merged since the phones.py build

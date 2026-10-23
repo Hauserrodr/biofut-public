@@ -789,7 +789,12 @@ def apply(state, action, body, data=None, base=None):
         name = clean_name(body.get("name"))
         if name.lower() in (c.lower() for c in conf + list((draft or {}).get("pending", {}))):
             pass
-        elif draft:  # the draft is running: the name waits for both captains, then the draft restarts (Gab, 2026-10-14)
+        elif draft and draft.get("chat") and heads(mt) + 1 <= MOST:  # the group's teams, room left: in, and the group redraws (Gab, 2026-10-23)
+            conf.append(name)
+            n, mt["draft"] = refund(state, f"draft refeito {mt['date']}"), None
+            group_post(f"{name} entrou pelo site durante o draft. O draft foi refeito: montem os times de novo na lista."
+                       + (f" {n} aposta{'s' * (n != 1)} devolvida{'s' * (n != 1)}." if n else ""))
+        elif draft:  # the draft is running (or a full chat draft): the name waits for both captains, then the draft restarts (Gab, 2026-10-14)
             draft.setdefault("pending", {})[name] = []
         else:
             conf.append(name)
@@ -1479,7 +1484,7 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
     return {"date": lst["date"], "added": added, "removed": removed}
 
 
-FULL, MOST = 7, 16  # a team block is full with 7 names (7 x 7 = the 14 that make the game; a goalie listed in a block counts); 16 is the most a game takes
+FULL, MOST = 7, 16  # a team block is full with 7 names: 6 field players + the goalie (Gab, 2026-10-23); 16 is the most a game takes
 
 
 def chat_teams(lst, names):
