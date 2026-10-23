@@ -12,6 +12,7 @@
   document.body.insertAdjacentHTML("afterbegin", `<header class="top"><div class="bar">
   <a class="brand" href="/#/"><img src="/logo.png" alt=""><span>Bio<b>Fut</b></span></a>
   <nav class="tabs" id="nav">${tabs.map(tab).join("")}</nav>
+  <button class="theme burger" id="burger" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <button class="theme" id="theme" aria-label="Trocar tema"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button>
   <a class="theme" href="/entrar" id="me" aria-label="Entrar" title="Entrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></a>
 </div></header>`);
@@ -21,6 +22,12 @@
   // one category open at a time; a click outside it or on one of its tabs closes it
   document.addEventListener("click", e => document.querySelectorAll("#nav details[open]").forEach(d => (!d.contains(e.target) || e.target.closest("a")) && d.removeAttribute("open")));
   addEventListener("hashchange", () => document.querySelectorAll("#nav details[open]").forEach(d => d.removeAttribute("open")));
+  // phones (< 920px, site.css): the tabs don't fit the bar, so ☰ opens them as a panel; a tap on a tab or outside closes it
+  const hdr = document.querySelector("header.top"), burger = document.getElementById("burger");
+  const menu = open => { hdr.classList.toggle("open", open); burger.setAttribute("aria-expanded", open) };
+  burger.onclick = () => menu(!hdr.classList.contains("open"));
+  document.addEventListener("click", e => (e.target.closest("#nav a") || !hdr.contains(e.target)) && menu(false));
+  addEventListener("hashchange", () => menu(false));
   document.getElementById("theme").onclick = () => {
     const dark = matchMedia("(prefers-color-scheme: dark)").matches, cur = document.documentElement.dataset.theme || (dark ? "dark" : "light");
     const next = cur === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = next; store.set("biofutTheme", next);
