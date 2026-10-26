@@ -135,10 +135,12 @@ _names = {"at": 0, "v": []}
 
 
 def names():
-    """The names the Nome column takes (its dropdown), for #/planilha. Cached 10 min; [] when it has no list."""
+    """The names the Nome column takes (its dropdown), for #/planilha. Cached 10 min; [] when it has no list.
+    Read on the last rows with a Jogo number (the empty blocks the next games go to): the old rows have no dropdown."""
     if time.time() - _names["at"] > 600:
         t = "'" + tab().replace("'", "''") + "'"
-        _names.update(at=time.time(), v=sorted(rules(f"{t}!N2:N60").get(0, []), key=str.casefold))
+        end = len(values(f"{t}!C2:C")) + 1
+        _names.update(at=time.time(), v=sorted(rules(f"{t}!N{max(2, end - 200)}:N{end}").get(0, []), key=str.casefold))
     return _names["v"]
 
 
@@ -157,7 +159,10 @@ def push(games):
         busy = filled_formulas(values(rng, "FORMULA"), values(rng), row + 2)
         if busy:
             raise ValueError(f"as linhas do jogo {jogo} têm fórmula com valor em {', '.join(busy[:3])}")
-        bad = off_list(rows, rules(rng), row + 2)
+        allowed = rules(rng)
+        if 2 not in allowed:  # no dropdown to check against: refuse rather than write unchecked names
+            raise ValueError(f"as linhas do jogo {jogo} não têm a lista de nomes (validação da coluna Nome); confira a planilha")
+        bad = off_list(rows, allowed, row + 2)
         if bad:
             raise ValueError(f"fora da lista da planilha: {', '.join(bad[:6])}. Use o nome da lista; quem não está nela vira SOMBRA")
         # USER_ENTERED: the ISO date becomes a real date cell, numbers stay numbers
@@ -197,4 +202,8 @@ if __name__ == "__main__":
     assert filled_formulas([["=A1", "", "=B1"], [], ["x"]], [["", "", "Ze"]], 10) == ["N10"]  # blank-looking formulas get overwritten
     out = [["2030-01-08", "PRETO", "andrei", 1, "", "", 1], ["2030-01-08", "PRETO", "Neco Dei", "", "", "", ""]]
     assert off_list(out, {2: ["Andrei", "SOMBRA"]}, 4899) == ["N4900 Neco Dei"] and out[0][2] == "Andrei"  # nickname refused, case fixed
+    asked, rule = [], {"dataValidation": {"condition": {"type": "ONE_OF_RANGE", "values": [{"userEnteredValue": "=Jogadores!A2:A"}]}}}
+    globals().update(tab=lambda: "DATABASE", api=lambda p: asked.append(urllib.parse.unquote(p)) or {"sheets": [{"data": [{"rowData": [{}, {"values": [rule]}]}]}]},
+                     values=lambda rng, render=None: [["301"]] * 4999 if rng.endswith("!C2:C") else [["SOMBRA"], ["andrei"]])
+    assert names() == ["andrei", "SOMBRA"] and "'DATABASE'!N4800:N5000" in asked[0], asked  # the dropdown of the last rows, not the old ones
     print("sheet ok: next game", jogo, "at sheet row", row + 2)
