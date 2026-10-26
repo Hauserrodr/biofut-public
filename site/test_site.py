@@ -786,6 +786,12 @@ assert s2["mercados"][-1]["status"] == "sim" and s2["balances"]["Dan"] == s0["ba
 s3 = json.loads(call("/api/bet", {"bettor": "Victor", "pick": "A", "stake": 1}, cookie=me)[1])
 assert s3["match"]["bets"][-1]["bettor"] == "Dan", "the logged-in member bets, never the name in the body"
 assert "error" in json.loads(call("/api/bet", {"bettor": "Victor", "pick": "A", "stake": 1})[1])
+# The jogo da semana closed on the site goes into the group's sheet too, not only a released súmula.
+got, server.sheet.ID = [], "fake-id"
+real_push, server.sheet.push = server.sheet.push, lambda games: got.append(games) or [301]
+s4 = json.loads(call("/api/close_match", {"score": [2, 1]}, cookie=me)[1])
+assert "error" not in s4 and len(got) == 1 and got[0][0]["date"] == "2099-10-15" and got[0][0]["teams"][0]["gf"] == 2, (s4.get("error"), got)
+server.sheet.push, server.sheet.ID = real_push, ""
 # Ideas become GitHub issues on their own: a failure is retried on the next sweep, nothing is filed twice.
 server.FEEDBACK, server.ISSUES, server.GITHUB_TOKEN = tmp / "feedback.jsonl", tmp / "issues.json", ""  # the POST's own sweep stays off; the test drives it
 issued = []

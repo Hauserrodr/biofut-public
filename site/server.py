@@ -2864,6 +2864,8 @@ class Handler(SimpleHTTPRequestHandler):
                     apply(st, action, body, DATA, base_of(st, DATA))
                     news = match_news(st["played"][-1]) if action == "close_match" else draft_news(st, action, d0) if st["match"]["draft"] else None
                     save_state(st)
+                    if action == "close_match" and sheet.ID:  # like a released súmula: the game goes into the group's sheet
+                        push_sheet([st["played"][-1]])  # never raises: a failure reaches the avisos group
                     if news:
                         group_post(news)
                     if action == "signup":
