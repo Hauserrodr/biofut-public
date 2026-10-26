@@ -1368,7 +1368,8 @@ def pix_tick(now=None):
 
 COPA_AT = "12:00"  # the SuperCopa countdown post in the group, once a day from this time, never 23:00-08:00 (2026-10-26)
 COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform"  # index.html's
-COPA_COUNT_URL = os.environ.get("BIOFUT_COPA_COUNT_URL", "")  # optional, GET -> {"inscritos": N, "goleiros": G, ...}: two numbers used, nothing kept
+COPA_COUNT_URL = os.environ.get("BIOFUT_COPA_COUNT_URL",  # copa_count.gs on the form, GET -> {"inscritos": N, "goleiros": G, ...}: counts only, two used, nothing kept
+                                "https://script.google.com/macros/s/AKfycbxptI7ELP-pOHA_b9PFRDvVNwobabV0Iv7IIyL9CKoGsh5jR8A8vucEBspv6QzzD0KQ/exec")
 COPA_CLOSE = "2026-11-05"  # the form's last day (its own text: "disponível até o dia 05/11/2026"); after it, no form link
 COPA_LINES = [  # one per day, rotating by days left; {n} = days left (2026-10-26 drafts)
     "Na cadeia alimentar da BioFut: o bagre come lodo, o pavão come elogio, o babuíno come o que achar e o axolote regenera. Quem fica no topo? Faltam {n} dias pra SuperCopa.",
@@ -1398,12 +1399,12 @@ def copa_n(line, n):
 
 
 def copa_stats():
-    """BIOFUT_COPA_COUNT_URL's JSON -> {"inscritos": N, "goleiros": G or None}, or None on anything else (no URL, down,
+    """BIOFUT_COPA_COUNT_URL's JSON -> {"inscritos": N, "goleiros": G or None}, or None on anything else (no URL, down, over 20 s (Apps Script takes ~5 s),
     slow, bad JSON, no count). Only these two numbers are read. Never raises."""
     if not COPA_COUNT_URL:
         return None
     try:
-        d = json.loads(urllib.request.urlopen(COPA_COUNT_URL, timeout=5).read())
+        d = json.loads(urllib.request.urlopen(COPA_COUNT_URL, timeout=20).read())
         n, g = d["inscritos"], d.get("goleiros")
         return {"inscritos": n, "goleiros": g if isinstance(g, int) else None} if isinstance(n, int) and n > 0 else None
     except Exception:

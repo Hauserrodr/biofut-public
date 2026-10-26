@@ -1029,6 +1029,7 @@ assert len(sent) == 2, "3 on the list and not in the tabela: no game, no reminde
 # SuperCopa noon post (2026-10-26): once a day from 12:00, never 23:00-08:00, never muted, "é hoje" on the day, nothing after
 sent.clear()
 k = server.kickoff
+server.COPA_COUNT_URL = ""  # no network in tests; the count has its own block below
 assert [d for d in range(-2, 27) if server.copa_day(d)] == [0, 1, 2, 3, 4, 6, 8, 10, 12, 14] + list(range(16, 27)), "daily to 05/11, every 2 days, daily from 18/11"
 COPA_DAY0, server.copa_day = server.copa_day, lambda d: d >= 0  # the timing below, every day
 assert server.copa_days(k("2026-11-10", "11:00")) == 11 and server.copa_days(k("2026-11-21", "20:00")) == 0 and server.copa_days(k("2026-11-22")) == -1
