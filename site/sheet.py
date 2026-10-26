@@ -5,7 +5,8 @@ default /etc/biofut-sheet.json, mode 600) and BIOFUT_SHEET_ID is the id in the s
 
 For each game it fills the next block of empty game rows (the lowest "Jogo Total" whose rows all have no Nome, after the
 last filled game) with Data, Time, Nome, Gol, Assistência, Gol Contra, Capitão (columns L-R). Formula columns (A-K) are
-never touched. It refuses a date that already has players, and cells holding a formula.
+never touched. It refuses a date that already has players, cells holding a formula, and values the sheet's own
+dropdowns reject (a nickname, a typo, a new name: the API would write them anyway).
 Self-check: python sheet.py [data/sheet.csv]
 """
 import base64, json, os, sys, time, urllib.parse, urllib.request
@@ -98,6 +99,49 @@ def filled_formulas(formulas, shown, first):
             if cell(formulas, i, j).startswith("=") and cell(shown, i, j).strip()]
 
 
+def rules(rng):
+    """The sheet's own dropdowns on rng: {column offset in rng: [allowed values]}, from each column's first cell with a
+    list rule. ponytail: one rule per column, as the sheet has it."""
+    r = api("?" + urllib.parse.urlencode({"ranges": rng, "includeGridData": "true", "fields": "sheets.data.rowData.values.dataValidation"}))
+    out = {}
+    for row in r["sheets"][0]["data"][0].get("rowData", []):
+        for j, c in enumerate(row.get("values", [])):
+            cond = c.get("dataValidation", {}).get("condition", {})
+            if j in out or cond.get("type") not in ("ONE_OF_LIST", "ONE_OF_RANGE"):
+                continue
+            vs = [v.get("userEnteredValue", "") for v in cond.get("values", [])]
+            if cond["type"] == "ONE_OF_RANGE":
+                vs = [x for line in values(vs[0].lstrip("=")) for x in line]
+            out[j] = [str(v).strip() for v in vs if str(v).strip()]
+    return out
+
+
+def off_list(rows, allowed, first):
+    """Cells of rows (L..R values, first = sheet row) the dropdowns reject, as 'N4901 Bruney'. A case slip is no
+    mistake: it gets the list's spelling in place (andrei -> Andrei)."""
+    bad = []
+    for i, r in enumerate(rows):
+        for j, ok in allowed.items():
+            v = str(r[j]).strip() if j < len(r) else ""
+            hit = next((a for a in ok if a.casefold() == v.casefold()), None)
+            if v and hit is None:
+                bad.append(f"{'LMNOPQR'[j]}{first + i} {v}")
+            elif v and isinstance(r[j], str):
+                r[j] = hit
+    return bad
+
+
+_names = {"at": 0, "v": []}
+
+
+def names():
+    """The names the Nome column takes (its dropdown), for #/planilha. Cached 10 min; [] when it has no list."""
+    if time.time() - _names["at"] > 600:
+        t = "'" + tab().replace("'", "''") + "'"
+        _names.update(at=time.time(), v=sorted(rules(f"{t}!N2:N60").get(0, []), key=str.casefold))
+    return _names["v"]
+
+
 def push(games):
     """Writes each game into the sheet; returns the "Jogo Total" numbers used. Raises on any refusal."""
     if not ID:
@@ -113,6 +157,9 @@ def push(games):
         busy = filled_formulas(values(rng, "FORMULA"), values(rng), row + 2)
         if busy:
             raise ValueError(f"as linhas do jogo {jogo} têm fórmula com valor em {', '.join(busy[:3])}")
+        bad = off_list(rows, rules(rng), row + 2)
+        if bad:
+            raise ValueError(f"fora da lista da planilha: {', '.join(bad[:6])}. Use o nome da lista; quem não está nela vira SOMBRA")
         # USER_ENTERED: the ISO date becomes a real date cell, numbers stay numbers
         api(f"/values/{urllib.parse.quote(rng)}?valueInputOption=USER_ENTERED", {"values": rows}, "PUT")
         for i, r in enumerate(rows):  # the next game in this call sees these rows as filled
@@ -148,4 +195,6 @@ if __name__ == "__main__":
         except ValueError as e:
             assert err in str(e), e
     assert filled_formulas([["=A1", "", "=B1"], [], ["x"]], [["", "", "Ze"]], 10) == ["N10"]  # blank-looking formulas get overwritten
+    out = [["2030-01-08", "PRETO", "andrei", 1, "", "", 1], ["2030-01-08", "PRETO", "Neco Dei", "", "", "", ""]]
+    assert off_list(out, {2: ["Andrei", "SOMBRA"]}, 4899) == ["N4900 Neco Dei"] and out[0][2] == "Andrei"  # nickname refused, case fixed
     print("sheet ok: next game", jogo, "at sheet row", row + 2)

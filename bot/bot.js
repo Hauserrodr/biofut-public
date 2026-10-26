@@ -227,7 +227,7 @@ async function liveTransport(cfg, onText) {
     // image: a URL on the site (the SuperCopa countdown, 2026-10-26), Baileys fetches it, or the bytes (the tabela check);
     // the text becomes its caption
     send: (to, text, image) => sock.sendMessage(to, image ? { image: Buffer.isBuffer(image) ? image : { url: image }, caption: text } : { text }),
-    poll: (to, name, values) => sock.sendMessage(to, { poll: { name, values, selectableCount: 1 } }),
+    poll: (to, name, values) => sock.sendMessage(to, { poll: { name, values, selectableCount: 0 } }),  // 0: any number of choices
     // the group's members as [{name, phone}]: their numbers, named by the site. ponytail: memory only, rebuilt every 6 h
     async directory() {
       if (dirCache && Date.now() - dirCache.at < 6 * 3600e3) return dirCache.list;
@@ -321,7 +321,7 @@ function serve(cfg, transport) {
           if (!text) return done(400, { ok: false, error: 'text required' });
           const image = o.image ? String(o.image) : undefined;  // optional picture URL (2026-10-26), the text is its caption
           if (image && !/^https?:\/\/\S+$/.test(image)) return done(400, { ok: false, error: 'image must be a URL' });
-          // the tabela check (2026-10-26): pictures as base64 {data, caption} after the text, then a one-choice poll
+          // the tabela check (2026-10-26): pictures as base64 {data, caption} after the text, then a multiple-choice poll
           const images = (Array.isArray(o.images) ? o.images : []).slice(0, 4)
             .map((i) => ({ data: Buffer.from(String(i?.data || ''), 'base64'), caption: String(i?.caption || '').slice(0, 200) }));
           if (images.some((i) => !isPic(i.data))) return done(400, { ok: false, error: 'images: JPEG or PNG in base64' });

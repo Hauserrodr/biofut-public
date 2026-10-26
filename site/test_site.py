@@ -826,6 +826,12 @@ assert len(log) == 1 and log[0]["by"] == "Andrei" and log[0]["depois"] == [rows[
 assert server.load_state()["played"][-1]["teams"][0]["players"][0][1] == rows[0][2], "the site's copy has the fix too"
 assert "error" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": [["X", "a", 0, 0, 0, 0]]}, cookie=andrei)[1]), "unknown team"
 assert len(log) == 1 and json.loads(call("/api/planilha", {"n": g9["n"]}, cookie=andrei)[1]) == {"sheet": "ok: jogo 302"}, "as is: no log line"
+assert g9["nomes"] == [], "no sheet configured: no list, no marks"
+real_names, server.sheet.names = server.sheet.names, lambda: ["Andrei", "SOMBRA"]
+assert json.loads(call("/api/planilha")[1])[0]["nomes"] == ["Andrei", "SOMBRA"], "the sheet's Nome list reaches #/planilha"
+server.sheet.names = lambda: (_ for _ in ()).throw(ValueError("Sheets API 500"))
+assert json.loads(call("/api/planilha")[1])[0]["nomes"] == [], "list unreadable: the page still loads"
+server.sheet.names = real_names
 server.sheet.push, server.sheet.ID = real_push, ""
 # Ideas become GitHub issues on their own: a failure is retried on the next sweep, nothing is filed twice.
 server.FEEDBACK, server.ISSUES, server.GITHUB_TOKEN = tmp / "feedback.jsonl", tmp / "issues.json", ""  # the POST's own sweep stays off; the test drives it

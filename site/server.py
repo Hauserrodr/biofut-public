@@ -2560,8 +2560,13 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/planilha":  # games the sheet lacks, ready to paste (#/planilha): no Gmail, no Apps Script
             with LOCK:
                 games = unsynced(load_state()["played"], DATA["games"])
+            try:  # the Nome column's dropdown: the page offers only those names (the writer refuses the rest)
+                nomes = sheet.names() if games and sheet.ID else []
+            except Exception as e:
+                print("planilha names:", e, flush=True)
+                nomes = []
             return self.send_json([{"n": g["n"], "line": game_line(g), "tsv": "\n".join("\t".join(r) for r in sheet_rows(g)),
-                                    "rows": [[t["name"], *p] for t in g["teams"] for p in t["players"]]} for g in games])
+                                    "rows": [[t["name"], *p] for t in g["teams"] for p in t["players"]], "nomes": nomes} for g in games])
         if path == "/api/data":
             with LOCK:
                 raw = DATA_RAW
