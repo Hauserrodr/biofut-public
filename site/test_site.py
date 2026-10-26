@@ -566,6 +566,12 @@ r = server.sync_list(st, lst("15/10", "Zeca", "Novo"), brt(10, 11), "Rafo")
 assert r == {"date": "2026-10-15", "added": ["Novo"], "removed": []} and "Dan" in st["match"]["confirmed"], "a truncated copy"
 assert st["last_list"]["why"].startswith("aplicada: +1 -0, ninguém saiu (4 nomes"), st["last_list"]
 assert server.sync_list(st, lst("08/10", "Zeca"), brt(10, 12), "Rafo") is None and st["last_list"]["why"] == "lista de um jogo antigo", "an old list"
+off = _copy.deepcopy(st)  # cancelled: that day's list, edited again in the group, no longer reopens the game
+server.cancel_match(off, "Zeca avisou no grupo", brt(10, 12))
+assert server.sync_list(off, lst("15/10", "Zeca", "Nando"), brt(10, 13), "Rafo") is None and off["match"]["date"] == "" and off["last_list"]["why"] == "jogo desse dia foi cancelado"
+assert server.sync_list(off, lst("22/10", "Zeca"), brt(10, 13), "Rafo")["date"] == "2026-10-22", "next week's list still opens"
+server.apply(off, "new_match", {"date": "2026-10-15"})
+assert off["off"] == [] and server.sync_list(off, lst("15/10", "Zeca"), brt(10, 13), "Rafo")["date"] == "2026-10-15", "marked again on the site"
 resched = _copy.deepcopy(st)  # no draft, no bets: the game was rescheduled (new date, list reset), so the new list replaces it
 server.sync_list(resched, lst("17/10", "Zeca", "Nando"), brt(10, 14), "Dan")
 assert resched["match"]["date"] == "2026-10-17" and resched["match"]["confirmed"] == ["Zeca", "Nando"], "rescheduled"
@@ -786,6 +792,28 @@ assert s2["mercados"][-1]["status"] == "sim" and s2["balances"]["Dan"] == s0["ba
 s3 = json.loads(call("/api/bet", {"bettor": "Victor", "pick": "A", "stake": 1}, cookie=me)[1])
 assert s3["match"]["bets"][-1]["bettor"] == "Dan", "the logged-in member bets, never the name in the body"
 assert "error" in json.loads(call("/api/bet", {"bettor": "Victor", "pick": "A", "stake": 1})[1])
+# The jogo da semana closed on the site goes into the group's sheet too, not only a released súmula.
+got, server.sheet.ID = [], "fake-id"
+real_push, server.sheet.push = server.sheet.push, lambda games: got.append(games) or [301]
+s4 = json.loads(call("/api/close_match", {"score": [2, 1]}, cookie=me)[1])
+assert "error" not in s4 and len(got) == 1 and got[0][0]["date"] == "2099-10-15" and got[0][0]["teams"][0]["gf"] == 2, (s4.get("error"), got)
+server.sheet.push, server.sheet.ID = real_push, ""
+# #/planilha "Atualizar tabela": staff only; a hand fix reaches the site's copy, the sheet and the corrections log.
+server.CORRECOES = tmp / "correcoes.jsonl"
+g9 = next(g for g in json.loads(call("/api/planilha")[1]) if "2099-10-15" in g["line"])
+rows = [list(r) for r in g9["rows"]]
+rows[0][2] += 1
+assert "Conselho" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": rows}, cookie=ana)[1])["error"]
+got, server.sheet.ID = [], "fake-id"
+server.sheet.push = lambda games: got.append(games) or [302]
+r = json.loads(call("/api/planilha", {"n": g9["n"], "rows": rows}, cookie=andrei)[1])
+assert r == {"sheet": "ok: jogo 302"} and got[0][0]["teams"][0]["players"][0][1] == rows[0][2], (r, got)
+log = [json.loads(x) for x in server.CORRECOES.read_text(encoding="utf-8").splitlines()]
+assert len(log) == 1 and log[0]["by"] == "Andrei" and log[0]["depois"] == [rows[0]] and log[0]["antes"][0][2] == rows[0][2] - 1, log
+assert server.load_state()["played"][-1]["teams"][0]["players"][0][1] == rows[0][2], "the site's copy has the fix too"
+assert "error" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": [["X", "a", 0, 0, 0, 0]]}, cookie=andrei)[1]), "unknown team"
+assert len(log) == 1 and json.loads(call("/api/planilha", {"n": g9["n"]}, cookie=andrei)[1]) == {"sheet": "ok: jogo 302"}, "as is: no log line"
+server.sheet.push, server.sheet.ID = real_push, ""
 # Ideas become GitHub issues on their own: a failure is retried on the next sweep, nothing is filed twice.
 server.FEEDBACK, server.ISSUES, server.GITHUB_TOKEN = tmp / "feedback.jsonl", tmp / "issues.json", ""  # the POST's own sweep stays off; the test drives it
 issued = []
@@ -1035,7 +1063,11 @@ COPA_DAY0, server.copa_day = server.copa_day, lambda d: d >= 0  # the timing bel
 assert server.copa_days(k("2026-11-10", "11:00")) == 11 and server.copa_days(k("2026-11-21", "20:00")) == 0 and server.copa_days(k("2026-11-22")) == -1
 server.copa_tick(k("2026-11-10", "11:59"))
 assert not sent, "not before 12:00"
+told, server.bot_post = [], lambda route, obj: (told if route == "/notify" else sent).append((route, obj))  # avisos: the story to post by hand
 server.copa_tick(k("2026-11-10", "12:00"))
+assert len(told) == 1 and told[0][1]["text"].startswith("📸 Story de hoje") and "Sticker de link" not in told[0][1]["text"] and "#supercopa" in told[0][1]["text"], told
+assert told[0][1].get("image", f"{server.SITE}/og/story-11.jpg") == f"{server.SITE}/og/story-11.jpg"
+assert server.COPA_FORM in server.story_note(k("2026-11-05", "12:00")), "the form for the link sticker while it is open"
 assert len(sent) == 1 and sent[0][0] == "/group" and sent[0][1]["text"].startswith("🤖 Faltam 11 dias.") and server.COPA_FORM not in sent[0][1]["text"], "after 05/11: no form"
 assert sent[0][1].get("image", f"{server.SITE}/og/copa-11.jpg") == f"{server.SITE}/og/copa-11.jpg" and "inscrito" not in sent[0][1]["text"]
 for t in ("12:30", "22:59"):
@@ -1091,21 +1123,5 @@ game = {"teams": [{"name": "Pavões", "gf": 2, "players": [["Zé", 2]]}, {"name"
 mn = server.match_news(game, k("2026-11-19", "22:00"))
 assert mn.startswith("Fim de jogo: Pavões 2 × 1 Bagres.") and mn.endswith("Guarda energia: faltam 2 dias pra SuperCopa."), mn
 assert "SuperCopa" not in server.match_news(game, k("2026-11-21", "22:00"))
-# Instagram story: nothing without a token; with one, me -> STORIES container -> publish (retried), the token never in a notify
-assert server.ig_story("https://x/og/story-5.jpg") is None
-ig, URLOPEN0, NOTIFY0, said = [], server.urllib.request.urlopen, server.notify, []
-def fake_ig(req, timeout=None):
-    url, body = req.full_url, (req.data or b"").decode()
-    ig.append((url.split("?")[0].rsplit("/", 2)[-2:], url + body))
-    if url.endswith("/media_publish") and sum(1 for u, _ in ig if u[-1] == "media_publish") == 1:
-        raise server.urllib.error.HTTPError(url, 400, "not ready", {}, __import__("io").BytesIO(b"{}"))
-    return __import__("io").BytesIO(json.dumps({"user_id": "17"} if "/me?" in url else {"id": "c1" if url.endswith("/media") else "m1"}).encode())
-server.urllib.request.urlopen, server.notify, server.IG_TOKEN, SLEEP0, server.time.sleep = fake_ig, lambda t, post=True: said.append(t), "SEKRIT9", server.time.sleep, lambda s: None
-assert server.ig_story("https://x/og/story-5.jpg") == "m1" and [u for u, _ in ig] == [
-    ["graph.instagram.com", "me"], ["17", "media"], ["17", "media_publish"], ["17", "media_publish"]], ig
-assert "media_type=STORIES" in ig[1][1] and "image_url=https%3A%2F%2Fx%2Fog%2Fstory-5.jpg" in ig[1][1] and "creation_id=c1" in ig[3][1] and not said
-server.urllib.request.urlopen = lambda req, timeout=None: (_ for _ in ()).throw(server.urllib.error.HTTPError(req.full_url, 400, "x", {}, __import__("io").BytesIO(b'{"error":{"message":"Invalid token"}}')))
-assert server.ig_story("https://x/og/story-5.jpg") is None and len(said) == 1 and "Invalid token" in said[0] and "SEKRIT9" not in said[0], said
-server.urllib.request.urlopen, server.notify, server.IG_TOKEN, server.time.sleep = URLOPEN0, NOTIFY0, "", SLEEP0
 server.bot_post = BOT_POST0
 print("ok")

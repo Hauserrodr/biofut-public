@@ -316,10 +316,12 @@ function serve(cfg, transport) {
           return done(200, { ok: true });
         }
         if (req.url === '/notify') {
-          const text = String(JSON.parse(body || '{}').text || '').trim().slice(0, 2000);
+          const o = JSON.parse(body || '{}'), text = String(o.text || '').trim().slice(0, 2000);
           if (!text) return done(400, { ok: false, error: 'text required' });
+          const image = o.image ? String(o.image) : undefined;  // the day's Instagram story to post by hand (2026-10-26)
+          if (image && !/^https?:\/\/\S+$/.test(image)) return done(400, { ok: false, error: 'image must be a URL' });
           if (!cfg.avisosJid) return done(503, { ok: false, error: 'set avisosJid in config.json' });
-          await transport.send(cfg.avisosJid, text);
+          await transport.send(cfg.avisosJid, text, image);
           return done(200, { ok: true });
         }
         if (req.url === '/login') {

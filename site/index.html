@@ -27,6 +27,7 @@
 .copa-hero{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin:22px 0 8px;padding:26px 24px;border-radius:18px;color:#fff;text-decoration:none;background:radial-gradient(120% 140% at 0% 0%,#f5c54255,transparent 55%),linear-gradient(135deg,#7a1a2e,#2a0b14 70%);border:1px solid #f5c54266;box-shadow:0 10px 40px #f5c54222}
 .copa-hero .kicker{color:#f5c542}.copa-hero h2{font:800 clamp(34px,8vw,56px)/1 var(--cond);margin:8px 0}.copa-hero h2 b{color:#f5c542}
 .copa-hero p{margin:0;opacity:.85}.copa-l{flex:1;min-width:240px}
+.copa-art{width:150px;aspect-ratio:1;border-radius:14px;object-fit:cover;border:1px solid #f5c54266}.copa-art.big{width:min(300px,100%)}
 .pulse{animation:pulse 1.6s ease-in-out infinite;box-shadow:0 0 0 0 #f5c542aa}.btn.big{font-size:20px;padding:16px 26px}
 @keyframes pulse{50%{transform:scale(1.06);box-shadow:0 0 0 12px #f5c54200}}
 @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
@@ -502,7 +503,9 @@ function pageJogo() {
   const C = Object.fromEntries(CARDS().map(c => [c.name, c]));
   const ovr = n => C[n] ? C[n].ovr : "—";
   let body = "";
-  if (!m.date) body = `<div class="card pad"><h3>Marcar o próximo jogo</h3><p class="muted" style="font-size:14px">Escolha a data. Isso abre a lista de confirmados.</p>
+  const off = (ST.off || []).filter(o => o.date >= new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10)).pop();
+  if (!m.date && off) body = `<div class="card pad" style="margin-bottom:14px;border-color:var(--acc)"><h3>❌ Jogo de ${dt(off.date)} cancelado</h3><p class="muted" style="font-size:14px">${esc(off.why)}. O bot ignora as listas desse dia; para remarcar, abra a lista com a mesma data aqui embaixo.</p></div>`;
+  if (!m.date) body += `<div class="card pad"><h3>Marcar o próximo jogo</h3><p class="muted" style="font-size:14px">Escolha a data. Isso abre a lista de confirmados.</p>
     <div class="row"><input class="in" type="date" id="date" aria-label="Data da pelada"><button class="btn pri" id="mark">Abrir lista</button></div></div>`;
   else {
     const drafted = d ? Object.values(d.teams).flat() : [];
@@ -754,6 +757,7 @@ function copaBanner() {  // home: the SuperCopa in evidence until the day after 
   return `<a class="copa-hero fade" href="#/copa"><div class="copa-l"><div class="kicker">5ª Copa BioFut · SuperCopa 2026</div>
     <h2>${days > 0 ? `Faltam <b class="num">${days}</b> dia${days > 1 ? "s" : ""}` : days === 0 ? "É <b>hoje</b>!" : "Foi ontem!"}</h2>
     <p>21 de novembro, 8:30 às 14:30 · Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos.</p></div>
+    <img class="copa-art" src="/copa_art.jpg" alt="Os quatro capitães com a taça da SuperCopa" loading="lazy">
     <div class="copa-r"><span class="btn pri pulse">${COPA_FORM && copaOpen() ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
 }
 function pageCopa() {
@@ -770,7 +774,7 @@ function pageCopa() {
   return `
   <div class="kicker">5ª Copa BioFut · SuperCopa 2026</div><h1 style="font-size:52px;margin-top:8px">21 de novembro, 8:30 às 14:30</h1>
   <p class="muted" style="max-width:640px;font-size:17px">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Dan, Edu, Canova, Bruno M, Matte e Gab (só a parte tech).</p>
-  <div class="copa-hero" style="margin-top:22px"><div class="copa-l"><div class="kicker">Começa em</div><div class="cd" id="cd">${copaClock()}</div></div>
+  <div class="copa-hero" style="margin-top:22px"><img class="copa-art big" src="/copa_art.jpg" alt="Os quatro capitães com a taça da SuperCopa"><div class="copa-l"><div class="kicker">Começa em</div><div class="cd" id="cd">${copaClock()}</div></div>
     <div class="copa-r">${COPA_FORM && !copaOpen() ? '<span class="pill g">Inscrições encerradas em 05/11</span>' : COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga até 05/11.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}
       <p style="margin:10px 0 0;font-size:14px"><b>🪙 Jogou a Copa, ganhou 50 moedas.</b> Depois da Copa, a lista de quem jogou vem da comissão e as moedas caem no seu saldo.</p></div>
   </div>
@@ -783,8 +787,10 @@ function pageCopa() {
       <button class="btn pri" style="margin-top:10px">Enviar ideia</button></form></div>
   <div class="sec"><div class="sec-h"><div><h2>As outras copas</h2></div></div>
     <ul class="list card pad">
-      <li><span class="pill">2024</span><span>3ª copa, decidida nos pênaltis: Babuínos campeões, Barp melhor jogador.</span></li>
-      <li><span class="pill">2025</span><span>Grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Edu melhor da copa de novo.</span></li>
+      <li><span class="pill">2022</span><span>1ª copa: Pavões campeões. Os Flamingos fizeram a melhor campanha e caíram na final. Maior público e mais gols da história.</span></li>
+      <li><span class="pill">2023</span><span>2ª copa, sábado de churrasco na Planet Ball: Bagres campeões nos pênaltis contra as Piranhas, Traíras em 3º.</span></li>
+      <li><span class="pill">2024</span><span>3ª copa, decidida nos pênaltis: Babuínos 1x1 Jaguatiricas, 2x0 nas cobranças. Barp pegou duas e foi o melhor jogador, MK artilheiro.</span></li>
+      <li><span class="pill">2025</span><span>4ª copa: grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Axolotes 2x1 de virada nas Salamandras, Rafael artilheiro, Edu melhor da copa.</span></li>
     </ul></div>`;
 }
 
@@ -1097,26 +1103,54 @@ async function bindDeck() {
   if (sv) sv.onclick = async () => { const r = await post("deck", {cards: ui.lineup}); if (r) { setState(r); ui.lineup = null; render(); toast("Deck salvo"); } };
 }
 
-// ---------- planilha: games the site has and the Google Sheet lacks, one paste each (no Gmail login, no Apps Script) ----------
+// ---------- planilha: games the site has and the Google Sheet lacks; staff fix the rows and send them (server.py planilha_push) ----------
 function pagePlanilha() {
-  return `<div class="fade"><div class="kicker">Planilha do grupo</div><h1>Passar para a planilha</h1>
+  return `<div class="fade"><div class="kicker">Planilha do grupo</div><h1>Atualizar a planilha</h1>
   <p class="muted" style="max-width:680px;margin:14px 0 0">Jogos que já estão no site (súmula aprovada ou jogo da semana) e ainda faltam na planilha.
-  Para cada um: <b>Copiar</b>, abrir a aba DATABASE, clicar na coluna <b>L (Data)</b> da primeira linha de um bloco de jogo vazio e colar (Ctrl+V).
-  Não mexa nas colunas A–K: são fórmulas. Em até 10 minutos o site lê a planilha e o jogo sai daqui sozinho.</p>
+  Confira as linhas, corrija o que a súmula leu errado e toque em <b>Atualizar tabela</b>: o servidor escreve no primeiro bloco de jogo vazio da aba DATABASE.
+  Cada correção fica registrada para o leitor de súmulas errar menos. Em até 10 minutos o site lê a planilha e o jogo sai daqui sozinho.</p>
   <div id="pl" class="grid" style="margin-top:22px"><div class="skel"></div></div></div>`;
 }
 async function bindPlanilha() {
-  const rows = await fetch("/api/planilha").then(r => r.json()).catch(() => null), heads = ["Data", "Time", "Nome", "Gol", "Assist.", "Gol contra", "Capitão"];
+  const games = await fetch("/api/planilha").then(r => r.json()).catch(() => null), heads = ["Time", "Nome", "Gol", "Assist.", "Gol contra", "Capitão", ""];
   if (!$("#pl")) return;  // left the route while the fetch ran
-  $("#pl").innerHTML = !rows ? '<div class="empty">Não consegui carregar. Tente recarregar.</div>'
-    : !rows.length ? '<div class="empty">Nada pendente: a planilha já tem todos os jogos do site.</div>'
-    : rows.map(g => `<div class="card pad"><div class="row" style="justify-content:space-between"><h3>${esc(g.line)}</h3>
-      <button class="btn pri sm" data-tsv="${esc(g.tsv)}" data-ev="copiar jogo ${g.n}">Copiar ${g.tsv.split("\n").length} linhas</button></div>
+  const edit = STAFF(), num = (v, k) => `<input class="in" type="number" min="0" max="49" value="${v || 0}" data-k="${k}" style="width:64px">`;
+  const row = (g, r) => edit ? `<tr><td class="l"><select class="in" data-k="0">${[...new Set(g.rows.map(x => x[0]))].map(t => `<option${t === r[0] ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></td>
+      <td class="l"><input class="in" value="${esc(r[1])}" data-k="1" list="names" style="min-width:140px"></td>${[2, 3, 4].map(k => `<td>${num(r[k], k)}</td>`).join("")}
+      <td><input type="checkbox" data-k="5"${r[5] ? " checked" : ""} aria-label="Capitão"></td><td><button class="btn sm" data-del aria-label="Tirar linha">×</button></td></tr>`
+    : `<tr>${r.slice(0, 5).map(c => `<td class="l">${esc(String(c || ""))}</td>`).join("")}<td class="l">${r[5] ? "C" : ""}</td><td></td></tr>`;
+  $("#pl").innerHTML = !games ? '<div class="empty">Não consegui carregar. Tente recarregar.</div>'
+    : !games.length ? '<div class="empty">Nada pendente: a planilha já tem todos os jogos do site.</div>'
+    : games.map(g => `<div class="card pad" data-n="${g.n}"><div class="row" style="justify-content:space-between"><h3>${esc(g.line)}</h3>
+      <div class="row">${edit ? `<button class="btn sm" data-add>+ jogador</button><button class="btn pri sm" data-push data-ev="atualizar jogo ${g.n}">Atualizar tabela</button>` : '<span class="dim" style="font-size:13px">Só o Conselho atualiza: entre se for do Conselho.</span>'}
+      <button class="btn sm" data-tsv="${esc(g.tsv)}">ou copiar</button></div></div>
       <div class="tw" style="margin-top:12px"><table><thead><tr>${heads.map(h => `<th class="l">${h}</th>`).join("")}</tr></thead>
-      <tbody>${g.tsv.split("\n").map(r => `<tr>${r.split("\t").map(c => `<td class="l">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`).join("");
+      <tbody>${g.rows.map(r => row(g, r)).join("")}</tbody></table></div></div>`).join("");
   document.querySelectorAll("[data-tsv]").forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(b.dataset.tsv); toast("Copiado. Cole na coluna L da planilha"); } catch { toast("O navegador bloqueou a cópia: selecione a tabela", true); }
   });
+  document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
+    const card = b.closest("[data-n]"), g = games.find(x => x.n === +card.dataset.n);
+    card.querySelector("tbody").insertAdjacentHTML("beforeend", row(g, [g.rows[0][0], "", 0, 0, 0, 0]));
+    bindPlanilhaRows(card);
+  });
+  document.querySelectorAll("[data-push]").forEach(b => b.onclick = async () => {
+    const card = b.closest("[data-n]"), rows = [...card.querySelectorAll("tbody tr")].map(tr => {
+      const v = k => tr.querySelector(`[data-k="${k}"]`);
+      return [v(0).value, v(1).value.trim(), ...[2, 3, 4].map(k => Math.max(0, parseInt(v(k).value, 10) || 0)), v(5).checked ? 1 : 0];
+    });
+    if (rows.some(r => !r[1])) return toast("Tem linha sem nome", true);
+    b.disabled = true;
+    const j = await post("planilha", {n: +card.dataset.n, rows});
+    b.disabled = false;
+    if (!j) return;
+    if (j.sheet.startsWith("ok")) { toast(`Planilha atualizada (${j.sheet.slice(4)}). O site lê em até 10 min.`); b.textContent = "Enviado ✓"; b.disabled = true; }
+    else toast("A planilha não aceitou: " + j.sheet.replace(/^falhou: /, ""), true);
+  });
+  document.querySelectorAll("[data-n]").forEach(bindPlanilhaRows);
+}
+function bindPlanilhaRows(card) {  // a row taken out or added: the delete buttons of the new ones too
+  card.querySelectorAll("[data-del]").forEach(b => b.onclick = () => b.closest("tr").remove());
 }
 
 // ---------- member page: own stats, nickname/status, ideas for the site ----------
@@ -1446,7 +1480,7 @@ function render() {
   bind && bind();
   bindPush();
   const r = $("#radio"); r.hidden = page !== "radio" && !r.dataset.played; r.classList.toggle("mini", page !== "radio");
-  document.title = (page ? ({jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco"}[page] + " · ") : "") + "BioFut";
+  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
   if (same) scrollTo(0, y); else scrollTo(0, 0);
 }
 addEventListener("hashchange", render);

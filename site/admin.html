@@ -158,13 +158,7 @@ function activity() {
   $('flt').oninput = e => { FILTER = e.target.value; $('feed').innerHTML = feed(); };
 }
 
-async function planilha() {
-  const g = await fetch('/api/planilha').then(r => r.json()).catch(() => null);
-  $('view').innerHTML = `<div class="card pad"><h3>${!g ? 'Não consegui ler' : g.length ? `${g.length} jogo${g.length > 1 ? 's' : ''} no site e não na planilha` : 'A planilha está em dia'}</h3>` +
-    (g || []).map(x => `<p class="meta" style="margin:6px 0">#${x.n} · ${esc(x.line)}</p>`).join('') +
-    '<p class="meta">Sem o hook do Apps Script, súmulas aprovadas e jogos da semana ficam só no site até alguém colar na planilha. A página de copiar é pública: ' +
-    'qualquer um com acesso de edição à planilha cola, e o servidor não precisa de nenhuma conta Google.</p><a class="btn pri sm" href="/#/planilha">Abrir a página de copiar</a></div>';
-}
+function planilha() { location.href = '/#/planilha'; }  // the editable page with "Atualizar tabela" lives on the site
 
 async function ideias() {  // members' ideas and bugs from /#/eu: the server opens an issue for each (BIOFUT_GITHUB_TOKEN); the link is the fallback
   const xs = await fetch('/api/feedback').then(r => r.json()).catch(() => null);
