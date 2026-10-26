@@ -1114,9 +1114,10 @@ function pagePlanilha() {
 async function bindPlanilha() {
   const games = await fetch("/api/planilha").then(r => r.json()).catch(() => null), heads = ["Time", "Nome", "Gol", "Assist.", "Gol contra", "Capitão", ""];
   if (!$("#pl")) return;  // left the route while the fetch ran
+  const nomes = games?.[0]?.nomes || [], fora = v => nomes.length > 0 && !nomes.some(x => x.toLowerCase() === v.trim().toLowerCase());
   const edit = STAFF(), num = (v, k) => `<input class="in" type="number" min="0" max="49" value="${v || 0}" data-k="${k}" style="width:64px">`;
   const row = (g, r) => edit ? `<tr><td class="l"><select class="in" data-k="0">${[...new Set(g.rows.map(x => x[0]))].map(t => `<option${t === r[0] ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></td>
-      <td class="l"><input class="in" value="${esc(r[1])}" data-k="1" list="names" style="min-width:140px"></td>${[2, 3, 4].map(k => `<td>${num(r[k], k)}</td>`).join("")}
+      <td class="l"><input class="in" value="${esc(r[1])}" data-k="1" list="${nomes.length ? "plnames" : "names"}" style="min-width:140px"></td>${[2, 3, 4].map(k => `<td>${num(r[k], k)}</td>`).join("")}
       <td><input type="checkbox" data-k="5"${r[5] ? " checked" : ""} aria-label="Capitão"></td><td><button class="btn sm" data-del aria-label="Tirar linha">×</button></td></tr>`
     : `<tr>${r.slice(0, 5).map(c => `<td class="l">${esc(String(c || ""))}</td>`).join("")}<td class="l">${r[5] ? "C" : ""}</td><td></td></tr>`;
   $("#pl").innerHTML = !games ? '<div class="empty">Não consegui carregar. Tente recarregar.</div>'
@@ -1125,14 +1126,14 @@ async function bindPlanilha() {
       <div class="row">${edit ? `<button class="btn sm" data-add>+ jogador</button><button class="btn pri sm" data-push data-ev="atualizar jogo ${g.n}">Atualizar tabela</button>` : '<span class="dim" style="font-size:13px">Só o Conselho atualiza: entre se for do Conselho.</span>'}
       <button class="btn sm" data-tsv="${esc(g.tsv)}">ou copiar</button></div></div>
       <div class="tw" style="margin-top:12px"><table><thead><tr>${heads.map(h => `<th class="l">${h}</th>`).join("")}</tr></thead>
-      <tbody>${g.rows.map(r => row(g, r)).join("")}</tbody></table></div></div>`).join("");
+      <tbody>${g.rows.map(r => row(g, r)).join("")}</tbody></table></div></div>`).join("") + `<datalist id="plnames">${nomes.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`;
   document.querySelectorAll("[data-tsv]").forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(b.dataset.tsv); toast("Copiado. Cole na coluna L da planilha"); } catch { toast("O navegador bloqueou a cópia: selecione a tabela", true); }
   });
   document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
     const card = b.closest("[data-n]"), g = games.find(x => x.n === +card.dataset.n);
     card.querySelector("tbody").insertAdjacentHTML("beforeend", row(g, [g.rows[0][0], "", 0, 0, 0, 0]));
-    bindPlanilhaRows(card);
+    bindPlanilhaRows(card, fora);
   });
   document.querySelectorAll("[data-push]").forEach(b => b.onclick = async () => {
     const card = b.closest("[data-n]"), rows = [...card.querySelectorAll("tbody tr")].map(tr => {
@@ -1140,6 +1141,8 @@ async function bindPlanilha() {
       return [v(0).value, v(1).value.trim(), ...[2, 3, 4].map(k => Math.max(0, parseInt(v(k).value, 10) || 0)), v(5).checked ? 1 : 0];
     });
     if (rows.some(r => !r[1])) return toast("Tem linha sem nome", true);
+    const bad = rows.filter(r => fora(r[1])).map(r => r[1]);
+    if (bad.length) return toast(`Fora da lista da planilha: ${bad.join(", ")}. Escolha um nome da lista; quem não está nela vira SOMBRA`, true);
     b.disabled = true;
     const j = await post("planilha", {n: +card.dataset.n, rows});
     b.disabled = false;
@@ -1147,10 +1150,14 @@ async function bindPlanilha() {
     if (j.sheet.startsWith("ok")) { toast(`Planilha atualizada (${j.sheet.slice(4)}). O site lê em até 10 min.`); b.textContent = "Enviado ✓"; b.disabled = true; }
     else toast("A planilha não aceitou: " + j.sheet.replace(/^falhou: /, ""), true);
   });
-  document.querySelectorAll("[data-n]").forEach(bindPlanilhaRows);
+  document.querySelectorAll("[data-n]").forEach(c => bindPlanilhaRows(c, fora));
 }
-function bindPlanilhaRows(card) {  // a row taken out or added: the delete buttons of the new ones too
+function bindPlanilhaRows(card, fora) {  // a row taken out or added: the delete buttons of the new ones too; a name the sheet's list lacks gets a red outline
   card.querySelectorAll("[data-del]").forEach(b => b.onclick = () => b.closest("tr").remove());
+  card.querySelectorAll('[data-k="1"]').forEach(i => (i.oninput = () => {
+    i.style.outline = fora(i.value) ? "2px solid #e5484d" : "";
+    i.title = fora(i.value) ? "Fora da lista da planilha: escolha um nome da lista ou SOMBRA" : "";
+  })());
 }
 
 // ---------- member page: own stats, nickname/status, ideas for the site ----------
