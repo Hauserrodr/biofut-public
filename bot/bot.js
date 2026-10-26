@@ -3,7 +3,7 @@
  *
  * Dry-run by default: every outgoing message is appended to outbox.jsonl, nothing is sent.
  * Live (--live) runs on Gab's own number as an extra linked device (Gab, 2026-10-05: no SIM,
- * the bot speaks as him, every message tagged with PREFIX, the bot "AG"). It uses its own session dir and
+ * the bot speaks as him, every message tagged with PREFIX, the bot "ESQUIZOBOT"). It uses its own session dir and
  * refuses the read-only ingest session (~/.whatsapp-secrets). Live answers only in cfg.groupJid.
  *
  * Site -> bot contract (site/server.py calls this on every new sign-up):
@@ -56,11 +56,13 @@ async function siteState(cfg) {
   } catch { return null; }
 }
 
-// every outgoing message is tagged so the group knows it is the bot, not Gab typing. The bot is "AG" (Gab, 2026-10-23;
-// the group may give it a nickname later): change it here, the one place. *bold* in WhatsApp. A site text's own leading
+// every outgoing message is tagged so the group knows it is the bot, not the admin typing. The bot is "ESQUIZOBOT"
+// (2026-10-26): change it here, the one place. *bold* in WhatsApp. A site text's own leading
 // 🤖 (server.py group_post: "tag this") folds into the tag.
-const PREFIX = '🤖 *AG*';
+const PREFIX = '🤖 *ESQUIZOBOT*';
 const tag = (text) => `${PREFIX} ${String(text).replace(/^🤖\s*/u, '')}`;
+// a picture the site sends as base64 (/group images): JPEG or PNG only
+const isPic = (buf) => buf.length > 8 && (buf.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) || buf.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])));
 // the admin group Gab creates: "BioFut Avisos", "biofut avisos", "BIOFUT - avisos"... (groups: {jid: {id, subject}})
 const findAvisos = (groups) => Object.values(groups || {}).find((g) => /bio\s*fut.*avisos/i.test(g.subject || ''))?.id;
 const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text, image) => transport.send(to, tag(text), image) });
@@ -144,7 +146,11 @@ const loginAsk = (code) => `Seu código para entrar no site do BioFut:\n\n*${cod
 // ---------------------------------------------------------------- transports
 const dryRun = {
   async send(to, text, image) {
-    fs.appendFileSync(OUTBOX, JSON.stringify({ ts: new Date().toISOString(), to, text, ...(image && { image }) }) + '\n');
+    const img = Buffer.isBuffer(image) ? `bytes:${image.length}` : image;
+    fs.appendFileSync(OUTBOX, JSON.stringify({ ts: new Date().toISOString(), to, text, ...(img && { image: img }) }) + '\n');
+  },
+  async poll(to, name, values) {
+    fs.appendFileSync(OUTBOX, JSON.stringify({ ts: new Date().toISOString(), to, poll: { name, values } }) + '\n');
   },
   async lookup(phone) { return [toJid(phone)]; }, // no group to check offline
 };
@@ -200,7 +206,8 @@ async function liveTransport(cfg, onText) {
     sock.ev.on('messages.upsert', ({ messages, type }) => {
       if (type !== 'notify') return;
       for (const m of messages) {
-        if (m.message?.imageMessage && m.key.remoteJid === cfg.groupJid) forwardImage(b, m, cfg);
+        // the bot's own pictures (the tabela check, tagged captions) are not súmulas
+        if (m.message?.imageMessage && m.key.remoteJid === cfg.groupJid && !String(m.message.imageMessage.caption || '').startsWith(PREFIX)) forwardImage(b, m, cfg);
         const text = m.message?.conversation || m.message?.extendedTextMessage?.text;
         const chat = m.key.remoteJid;
         // fromMe is allowed: the bot is Gab's number, so Gab's own !commands count. Its tagged replies are skipped (no loop).
@@ -217,8 +224,10 @@ async function liveTransport(cfg, onText) {
   connect();
   setTimeout(() => t.directory(), 60e3);  // warm: the site hashes every number once, ~seconds
   const t = {
-    // image: a URL on the site (the SuperCopa countdown, 2026-10-26), Baileys fetches it; the text becomes its caption
-    send: (to, text, image) => sock.sendMessage(to, image ? { image: { url: image }, caption: text } : { text }),
+    // image: a URL on the site (the SuperCopa countdown, 2026-10-26), Baileys fetches it, or the bytes (the tabela check);
+    // the text becomes its caption
+    send: (to, text, image) => sock.sendMessage(to, image ? { image: Buffer.isBuffer(image) ? image : { url: image }, caption: text } : { text }),
+    poll: (to, name, values) => sock.sendMessage(to, { poll: { name, values, selectableCount: 1 } }),
     // the group's members as [{name, phone}]: their numbers, named by the site. ponytail: memory only, rebuilt every 6 h
     async directory() {
       if (dirCache && Date.now() - dirCache.at < 6 * 3600e3) return dirCache.list;
@@ -304,7 +313,7 @@ function serve(cfg, transport) {
     if (req.method !== 'POST') return done(404, { ok: false });
     if (req.headers['x-biofut-token'] !== token) return done(401, { ok: false, error: 'bad token' });
     let body = '';
-    req.on('data', (c) => { body += c; if (body.length > 10000) req.destroy(); });
+    req.on('data', (c) => { body += c; if (body.length > 20e6) req.destroy(); });  // 20 MB: /group images, a few photos in base64
     req.on('end', async () => {
       try {
         if (req.url === '/group') {
@@ -312,7 +321,15 @@ function serve(cfg, transport) {
           if (!text) return done(400, { ok: false, error: 'text required' });
           const image = o.image ? String(o.image) : undefined;  // optional picture URL (2026-10-26), the text is its caption
           if (image && !/^https?:\/\/\S+$/.test(image)) return done(400, { ok: false, error: 'image must be a URL' });
+          // the tabela check (2026-10-26): pictures as base64 {data, caption} after the text, then a one-choice poll
+          const images = (Array.isArray(o.images) ? o.images : []).slice(0, 4)
+            .map((i) => ({ data: Buffer.from(String(i?.data || ''), 'base64'), caption: String(i?.caption || '').slice(0, 200) }));
+          if (images.some((i) => !isPic(i.data))) return done(400, { ok: false, error: 'images: JPEG or PNG in base64' });
+          const poll = o.poll && { name: String(o.poll.name || '').slice(0, 255), values: (Array.isArray(o.poll.values) ? o.poll.values : []).map(String).slice(0, 12) };
+          if (poll && (!poll.name || poll.values.length < 2)) return done(400, { ok: false, error: 'poll: name and 2-12 values' });
           await (text.startsWith('🤖') && !o.raw ? transport.send : transport.raw || transport.send)(cfg.groupJid, text, image);
+          for (const i of images) await transport.send(cfg.groupJid, i.caption, i.data);
+          if (poll) await transport.poll(cfg.groupJid, poll.name, poll.values);
           return done(200, { ok: true });
         }
         if (req.url === '/notify') {

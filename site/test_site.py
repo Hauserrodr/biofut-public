@@ -1,5 +1,5 @@
 """Self-check: python test_site.py  (needs biofut.json with the GLM block: build_data.py, or --refit)"""
-import math, sys
+import base64, math, sys
 
 import server
 from server import DATA, sign, signed_name, too_many_fails, WELCOME, apply, balance, minted, new_state, odds, sheet_games, unsynced
@@ -377,6 +377,19 @@ server.review_act(it["id"], "approve")
 it = server.load_review()[-1]
 assert it["sheet"] == "ok: jogo 300" and got[0][0]["teams"][0]["players"][0][4] == 1, (it, got)  # captain flag reaches the sheet
 assert server.load_state()["played"][-1]["sumula"] == p["image"] and (server.WIKI / "media" / p["image"]).exists()  # #34: the open game shows it
+# the group checks it (conferir_grupo): text, pictures, poll. The fake photo is not a JPEG, so no súmula picture until it is
+sent, real_rows = [], server.sheet.rows_of
+server.BOT_URL, server.bot_post, server.sheet.rows_of = "http://bot", lambda route, obj, **kw: sent.append((route, obj)), lambda jogo: [[4899, "9/10/26", "AZUL", "Victor", "2", "", "", "1"]]
+server.conferir_grupo(server.load_state()["played"][-1], 300)
+(route, o), = sent
+assert route == "/group" and o["text"].startswith("🤖 📋 Tabela atualizada") and "(jogo 300)" in o["text"], o["text"]
+assert o["poll"] == {"name": "A tabela tá correta (bate com a foto da súmula)?", "values": ["Sim", "Ou", "Não"]}, o["poll"]
+assert [i["caption"] for i in o["images"]] == ["🌐 No site", "📊 Na planilha (jogo 300)"], o["images"]
+assert all(base64.b64decode(i["data"])[:3] == b"\xff\xd8\xff" for i in o["images"])
+(server.WIKI / "media" / p["image"]).write_bytes(b"\xff\xd8\xff\xe0 a photo")
+server.conferir_grupo(server.load_state()["played"][-1], 300)
+assert [i["caption"] for i in sent[-1][1]["images"]] == ["📷 Súmula", "🌐 No site", "📊 Na planilha (jogo 300)"]
+server.BOT_URL, server.bot_post, server.sheet.rows_of = "", BOT_POST0, real_rows
 server.sheet.push = lambda games: (_ for _ in ()).throw(ValueError("Sheets API 400"))  # the game stays on the site, the failure is reported
 assert server.push_sheet([]).startswith("falhou") and "planilha não foi atualizada" in server.AVISOS.read_text(encoding="utf-8")
 server.ocr_photo(b"sheet", "2026-10-09", "Fulano")  # same photo again: refused by the budget, no queue item

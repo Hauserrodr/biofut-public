@@ -122,6 +122,13 @@ def push(games):
     return done
 
 
+def rows_of(jogo):
+    """Read back game jogo's rows as the sheet shows them: [[sheet row, Data, Time, Nome, Gol, Assist., Gol Contra, Capitão]]."""
+    t = "'" + tab().replace("'", "''") + "'"
+    return [[i + 2, *(list(r[11:18]) + [""] * 7)[:7]] for i, r in enumerate(values(f"{t}!A2:R"))
+            if len(r) > JOGO and str(r[JOGO]).strip() == str(jogo)]
+
+
 if __name__ == "__main__":
     csv = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__) or ".", "data", "sheet.csv")
     rows = ([l.split(",")[:14] for l in open(csv, encoding="utf-8").read().strip().split("\n")[1:]] if os.path.exists(csv) else

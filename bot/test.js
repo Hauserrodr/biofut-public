@@ -20,8 +20,8 @@ assert.match(reply('!capitaes', cfg, m0), /ainda não/);
 assert.match(reply('!times', cfg, m1), /^Time Victor: Victor, Zé\nTime Canova: Canova\n/);
 assert.match(reply('!lista', cfg, null), /fora do ar/);
 assert.strictEqual(reply('bora jogar', cfg, null), null);
-assert.strictEqual(tag('oi'), '🤖 *AG* oi');
-assert.strictEqual(tag('🤖 Zé disse no site'), '🤖 *AG* Zé disse no site', "the site's 🤖 folds into the tag");
+assert.strictEqual(tag('oi'), '🤖 *ESQUIZOBOT* oi');
+assert.strictEqual(tag('🤖 Zé disse no site'), '🤖 *ESQUIZOBOT* Zé disse no site', "the site's 🤖 folds into the tag");
 assert.strictEqual(toJid('+55 51 90000-0001'), '5551900000001@s.whatsapp.net');
 assert.strictEqual(findAvisos({ a: { id: 'a@g.us', subject: 'BioFut ⚽' }, b: { id: 'b@g.us', subject: 'BIOFUT - Avisos' } }), 'b@g.us');
 assert.strictEqual(findAvisos({ a: { id: 'a@g.us', subject: 'Avisos do condomínio' } }), undefined);
@@ -59,7 +59,7 @@ srv.stdout.once('data', async () => {
     const lines = fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
     assert.strictEqual(lines.length, 2);
     assert.strictEqual(lines[0].to, '5551900000001@s.whatsapp.net');
-    assert.match(lines[0].text, /^🤖 \*AG\* ⚽ Zé entrou/u);
+    assert.match(lines[0].text, /^🤖 \*ESQUIZOBOT\* ⚽ Zé entrou/u);
     assert.strictEqual((await post('/draft/join', {})).status, 400);
     const p = await post('/draft/pick', { captain: 'Zé', player: 'Bia', turn: 'Victor', teams: { 'Zé': ['Zé', 'Bia'], Victor: ['Victor'] }, available: ['Leo', 'Dan'] });
     assert.deepStrictEqual(await p.json(), { ok: true, notified: 1 });
@@ -70,15 +70,25 @@ srv.stdout.once('data', async () => {
     const last = require('./bot.js').pick({ captain: 'Zé', player: 'Leo', turn: 'Zé', teams: { 'Zé': ['Zé', 'Bia', 'Leo'], Victor: ['Victor'] }, available: [] }, cfg);  // the other captain (Victor) is in cfg
     assert.match(last[0].text, /Sobram: ninguém\n\nAcabou! Confirma teu time: /, 'nobody left: confirm, not "your turn"');
     const out = async (b) => { assert.deepStrictEqual(await (await post('/group', b)).json(), { ok: true }); return fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).pop().text; };
-    assert.match(await out({ text: '🤖 oi' }), /^🤖 \*AG\* oi$/u);
+    assert.match(await out({ text: '🤖 oi' }), /^🤖 \*ESQUIZOBOT\* oi$/u);
     assert.strictEqual(await out({ text: '🤖 [19/03]\n7 - Kiko', raw: true }), '🤖 [19/03]\n7 - Kiko', 'raw: the site sign-up list, never tagged');
     // SuperCopa noon post: a picture with the tagged text as its caption; no image field = plain text as before
     const img = 'https://biofut.example/og/copa-11.jpg', lastOut = () => fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).pop();
-    assert.match(await out({ text: '🤖 Faltam 11 dias.', image: img }), /^🤖 \*AG\* Faltam 11 dias\.$/u);
+    assert.match(await out({ text: '🤖 Faltam 11 dias.', image: img }), /^🤖 \*ESQUIZOBOT\* Faltam 11 dias\.$/u);
     assert.strictEqual(lastOut().image, img);
     await out({ text: '🤖 oi' });
     assert.ok(!('image' in lastOut()), 'no image field: text only');
     assert.strictEqual((await post('/group', { text: '🤖 x', image: 'data:abc' })).status, 400, 'image: a URL only');
+    // tabela check: text, then each picture (bytes, tagged caption), then the poll
+    const ob = () => fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse), n0 = ob().length;
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(20)]).toString('base64');
+    assert.deepStrictEqual(await (await post('/group', { text: '🤖 Tabela atualizada', images: [{ data: jpg, caption: '📷 Súmula' }, { data: jpg, caption: '🌐 No site' }], poll: { name: 'Correta?', values: ['Sim', 'Ou', 'Não'] } })).json(), { ok: true });
+    const tail = ob().slice(n0);
+    assert.deepStrictEqual(tail.map((l) => l.text || l.poll.name), ['🤖 *ESQUIZOBOT* Tabela atualizada', '🤖 *ESQUIZOBOT* 📷 Súmula', '🤖 *ESQUIZOBOT* 🌐 No site', 'Correta?']);
+    assert.strictEqual(tail[1].image, 'bytes:24');
+    assert.deepStrictEqual(tail[3].poll.values, ['Sim', 'Ou', 'Não']);
+    assert.strictEqual((await post('/group', { text: '🤖 x', images: [{ data: 'aGVsbG8gd29ybGQ=' }] })).status, 400, 'images: pictures only');
+    assert.strictEqual((await post('/group', { text: '🤖 x', poll: { name: 'p', values: ['só'] } })).status, 400, 'poll: 2+ values');
 
     assert.strictEqual((await post('/notify', { text: 'oi' })).status, 503, 'no avisosJid in the example config');
     assert.strictEqual((await post('/notify', { text: 'oi' }, 'wrong')).status, 401);
