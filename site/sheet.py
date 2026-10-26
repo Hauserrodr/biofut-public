@@ -90,6 +90,14 @@ def plan(vals, g):
     return free[0], b["start"], rows
 
 
+def filled_formulas(formulas, shown, first):
+    """Cells of an L..R range (first = its sheet row) whose formula shows something: those the writer must not
+    overwrite. A formula that shows nothing (a blank-looking template cell) is fair game, as when pasting by hand."""
+    cell = lambda rows, i, j: str(rows[i][j]) if i < len(rows) and j < len(rows[i]) else ""
+    return [f"{'LMNOPQR'[j]}{first + i}" for i in range(len(formulas)) for j in range(len(formulas[i]))
+            if cell(formulas, i, j).startswith("=") and cell(shown, i, j).strip()]
+
+
 def push(games):
     """Writes each game into the sheet; returns the "Jogo Total" numbers used. Raises on any refusal."""
     if not ID:
@@ -102,8 +110,9 @@ def push(games):
     for g in games:
         jogo, row, rows = plan(vals, g)
         rng = f"{t}!L{row + 2}:R{row + 1 + len(rows)}"
-        if any(str(c).startswith("=") for r in values(rng, "FORMULA") for c in r):
-            raise ValueError(f"as linhas do jogo {jogo} têm fórmula em L-R")
+        busy = filled_formulas(values(rng, "FORMULA"), values(rng), row + 2)
+        if busy:
+            raise ValueError(f"as linhas do jogo {jogo} têm fórmula com valor em {', '.join(busy[:3])}")
         # USER_ENTERED: the ISO date becomes a real date cell, numbers stay numbers
         api(f"/values/{urllib.parse.quote(rng)}?valueInputOption=USER_ENTERED", {"values": rows}, "PUT")
         for i, r in enumerate(rows):  # the next game in this call sees these rows as filled
@@ -131,4 +140,5 @@ if __name__ == "__main__":
             plan(rows, game(date, n)); raise AssertionError(err)
         except ValueError as e:
             assert err in str(e), e
+    assert filled_formulas([["=A1", "", "=B1"], [], ["x"]], [["", "", "Ze"]], 10) == ["N10"]  # blank-looking formulas get overwritten
     print("sheet ok: next game", jogo, "at sheet row", row + 2)
