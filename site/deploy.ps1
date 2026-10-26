@@ -91,6 +91,7 @@ systemctl list-timers biofut-backup.timer --no-pager | sed -n 2p
 
 # SQL copy of the JSON files (db.py) every 5 minutes: Postgres db biofut owned by ubuntu, peer auth on the local socket
 # (no password), pgvector on. It is rebuilt from the files, so backup.sh needs nothing from it.
+dpkg -s python3-pil fonts-dejavu-core >/dev/null 2>&1 || sudo apt-get install -y -qq python3-pil fonts-dejavu-core >/dev/null  # conferir.py: the tabela check pictures
 dpkg -s postgresql postgresql-18-pgvector python3-psycopg >/dev/null 2>&1 || sudo apt-get install -y -qq postgresql postgresql-18-pgvector python3-psycopg >/dev/null  # not psql: the client can be there alone
 (cd /tmp
  [ "$(sudo -u postgres psql -Atc "select 1 from pg_roles where rolname = 'ubuntu'")" = 1 ] || sudo -u postgres createuser ubuntu
@@ -156,7 +157,7 @@ function Run-Ssh($cmd) {
 
 # 1. Files.
 Run-Ssh 'sudo mkdir -p /srv/biofut/data && sudo chown -R ubuntu:ubuntu /srv/biofut'
-$Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot\wiki.html", "$PSScriptRoot\transparencia.html", "$PSScriptRoot\entrar.html", "$PSScriptRoot\admin.html", "$PSScriptRoot\sumula.py", "$PSScriptRoot\glm.py", "$PSScriptRoot\costs.py", "$PSScriptRoot\sheet.py", "$PSScriptRoot\lista.py", "$PSScriptRoot\backup.sh", "$PSScriptRoot\db.py",
+$Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot\wiki.html", "$PSScriptRoot\transparencia.html", "$PSScriptRoot\entrar.html", "$PSScriptRoot\admin.html", "$PSScriptRoot\sumula.py", "$PSScriptRoot\glm.py", "$PSScriptRoot\costs.py", "$PSScriptRoot\sheet.py", "$PSScriptRoot\conferir.py", "$PSScriptRoot\lista.py", "$PSScriptRoot\backup.sh", "$PSScriptRoot\db.py",
   "$PSScriptRoot\site.css", "$PSScriptRoot\site.js", "$PSScriptRoot\og.png", "$PSScriptRoot\logo.png", "$PSScriptRoot\robots.txt", "$PSScriptRoot\sitemap.xml", "$PSScriptRoot\push.py", "$PSScriptRoot\sw.js", "$PSScriptRoot\copa_art.jpg")
 if (Test-Path $Json) { $Files += $Json } else { 'biofut.json not here: keeping the one on the server' }
 & scp -q -i $Key @Files "${Target}:/srv/biofut/"

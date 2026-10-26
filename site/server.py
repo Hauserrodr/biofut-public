@@ -37,7 +37,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
 from pathlib import Path
 
-import costs, glm, lista, sheet, sumula
+import conferir, costs, glm, lista, sheet, sumula
 try:
     import push  # Web Push needs the cryptography package; without it the site runs and push is off
 except ImportError:
@@ -1225,14 +1225,14 @@ def save_photo(name, data_url):
 
 # --- review queue: pipelines propose, Gab approves / edits / rejects, 6 h later it ships anyway ---------
 
-def bot_post(route, obj):
+def bot_post(route, obj, timeout=10):
     """POST to the bot's webhook (BOT_URL's host, any route) -> its JSON answer, or None. No-op without BOT_URL. Never raises."""
     if not BOT_URL:
         return None
     try:
         req = urllib.request.Request(BOT_URL.rsplit("/", 1)[0] + route, json.dumps(obj).encode(), {
             "Content-Type": "application/json", "X-BioFut-Token": os.environ.get("BIOFUT_BOT_TOKEN", "")})
-        return json.loads(urllib.request.urlopen(req, timeout=10).read())
+        return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
     except urllib.error.HTTPError as e:  # the bot says why (e.g. 404: not in the group)
         try:
             return json.loads(e.read())
@@ -1939,11 +1939,40 @@ def planilha_push(n, rows, who):
         return {"sheet": push_sheet([g]) if sheet.ID else "falhou: a planilha não está configurada no servidor"}
 
 
-def push_sheet(games):
-    """Append released games to the group's sheet (sheet.py fills the next empty game rows). Never raises:
-    the game is already on the site, so a failure is reported, not lost."""
+CONFERE = ("A tabela tá correta (bate com a foto da súmula)?", ["Sim", "Ou", "Não"])
+
+
+def conferir_grupo(g, jogo):
+    """A game just reached the sheet: the group gets the súmula photo, the game as the site has it, the sheet's rows
+    read back, and a poll, so anyone can call a mistake. Pictures are best effort (no Pillow, no photo: fewer). Never raises."""
+    if not BOT_URL:
+        return
+    b64 = lambda raw: base64.b64encode(raw).decode()
+    images = []
     try:
-        return f"ok: jogo {', '.join(map(str, sheet.push(games)))}"
+        img = WIKI / "media" / str(g.get("sumula") or "-")
+        raw = img.read_bytes() if g.get("sumula") and img.exists() else b""
+        if raw[:3] == b"\xff\xd8\xff" or raw[:4] == b"\x89PNG":  # the bot takes JPEG or PNG only
+            images.append({"data": b64(raw), "caption": "📷 Súmula"})
+        images.append({"data": b64(conferir.site(g, game_line(g))), "caption": "🌐 No site"})
+        images.append({"data": b64(conferir.sheet_rows(sheet.rows_of(jogo), jogo)), "caption": f"📊 Na planilha (jogo {jogo})"})
+    except Exception as e:
+        print("conferir images:", e, flush=True)
+    a, b = g["teams"]
+    bot_post("/group", {"text": f"🤖 📋 Tabela atualizada: jogo de {g['date'][8:]}/{g['date'][5:7]}, {a['name']} {a['gf']}x{b['gf']} {b['name']}, "
+                                f"já está na planilha (jogo {jogo}). Confiram com a foto da súmula: gol, assistência, gol contra, "
+                                "capitão e nome. Viu erro? Responde aqui com o que está errado.",
+                        "images": images, "poll": {"name": CONFERE[0], "values": CONFERE[1]}}, timeout=120)
+
+
+def push_sheet(games):
+    """Append released games to the group's sheet (sheet.py fills the next empty game rows), then the group checks
+    each one (conferir_grupo, in a thread). Never raises: the game is already on the site, so a failure is reported, not lost."""
+    try:
+        done = sheet.push(games)
+        for g, jogo in zip(games, done):
+            threading.Thread(target=conferir_grupo, args=(g, jogo), daemon=True).start()
+        return f"ok: jogo {', '.join(map(str, done))}"
     except Exception as e:
         notify(f"⚠️ súmula liberada no site, mas a planilha não foi atualizada: {e}")
         return f"falhou: {e}"
