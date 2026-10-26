@@ -1026,5 +1026,70 @@ assert len(sent) == 2 and server.PIX_FALLBACK in sent[1][1]["text"], sent
 st2["match"]["confirmed"] = st2["match"]["confirmed"][:3]; st2["match"]["date"] = "2026-11-05"; server.save_state(st2)
 server.pix_tick(server.kickoff("2026-11-06", "10:00"))
 assert len(sent) == 2, "3 on the list and not in the tabela: no game, no reminder"
+# SuperCopa noon post (2026-10-26): once a day from 12:00, never 23:00-08:00, never muted, "é hoje" on the day, nothing after
+sent.clear()
+k = server.kickoff
+server.COPA_COUNT_URL = ""  # no network in tests; the count has its own block below
+assert [d for d in range(-2, 27) if server.copa_day(d)] == [0, 1, 2, 3, 4, 6, 8, 10, 12, 14] + list(range(16, 27)), "daily to 05/11, every 2 days, daily from 18/11"
+COPA_DAY0, server.copa_day = server.copa_day, lambda d: d >= 0  # the timing below, every day
+assert server.copa_days(k("2026-11-10", "11:00")) == 11 and server.copa_days(k("2026-11-21", "20:00")) == 0 and server.copa_days(k("2026-11-22")) == -1
+server.copa_tick(k("2026-11-10", "11:59"))
+assert not sent, "not before 12:00"
+server.copa_tick(k("2026-11-10", "12:00"))
+assert len(sent) == 1 and sent[0][0] == "/group" and sent[0][1]["text"].startswith("🤖 Faltam 11 dias.") and server.COPA_FORM not in sent[0][1]["text"], "after 05/11: no form"
+assert sent[0][1].get("image", f"{server.SITE}/og/copa-11.jpg") == f"{server.SITE}/og/copa-11.jpg" and "inscrito" not in sent[0][1]["text"]
+for t in ("12:30", "22:59"):
+    server.copa_tick(k("2026-11-10", t))
+server.copa_tick(k("2026-11-11", "23:30")); server.copa_tick(k("2026-11-12", "07:59"))
+assert len(sent) == 1 and server.load_state()["copa_post"] == "2026-11-10", "once a day, never at night"
+cst = server.load_state(); cst["silencio"] = k("2026-11-12", "13:00"); server.save_state(cst)
+server.copa_tick(k("2026-11-12", "12:00"))
+assert len(sent) == 1 and server.load_state()["copa_post"] == "2026-11-10", "muted: nothing, still owed"
+server.copa_tick(k("2026-11-12", "13:01"))
+assert len(sent) == 2 and "episódio 9:" in sent[1][1]["text"] and sent[1][1]["text"].split(".")[0] != sent[0][1]["text"].split(".")[0], sent
+server.copa_tick(k("2026-11-20", "12:00"))
+assert sent[-1][1]["text"].startswith("🤖 Falta 1 dia."), sent[-1]
+server.copa_tick(k("2026-11-21", "07:59"))
+assert len(sent) == 3, "the day itself: not before 08:00"
+server.copa_tick(k("2026-11-21", "08:00"))
+assert len(sent) == 4 and sent[-1][1]["text"].startswith("🤖 É hoje"), sent[-1]
+server.copa_tick(k("2026-11-22", "12:00")); server.copa_tick(k("2026-11-30", "12:00"))
+assert len(sent) == 4, "nothing after the Copa"
+server.copa_day = COPA_DAY0
+cst = server.load_state(); cst["copa_post"] = ""; server.save_state(cst)
+server.copa_tick(k("2026-11-13", "12:00")); server.copa_tick(k("2026-11-14", "12:00"))
+assert len(sent) == 5 and "Tu tem 8 dias" in sent[-1][1]["text"], "13/11 (8 left) posts, 14/11 (7 left) does not"
+# the count: only when the URL answers {"inscritos": N}; a goalie call while open and short of 4; no form after 05/11
+URLOPEN0, server.COPA_COUNT_URL = server.urllib.request.urlopen, "http://127.0.0.1:9/inscritos"
+def answer(body):
+    server.urllib.request.urlopen = lambda url, timeout=None: __import__("io").BytesIO(body)
+answer(b'{"inscritos": 23}')
+cap = server.copa_caption(k("2026-11-01", "12:00"))
+assert cap == server.COPA_LINES[0].format(n=20) + f" Já são 23 inscritos. Inscrição até 05/11: {server.COPA_FORM}", cap
+answer(b'{"inscritos": 23, "goleiros": 2}')
+assert "Já são 23 inscritos. Procura-se goleiro: só 2 pra 4 times. Inscrição até 05/11" in server.copa_caption(k("2026-11-01", "12:00"))
+answer(b'{"inscritos": 1, "goleiros": 0}')
+assert "Já tem 1 inscrito. Procura-se goleiro: nenhum inscrito ainda pra 4 times." in server.copa_caption(k("2026-11-01", "12:00"))
+answer(b'{"inscritos": 23, "goleiros": 4}')
+assert "goleiro" not in server.copa_caption(k("2026-11-01", "12:00"))
+assert server.copa_caption(k("2026-11-05", "12:00")).endswith(f"Última chance: a inscrição fecha hoje: {server.COPA_FORM}")
+cap = server.copa_caption(k("2026-11-06", "12:00"))
+assert cap.endswith(" 23 artistas confirmados.") and server.COPA_FORM not in cap, cap
+def boom(url, timeout=None):
+    raise OSError("down")
+server.urllib.request.urlopen = boom
+assert "inscrito" not in server.copa_caption(k("2026-11-01", "12:00")) and server.COPA_FORM in server.copa_caption(k("2026-11-01", "12:00"))
+answer(b'{"nomes": ["Rui"]}')
+assert "inscrito" not in server.copa_caption(k("2026-11-01", "12:00")) and server.copa_stats() is None
+server.urllib.request.urlopen, server.COPA_COUNT_URL = URLOPEN0, ""
+# cancel and result texts carry the Copa line before the Copa, not after
+cst = server.load_state(); cst["match"]["date"] = "2026-11-12"
+cn = server.cancel_match(json.loads(json.dumps(cst)), "teste", k("2026-11-03", "10:00"))
+assert cn.startswith("❌ Jogo de 12/11 cancelado (teste).") and "Sabe o que não foi? A SuperCopa BioFut: faltam 18 dias. Inscrição até 05/11" in cn and cn.endswith(server.COPA_FORM), cn
+assert "SuperCopa" not in server.cancel_match(json.loads(json.dumps(cst)), "teste", k("2026-11-21", "10:00"))
+game = {"teams": [{"name": "Pavões", "gf": 2, "players": [["Zé", 2]]}, {"name": "Bagres", "gf": 1, "players": [["Rui", 1]]}]}
+mn = server.match_news(game, k("2026-11-19", "22:00"))
+assert mn.startswith("Fim de jogo: Pavões 2 × 1 Bagres.") and mn.endswith("Guarda energia: faltam 2 dias pra SuperCopa."), mn
+assert "SuperCopa" not in server.match_news(game, k("2026-11-21", "22:00"))
 server.bot_post = BOT_POST0
 print("ok")

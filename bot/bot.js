@@ -63,7 +63,7 @@ const PREFIX = '🤖 *AG*';
 const tag = (text) => `${PREFIX} ${String(text).replace(/^🤖\s*/u, '')}`;
 // the admin group Gab creates: "BioFut Avisos", "biofut avisos", "BIOFUT - avisos"... (groups: {jid: {id, subject}})
 const findAvisos = (groups) => Object.values(groups || {}).find((g) => /bio\s*fut.*avisos/i.test(g.subject || ''))?.id;
-const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text) => transport.send(to, tag(text)) });
+const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text, image) => transport.send(to, tag(text), image) });
 // "cancelado" / "jogo cancelado hoje" in the group on the game's day -> the site gives the bets back. A question is not a call.
 const isCancel = (text) => /\bcancelad[ao]\b/i.test(String(text || '')) && String(text).length < 120 && !/\?/.test(text);
 
@@ -143,8 +143,8 @@ const loginAsk = (code) => `Seu código para entrar no site do BioFut:\n\n*${cod
 
 // ---------------------------------------------------------------- transports
 const dryRun = {
-  async send(to, text) {
-    fs.appendFileSync(OUTBOX, JSON.stringify({ ts: new Date().toISOString(), to, text }) + '\n');
+  async send(to, text, image) {
+    fs.appendFileSync(OUTBOX, JSON.stringify({ ts: new Date().toISOString(), to, text, ...(image && { image }) }) + '\n');
   },
   async lookup(phone) { return [toJid(phone)]; }, // no group to check offline
 };
@@ -217,7 +217,8 @@ async function liveTransport(cfg, onText) {
   connect();
   setTimeout(() => t.directory(), 60e3);  // warm: the site hashes every number once, ~seconds
   const t = {
-    send: (to, text) => sock.sendMessage(to, { text }),
+    // image: a URL on the site (the SuperCopa countdown, 2026-10-26), Baileys fetches it; the text becomes its caption
+    send: (to, text, image) => sock.sendMessage(to, image ? { image: { url: image }, caption: text } : { text }),
     // the group's members as [{name, phone}]: their numbers, named by the site. ponytail: memory only, rebuilt every 6 h
     async directory() {
       if (dirCache && Date.now() - dirCache.at < 6 * 3600e3) return dirCache.list;
@@ -309,7 +310,9 @@ function serve(cfg, transport) {
         if (req.url === '/group') {
           const o = JSON.parse(body || '{}'), text = String(o.text || '').trim().slice(0, 4000);
           if (!text) return done(400, { ok: false, error: 'text required' });
-          await (text.startsWith('🤖') && !o.raw ? transport.send : transport.raw || transport.send)(cfg.groupJid, text);
+          const image = o.image ? String(o.image) : undefined;  // optional picture URL (2026-10-26), the text is its caption
+          if (image && !/^https?:\/\/\S+$/.test(image)) return done(400, { ok: false, error: 'image must be a URL' });
+          await (text.startsWith('🤖') && !o.raw ? transport.send : transport.raw || transport.send)(cfg.groupJid, text, image);
           return done(200, { ok: true });
         }
         if (req.url === '/notify') {

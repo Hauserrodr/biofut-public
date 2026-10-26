@@ -1120,7 +1120,8 @@ def cancel_match(st, why, now=None):
     out = [pay(st, m, "não", now) for m in st.get("mercados", []) if m["kind"] == "jogo" and m["date"] == date and m["status"] == "aberta"]
     apply(st, "new_match", {})
     back = f"{n} aposta{'s' if n != 1 else ''} do draft devolvida{'s' if n != 1 else ''}. " if n else ""
-    return f"❌ Jogo de {date[8:10]}/{date[5:7]} cancelado ({why}). " + back + " ".join(o for o in out if o)
+    return f"❌ Jogo de {date[8:10]}/{date[5:7]} cancelado ({why}). " + back + " ".join(o for o in out if o) + \
+        copa_hook("Esse jogo foi cancelado. Sabe o que não foi? A SuperCopa BioFut: faltam {n} dias.", now)
 
 
 def mercado_tick(now=None):
@@ -1365,6 +1366,106 @@ def pix_tick(now=None):
     return []
 
 
+COPA_AT = "12:00"  # the SuperCopa countdown post in the group, once a day from this time, never 23:00-08:00 (2026-10-26)
+COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform"  # index.html's
+COPA_COUNT_URL = os.environ.get("BIOFUT_COPA_COUNT_URL",  # copa_count.gs on the form, GET -> {"inscritos": N, "goleiros": G, ...}: counts only, two used, nothing kept
+                                "https://script.google.com/macros/s/AKfycbxptI7ELP-pOHA_b9PFRDvVNwobabV0Iv7IIyL9CKoGsh5jR8A8vucEBspv6QzzD0KQ/exec")
+COPA_CLOSE = "2026-11-05"  # the form's last day (its own text: "disponível até o dia 05/11/2026"); after it, no form link
+COPA_LINES = [  # one per day, rotating by days left; {n} = days left (2026-10-26 drafts)
+    "Na cadeia alimentar da BioFut: o bagre come lodo, o pavão come elogio, o babuíno come o que achar e o axolote regenera. Quem fica no topo? Faltam {n} dias pra SuperCopa.",
+    "Faltam {n} dias. O pavão já abriu a cauda, o babuíno já tá gritando, o bagre ainda tá no fundo do lago pensando. E tu?",
+    "Pela primeira vez os campeões das copas antigas no mesmo campo. Pavões, Bagres, Babuínos e Axolotes: só um sai no topo da cadeia alimentar. Faltam {n} dias.",
+    "O axolote perdeu a perna no último jogo e já regenerou. Tu tem {n} dias pra regenerar o fôlego.",
+    "Documentário da BBC, episódio {n}: o babuíno observa o pavão de longe. Ele sabe que dia 21/11 não tem câmera lenta.",
+]
+COPA_HOJE = "É hoje: SuperCopa BioFut, 21/11, 8:30. Pavões, Bagres, Babuínos e Axolotes no mesmo campo, só um sai no topo da cadeia alimentar."
+
+
+def copa_days(now=None):
+    """Calendar days from today (Brasília) to the SuperCopa: 0 on the day, negative after it."""
+    today = time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600))
+    return (kickoff(time.strftime("%Y-%m-%d", time.gmtime(COPA_TS - 3 * 3600))) - kickoff(today)) // 86400
+
+
+def copa_day(days_left):
+    """The cadence of the noon post (2026-10-26): daily while the form is open (16+ days left = up to 05/11), every 2 days
+    after it, daily again in the last 3 days and on the day itself. The one line to change."""
+    return days_left >= 0 and (days_left >= 16 or days_left <= 3 or days_left % 2 == 0)
+
+
+def copa_n(line, n):
+    """A Copa line with its {n} days filled in, singular on the last day."""
+    return line.format(n=n).replace("altam 1 dias", "alta 1 dia").replace(" 1 dias", " 1 dia")
+
+
+def copa_stats():
+    """BIOFUT_COPA_COUNT_URL's JSON -> {"inscritos": N, "goleiros": G or None}, or None on anything else (no URL, down, over 20 s (Apps Script takes ~5 s),
+    bad JSON, no count). Only these two numbers are read. Never raises."""
+    if not COPA_COUNT_URL:
+        return None
+    try:
+        d = json.loads(urllib.request.urlopen(COPA_COUNT_URL, timeout=20).read())
+        n, g = d["inscritos"], d.get("goleiros")
+        return {"inscritos": n, "goleiros": g if isinstance(g, int) else None} if isinstance(n, int) and n > 0 else None
+    except Exception:
+        return None
+
+
+def copa_open(now=None):
+    """The form still takes sign-ups today (Brasília)."""
+    return time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600)) <= COPA_CLOSE
+
+
+def copa_form(now=None):
+    """The form link while it is open, the last day said out loud; "" after COPA_CLOSE."""
+    if not copa_open(now):
+        return ""
+    last = time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600)) == COPA_CLOSE
+    return f" {'Última chance: a inscrição fecha hoje' if last else 'Inscrição até ' + COPA_CLOSE[8:] + '/' + COPA_CLOSE[5:7]}: {COPA_FORM}"
+
+
+def copa_caption(now=None):
+    """The noon post's caption: the day's line (rotating, "é hoje" on the day), the count when known (+ a goalie call while
+    the form is open and the 4 teams lack one each), the form while it is open."""
+    days, st, open_ = copa_days(now), copa_stats(), copa_open(now)
+    line = COPA_HOJE if days == 0 else copa_n(COPA_LINES[days % len(COPA_LINES)], days)
+    if st and open_:
+        n, g = st["inscritos"], st["goleiros"]
+        line += f" Já são {n} inscritos." if n > 1 else " Já tem 1 inscrito."
+        if g is not None and g < 4:
+            line += f" Procura-se goleiro: {'nenhum inscrito ainda' if not g else f'só {g}'} pra 4 times."
+    elif st:
+        n = st["inscritos"]
+        line += f" {n} artista{'s' * (n != 1)} confirmado{'s' * (n != 1)}."
+    return line + copa_form(now)
+
+
+def copa_hook(line, now=None):
+    """One Copa line (+ the form while open), appended to a cancel or result text while the Copa is still ahead, else ""."""
+    days = copa_days(now)
+    return f" {copa_n(line, days)}{copa_form(now)}" if days >= 1 else ""
+
+
+def copa_tick(now=None):
+    """From COPA_AT (Brasília), on copa_day() days: the day's countdown image (og/copa-<days>.jpg) + caption in the group.
+    Once a day (st["copa_post"] = the date, a restart never repeats it), never while muted, never 23:00-08:00, no DMs."""
+    now = now or time.time()
+    local, days = now - 3 * 3600, copa_days(now)
+    if not (COPA_AT if days else "08:00") <= time.strftime("%H:%M", time.gmtime(local)) < "23:00" or not copa_day(days):  # the day itself: 08:00, before the 8:30 kickoff
+        return []
+    today = time.strftime("%Y-%m-%d", time.gmtime(local))
+    with LOCK:
+        st = load_state()
+        if st.get("copa_post") == today or muted(st, now):
+            return []
+        st["copa_post"] = today
+        save_state(st)
+    text, img = "🤖 " + copa_caption(now), HERE / "og" / f"copa-{days}.jpg"
+    bot_post("/group", {"text": text, **({"image": f"{SITE}/og/{img.name}"} if img.exists() else {})})
+    notify(f"🏆 SuperCopa no grupo: {text}", post=False)
+    return []
+
+
 def draft_news(st, action, d0):
     """What the group hears after a draft action (d0: the draft before it). -> text or None."""
     mt, d = st["match"], st["match"]["draft"]
@@ -1383,14 +1484,14 @@ def draft_news(st, action, d0):
     return None
 
 
-def match_news(game):
-    """The group hears the final score once the site closes the game."""
+def match_news(game, now=None):
+    """The group hears the final score once the site closes the game (+ the SuperCopa line while it is ahead, 2026-10-26)."""
     a, b = game["teams"]
     goals = sorted(((p[0], p[1]) for t in game["teams"] for p in t["players"] if p[1]), key=lambda x: -x[1])
     g = ", ".join(f"{n} {k}" for n, k in goals)
     bets = [x for x in game.get("bets", []) if x.get("payout")]
     return f"Fim de jogo: {a['name']} {a['gf']} × {b['gf']} {b['name']}." + (f" Gols: {g}." if g else "") + \
-        (f" BioBet pagou {len(bets)} aposta{'s' * (len(bets) != 1)}." if game.get("bets") else "")
+        (f" BioBet pagou {len(bets)} aposta{'s' * (len(bets) != 1)}." if game.get("bets") else "") + copa_hook("Guarda energia: faltam {n} dias pra SuperCopa.", now)
 
 
 def my_messages(name, _cache={}):
@@ -1862,7 +1963,7 @@ def review_tick(now=None):
 
 def review_loop():
     while True:
-        for tick in (review_tick, mercado_tick, pix_tick):
+        for tick in (review_tick, mercado_tick, pix_tick, copa_tick):
             try:
                 for n in tick():
                     notify(n)
