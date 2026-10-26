@@ -17,6 +17,7 @@
  *   POST /login (same header) {"id", "phone", "code"}: site login. 404 if the number is not in cfg.groupJid; else DMs
  *   the member the code, which the member types on the site (server.py login_code checks it).
  *   POST /group (same header) {"text": "..."} posts to cfg.groupJid, tagged when it starts with 🤖, else as is (the list to copy).
+ *   {"text", "raw": true} is never tagged: a site sign-up's list, which the group copies and the bot must keep reading.
  *   POST /notify (same header) {"text": "..."} posts to cfg.avisosJid, the "BioFut Avisos" group
  *   (pipeline news: wiki proposals, súmulas, approvals). Live, an empty avisosJid is filled by itself with the
  *   group whose name matches "BioFut Avisos" (Gab only has to create it). 503 until there is one.
@@ -306,9 +307,9 @@ function serve(cfg, transport) {
     req.on('end', async () => {
       try {
         if (req.url === '/group') {
-          const text = String(JSON.parse(body || '{}').text || '').trim().slice(0, 4000);
+          const o = JSON.parse(body || '{}'), text = String(o.text || '').trim().slice(0, 4000);
           if (!text) return done(400, { ok: false, error: 'text required' });
-          await (text.startsWith('🤖') ? transport.send : transport.raw || transport.send)(cfg.groupJid, text);
+          await (text.startsWith('🤖') && !o.raw ? transport.send : transport.raw || transport.send)(cfg.groupJid, text);
           return done(200, { ok: true });
         }
         if (req.url === '/notify') {

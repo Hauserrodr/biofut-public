@@ -473,6 +473,20 @@ assert d["pending"] == {"Bia": ["Victor"]} and d["teams"]["Victor"] == ["Victor"
 apply(st, "draft_admit", {"captain": "Canova", "player": "Bia"})
 assert "Bia" in st["match"]["confirmed"] and d["teams"] == {"Victor": ["Victor"], "Canova": ["Canova"]} and d["first"] == "Victor" and "Bia entrou" in d["redraft"], d
 assert "Redraft" in server.draft_news(st, "draft_admit", None) and "redraft" not in d
+# Signed up as themself with the group's list for that date (Gab, 2026-10-26): ONE untagged post, the name on the first
+# empty spot, the site's list follows; the bot's echo of it changes nothing and the owner stays. No list yet: the old line.
+sent.clear(); st = new_state()
+L0 = "🚨 [QUINTA - 29/10 18:30]🚨\n\nGoleiro 1 - \nGoleiro 2 -\n\n1 - Victor\n2 - Canova\n3 - \n4 -\n5 -\n6 -\n\nSuplência:\n- Vavá\n"
+server.sync_list(st, L0, time.time(), "Rafo")
+before = server.heads(st["match"]); apply(st, "signup", {"name": "Zé"}); assert server.join_ping(st, before, "Zé")
+time.sleep(0.2)
+grp = [o for r, o in sent if r == "/group"]
+assert grp == [{"text": L0.replace("\n3 - \n", "\n3 - Zé\n").rstrip("\n"), "raw": True}] and not grp[0]["text"].startswith("🤖"), grp
+assert st["last_list"]["text"] == grp[0]["text"] and st["match"]["confirmed"].count("Zé") == 1 and "Zé" in st["match"]["lista"]["names"]
+assert server.sync_list(st, grp[0]["text"], time.time(), "Bot") == {"date": "2026-10-29", "added": [], "removed": []} and st["owners"]["2026-10-29"][0] == "Rafo"
+sent.clear(); st = new_state(); st["match"]["date"] = "2026-10-29"
+before = server.heads(st["match"]); apply(st, "signup", {"name": "Bia"}); server.join_ping(st, before, "Bia")
+assert [o for r, o in sent if r == "/group"] == [{"text": "🤖 Bia disse no site que tá dentro no jogo de 29/10."}], sent
 
 # Activity log: the IP never reaches the file, the visitor id holds for a day and changes the next, a login's phone is not logged.
 server.EVENTS = tmp / "events.jsonl"

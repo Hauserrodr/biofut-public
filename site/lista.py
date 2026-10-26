@@ -100,6 +100,29 @@ def parse_list(text, ts):
     return out
 
 
+def fill_slot(text, name):
+    """A site sign-up, as the players do it (Gab, 2026-10-26): the name on the first empty numbered player slot ('7 -'
+    -> '7 - Name'), else 'N+1 - Name' right after the last numbered player line, in its style. Goalies, waiting and team
+    blocks are never touched. -> the new text."""
+    lines, section, last = text.splitlines(), 'players', None
+    for i, l in enumerate(lines):
+        m, low = SLOT.match(l), fold(l)
+        if TEAM.match(l) and not m:
+            section = 'team'
+        elif not m and (hit := next((v for k, v in SECTION.items() if low.startswith(k) or low.startswith('* ' + k)), None)):
+            section = hit
+        elif m and section == 'players' and m.group(1).isdigit():
+            if not m.group(2).strip(' *_~'):
+                lines[i] = l.rstrip() + ' ' + name
+                return '\n'.join(lines)
+            last = i
+    if last is None:
+        return text
+    a, n, sep = re.match(r'^(\s*\*?)(\d{1,2})(\s*\*?\s*[-–.:)])', lines[last]).groups()
+    lines.insert(last + 1, f'{a}{int(n) + 1}{sep} {name}')
+    return '\n'.join(lines)
+
+
 def selftest():  # made-up names
     t = ('🚨 [QUINTA - 19/03 18:30]🚨\n🌍 Quadra Central\n💰 12 pilas\n🏆 Temporada 26/1\n\nQuadra 4\n\n'
          'Goleiro 1 - Zeca\nGoleiro 2 -\n\n1 - Tito ✅\n2 - Beto (a principio)\n3 - Juca (c)\n4 - Lalo\n'
@@ -122,6 +145,13 @@ def selftest():  # made-up names
     o = parse_list(t + '\nTime Azul\n- Tito\n- Zeca\nTime Verde\n- Lalo\n- Otto: 2G\n', dt.datetime(2026, 3, 16).timestamp())
     assert [[e['name'] for e in g['players']] for g in o['teams']] == [['Tito', 'Zeca'], ['Lalo', 'Otto']] and o['players'] == p['players']
     assert parse_list('oi\n1 - a\n2 - b', 0) is None and fold(' Vavá  Jr ') == 'vava jr'
+    f = fill_slot(t, 'Kiko')  # the empty '7 -' takes it; 'Goleiro 2 -' and the empty suplência line stay empty
+    assert '\n7 - Kiko\n' in f and 'Goleiro 2 -\n' in f and '\n -\n' in f, f
+    assert [e['name'] for e in parse_list(f, 0)['players']] == ['Tito', 'Beto', 'Juca', 'Lalo', 'Nino', 'Otto', 'Kiko']
+    g = fill_slot(f, 'Rafa')  # no empty slot left: '8 - Rafa' after '7 - Kiko'
+    assert '\n7 - Kiko\n8 - Rafa\n\nSuplência' in g and 'Goleiro 2 -\n' in g, g
+    assert [e['name'] for e in parse_list(g, 0)['players']][-1] == 'Rafa' and [e['name'] for e in parse_list(g, 0)['waiting']] == ['Vavá']
+    assert '\n2. Bia' in fill_slot('x\n1. Ana', 'Bia') and fill_slot('oi', 'Bia') == 'oi'
     print('selftest ok')
 
 
