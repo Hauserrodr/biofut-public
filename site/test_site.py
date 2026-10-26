@@ -1029,6 +1029,8 @@ assert len(sent) == 2, "3 on the list and not in the tabela: no game, no reminde
 # SuperCopa noon post (2026-10-26): once a day from 12:00, never 23:00-08:00, never muted, "é hoje" on the day, nothing after
 sent.clear()
 k = server.kickoff
+assert [d for d in range(-2, 27) if server.copa_day(d)] == [0, 1, 2, 3, 4, 6, 8, 10, 12, 14] + list(range(16, 27)), "daily to 05/11, every 2 days, daily from 18/11"
+COPA_DAY0, server.copa_day = server.copa_day, lambda d: d >= 0  # the timing below, every day
 assert server.copa_days(k("2026-11-10", "11:00")) == 11 and server.copa_days(k("2026-11-21", "20:00")) == 0 and server.copa_days(k("2026-11-22")) == -1
 server.copa_tick(k("2026-11-10", "11:59"))
 assert not sent, "not before 12:00"
@@ -1052,6 +1054,10 @@ server.copa_tick(k("2026-11-21", "08:00"))
 assert len(sent) == 4 and sent[-1][1]["text"].startswith("🤖 É hoje"), sent[-1]
 server.copa_tick(k("2026-11-22", "12:00")); server.copa_tick(k("2026-11-30", "12:00"))
 assert len(sent) == 4, "nothing after the Copa"
+server.copa_day = COPA_DAY0
+cst = server.load_state(); cst["copa_post"] = ""; server.save_state(cst)
+server.copa_tick(k("2026-11-13", "12:00")); server.copa_tick(k("2026-11-14", "12:00"))
+assert len(sent) == 5 and "Tu tem 8 dias" in sent[-1][1]["text"], "13/11 (8 left) posts, 14/11 (7 left) does not"
 # the count: only when the URL answers {"inscritos": N}; a goalie call while open and short of 4; no form after 05/11
 URLOPEN0, server.COPA_COUNT_URL = server.urllib.request.urlopen, "http://127.0.0.1:9/inscritos"
 def answer(body):

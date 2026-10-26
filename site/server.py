@@ -1387,8 +1387,9 @@ def copa_days(now=None):
 
 
 def copa_day(days_left):
-    """The cadence of the noon post (2026-10-26): every day up to the Copa, the day itself included. The one line to change."""
-    return days_left >= 0
+    """The cadence of the noon post (2026-10-26): daily while the form is open (16+ days left = up to 05/11), every 2 days
+    after it, daily again in the last 3 days and on the day itself. The one line to change."""
+    return days_left >= 0 and (days_left >= 16 or days_left <= 3 or days_left % 2 == 0)
 
 
 def copa_n(line, n):
