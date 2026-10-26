@@ -1424,7 +1424,7 @@ def copa_tick(now=None):
     Once a day (st["copa_post"] = the date, a restart never repeats it), never while muted, never 23:00-08:00, no DMs."""
     now = now or time.time()
     local, days = now - 3 * 3600, copa_days(now)
-    if not COPA_AT <= time.strftime("%H:%M", time.gmtime(local)) < "23:00" or not copa_day(days):
+    if not (COPA_AT if days else "08:00") <= time.strftime("%H:%M", time.gmtime(local)) < "23:00" or not copa_day(days):  # the day itself: 08:00, before the 8:30 kickoff
         return []
     today = time.strftime("%Y-%m-%d", time.gmtime(local))
     with LOCK:

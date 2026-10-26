@@ -1046,7 +1046,9 @@ server.copa_tick(k("2026-11-12", "13:01"))
 assert len(sent) == 2 and "episódio 9:" in sent[1][1]["text"] and sent[1][1]["text"].split(".")[0] != sent[0][1]["text"].split(".")[0], sent
 server.copa_tick(k("2026-11-20", "12:00"))
 assert sent[-1][1]["text"].startswith("🤖 Falta 1 dia."), sent[-1]
-server.copa_tick(k("2026-11-21", "12:00"))
+server.copa_tick(k("2026-11-21", "07:59"))
+assert len(sent) == 3, "the day itself: not before 08:00"
+server.copa_tick(k("2026-11-21", "08:00"))
 assert len(sent) == 4 and sent[-1][1]["text"].startswith("🤖 É hoje"), sent[-1]
 server.copa_tick(k("2026-11-22", "12:00")); server.copa_tick(k("2026-11-30", "12:00"))
 assert len(sent) == 4, "nothing after the Copa"
