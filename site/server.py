@@ -953,6 +953,7 @@ def apply(state, action, body, data=None, base=None):
         keep(state)
         refund(state, "jogo cancelado")  # abandoned match: give the stakes back
         state["match"] = new_match(str(body.get("date", ""))[:10])
+        state["off"] = [o for o in state.get("off", []) if o["date"] != state["match"]["date"]]  # marked again on the site: on again
     else:
         raise ValueError("ação desconhecida")
     return state
@@ -1119,6 +1120,7 @@ def cancel_match(st, why, now=None):
     date, n = mt["date"], len(mt["bets"])
     out = [pay(st, m, "não", now) for m in st.get("mercados", []) if m["kind"] == "jogo" and m["date"] == date and m["status"] == "aberta"]
     apply(st, "new_match", {})
+    st["off"] = (st.get("off", []) + [{"date": date, "why": why, "at": int(now)}])[-8:]  # sync_list ignores that day's lists from now on
     back = f"{n} aposta{'s' if n != 1 else ''} do draft devolvida{'s' if n != 1 else ''}. " if n else ""
     return f"❌ Jogo de {date[8:10]}/{date[5:7]} cancelado ({why}). " + back + " ".join(o for o in out if o) + \
         copa_hook("Esse jogo foi cancelado. Sabe o que não foi? A SuperCopa BioFut: faltam {n} dias.", now)
@@ -1241,13 +1243,14 @@ def bot_post(route, obj):
     return None
 
 
-def notify(text, post=True):
-    """Log it, and post it to the BioFut Avisos group when the bot is configured (post=False: the log only). Never raises."""
+def notify(text, post=True, image=None):
+    """Log it, and post it to the BioFut Avisos group when the bot is configured (post=False: the log only; image: a public
+    URL, sent with the text as its caption). Never raises."""
     AVISOS.parent.mkdir(exist_ok=True)
     with AVISOS.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "text": text}, ensure_ascii=False) + "\n")
     if post:
-        bot_post("/notify", {"text": text})
+        bot_post("/notify", {"text": text, **({"image": image} if image else {})})
 
 
 def join_ping(st, before, user=None):
@@ -1446,36 +1449,13 @@ def copa_hook(line, now=None):
     return f" {copa_n(line, days)}{copa_form(now)}" if days >= 1 else ""
 
 
-IG_TOKEN = os.environ.get("BIOFUT_IG_TOKEN", "")  # Instagram API with Instagram login, @biofutmagia; long-lived (60 days) outlives the Copa
-
-
-def ig_story(image_url):
-    """Publish one public JPEG as an @biofutmagia story: the account's id, a STORIES container, then publish (the container
-    can take a few seconds, so 3 tries 5 s apart). -> the story's media id, or None (no token, or Instagram said no: the
-    avisos group hears why, never the token). Never raises."""
-    if not IG_TOKEN:
-        return None
-    def call(path, get=False, **params):  # nothing here logs a URL, so the token can ride in the GET's query
-        q = urllib.parse.urlencode({**params, "access_token": IG_TOKEN})
-        url, body = (f"https://graph.instagram.com/{path}?{q}", None) if get else (f"https://graph.instagram.com/{path}", q.encode())
-        return json.loads(urllib.request.urlopen(urllib.request.Request(url, body), timeout=30).read())
-    try:
-        me = call("me", get=True, fields="user_id")
-        uid = me.get("user_id") or me["id"]
-        box = call(f"{uid}/media", image_url=image_url, media_type="STORIES")["id"]
-        for i in range(3):
-            try:
-                return call(f"{uid}/media_publish", creation_id=box)["id"]
-            except urllib.error.HTTPError:
-                if i == 2:
-                    raise
-                time.sleep(5)
-    except urllib.error.HTTPError as e:
-        why = e.read()[:300].decode("utf-8", "replace")
-    except Exception as e:
-        why = type(e).__name__
-    notify(f"📸 Story da SuperCopa no Instagram falhou: {why}")
-    return None
+def story_note(now=None):
+    """The avisos reminder with the day's story (og/story-<days>.jpg) to post by hand on @biofutmagia: the text to copy,
+    and the form for the link sticker while it is open (the Instagram API needed a Meta developer app, dropped 2026-10-26)."""
+    days = copa_days(now)
+    line = COPA_HOJE if days == 0 else copa_n(COPA_LINES[days % len(COPA_LINES)], days)
+    sticker = f"\nSticker de link: {COPA_FORM}" if copa_open(now) else ""
+    return f"📸 Story de hoje no Instagram @biofutmagia: salve a imagem e poste.{sticker}\n\nTexto para copiar:\n{line} #biofut #supercopa"
 
 
 def copa_tick(now=None):
@@ -1494,9 +1474,9 @@ def copa_tick(now=None):
         save_state(st)
     text, img = "🤖 " + copa_caption(now), HERE / "og" / f"copa-{days}.jpg"
     bot_post("/group", {"text": text, **({"image": f"{SITE}/og/{img.name}"} if img.exists() else {})})
-    if (HERE / "og" / f"story-{days}.jpg").exists():
-        ig_story(f"{SITE}/og/story-{days}.jpg")
     notify(f"🏆 SuperCopa no grupo: {text}", post=False)
+    story = HERE / "og" / f"story-{days}.jpg"
+    notify(story_note(now), image=f"{SITE}/og/{story.name}" if story.exists() else None)
     return []
 
 
@@ -1562,6 +1542,9 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
     if not lst:
         return None
     seen["date"] = lst["date"]
+    if any(o["date"] == lst["date"] for o in st.get("off", [])):  # the group kept editing a cancelled day's list
+        seen["why"] = "jogo desse dia foi cancelado"
+        return None
     owners = st.setdefault("owners", {})
     o = owners.setdefault(lst["date"], [poster, pk])
     if isinstance(o, str):  # saved before 2026-10-10 as a bare name
@@ -1919,6 +1902,41 @@ def release(item, how):
         if sheet.ID or {old["date"], new["date"]} & {g["date"] for g in DATA["games"]}:
             item["sheet"] = "o jogo já foi para a planilha: corrija lá também"
     item.update(status=how, decided=time.strftime("%Y-%m-%dT%H:%M:%S"))
+
+
+CORRECOES = HERE / "data" / "correcoes.jsonl"  # hand fixes on #/planilha before a game went to the sheet: the reader's mistakes
+
+
+def planilha_push(n, rows, who):
+    """#/planilha "Atualizar tabela": game n (on the site, not in the sheet yet) goes to the sheet, with the staff's hand
+    fixes when rows is given: [[team, name, goals, assists, own goals, captain]], the page's table. The site's copy takes
+    them too, and each changed row is logged to CORRECOES with the súmula photo it came from (to tune the reader's prompt).
+    -> {"sheet": "ok: jogo N" | "falhou: ..."}"""
+    with LOCK:
+        st = load_state()
+        g = next((g for g in unsynced(st["played"], DATA["games"]) if g["n"] == n), None)
+        if not g:
+            raise ValueError(f"jogo {n} não está pendente")
+        if rows is not None:
+            names, new = [t["name"] for t in g["teams"]], []
+            if not isinstance(rows, list) or not 0 < len(rows) <= 40:
+                raise ValueError("linhas inválidas")
+            for r in rows:
+                if not (isinstance(r, list) and len(r) == 6 and r[0] in names and isinstance(r[1], str) and r[1].strip()
+                        and all(type(v) is int and 0 <= v < 50 for v in r[2:5]) and r[5] in (0, 1)):
+                    raise ValueError(f"linha inválida: {str(r)[:80]}")
+                new.append([r[0], clean_name(r[1])[:40], *r[2:]])
+            old = [[t["name"], *p] for t in g["teams"] for p in t["players"]]
+            if new != old:
+                CORRECOES.parent.mkdir(exist_ok=True)
+                with CORRECOES.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": who, "n": n, "date": g["date"],
+                                        "sumula": g.get("sumula"), "antes": [r for r in old if r not in new],
+                                        "depois": [r for r in new if r not in old]}, ensure_ascii=False) + "\n")
+                for t in g["teams"]:
+                    t["players"] = [r[1:] for r in new if r[0] == t["name"]]
+                save_state(st)
+        return {"sheet": push_sheet([g]) if sheet.ID else "falhou: a planilha não está configurada no servidor"}
 
 
 def push_sheet(games):
@@ -2513,8 +2531,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/planilha":  # games the sheet lacks, ready to paste (#/planilha): no Gmail, no Apps Script
             with LOCK:
                 games = unsynced(load_state()["played"], DATA["games"])
-            return self.send_json([{"n": g["n"], "line": game_line(g), "tsv": "\n".join("\t".join(r) for r in sheet_rows(g))}
-                                   for g in games])
+            return self.send_json([{"n": g["n"], "line": game_line(g), "tsv": "\n".join("\t".join(r) for r in sheet_rows(g)),
+                                    "rows": [[t["name"], *p] for t in g["teams"] for p in t["players"]]} for g in games])
         if path == "/api/data":
             with LOCK:
                 raw = DATA_RAW
@@ -2525,7 +2543,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
@@ -2648,6 +2666,11 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({"error": "só o Gab e o Conselho"}, 403)
                 return self.send_json(review_act(int(body.get("id") or 0), body.get("action"), body.get("payload"),
                                                  None if role == "admin" else DATA_KINDS, user or role))
+            if action == "planilha":
+                role = self.role()
+                if role not in ("admin", "conselho"):
+                    return self.send_json({"error": "só o admin e o Conselho atualizam a planilha"}, 403)
+                return self.send_json(planilha_push(int(body.get("n") or 0), body.get("rows"), user or role))
             if action == "quem":
                 role = self.role()
                 if not role:
