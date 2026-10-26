@@ -1251,8 +1251,9 @@ def notify(text, post=True):
 
 def join_ping(st, before, user=None):
     """A new name on the list -> the bot tells the draft captains (or all known captains before the draft). The member
-    themself (user == the name) -> the bot also posts it in the group, then the list with the name, to copy-paste.
-    -> True when the group got it."""
+    themself (user == the name) -> the bot does as the players do (Gab, 2026-10-26): the group's last list with the name
+    on an empty spot, untagged (bot.js skips its tagged texts, so a tagged list would stop being read), and the site's
+    list follows at once; no list for the date yet -> one tagged line. -> True when the group got it."""
     mt = st["match"]
     if heads(mt) <= before:
         return False
@@ -1264,12 +1265,13 @@ def join_ping(st, before, user=None):
         "player": name, "count": len(mt["confirmed"]), "captains": d["captains"] if d else (mt.get("lista") or {}).get("captains", []), **({"pending": True} if waiting else {})})).start()
     if waiting or not user or user.lower() != name.lower():
         return False
-    msgs = [f"🤖 {name} disse no site que tá dentro no jogo de {mt['date'][8:10]}/{mt['date'][5:7]}."]
     ll = st.get("last_list") or {}
-    if ll.get("date") == mt["date"]:  # ponytail: the group's last list + one line; a rebuilt list if people stop copying it
-        msgs.append(ll["text"].rstrip() + f"\n{len(mt['confirmed'])}. [{name} 🤖]")
-    for text in msgs:
-        bot_post("/group", {"text": text})
+    if ll.get("date") != mt["date"]:
+        bot_post("/group", {"text": f"🤖 {name} disse no site que tá dentro no jogo de {mt['date'][8:10]}/{mt['date'][5:7]}."})
+        return True
+    text = lista.fill_slot(ll["text"], name)
+    sync_list(st, text, time.time(), ll["by"])  # the last poster, as retry_list: the owner stays; the bot's echo (same text) changes nothing
+    bot_post("/group", {"text": text, "raw": True})
     return True
 
 
@@ -2731,6 +2733,7 @@ class Handler(SimpleHTTPRequestHandler):
                         group_post(news)
                     if action == "signup":
                         posted = join_ping(st, before, user)
+                        save_state(st)  # join_ping may have filled the list (sync_list)
                         return self.send_json({**public_state(st), "posted": posted})
                     if action == "draft_pick":
                         pick_ping(st, clean_name(body.get("captain")))
