@@ -72,6 +72,13 @@ srv.stdout.once('data', async () => {
     const out = async (b) => { assert.deepStrictEqual(await (await post('/group', b)).json(), { ok: true }); return fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).pop().text; };
     assert.match(await out({ text: '🤖 oi' }), /^🤖 \*AG\* oi$/u);
     assert.strictEqual(await out({ text: '🤖 [19/03]\n7 - Kiko', raw: true }), '🤖 [19/03]\n7 - Kiko', 'raw: the site sign-up list, never tagged');
+    // SuperCopa noon post: a picture with the tagged text as its caption; no image field = plain text as before
+    const img = 'https://biofut.example/og/copa-11.jpg', lastOut = () => fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).pop();
+    assert.match(await out({ text: '🤖 Faltam 11 dias.', image: img }), /^🤖 \*AG\* Faltam 11 dias\.$/u);
+    assert.strictEqual(lastOut().image, img);
+    await out({ text: '🤖 oi' });
+    assert.ok(!('image' in lastOut()), 'no image field: text only');
+    assert.strictEqual((await post('/group', { text: '🤖 x', image: 'data:abc' })).status, 400, 'image: a URL only');
 
     assert.strictEqual((await post('/notify', { text: 'oi' })).status, 503, 'no avisosJid in the example config');
     assert.strictEqual((await post('/notify', { text: 'oi' }, 'wrong')).status, 401);

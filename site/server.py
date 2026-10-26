@@ -1120,7 +1120,8 @@ def cancel_match(st, why, now=None):
     out = [pay(st, m, "não", now) for m in st.get("mercados", []) if m["kind"] == "jogo" and m["date"] == date and m["status"] == "aberta"]
     apply(st, "new_match", {})
     back = f"{n} aposta{'s' if n != 1 else ''} do draft devolvida{'s' if n != 1 else ''}. " if n else ""
-    return f"❌ Jogo de {date[8:10]}/{date[5:7]} cancelado ({why}). " + back + " ".join(o for o in out if o)
+    return f"❌ Jogo de {date[8:10]}/{date[5:7]} cancelado ({why}). " + back + " ".join(o for o in out if o) + \
+        copa_hook("Esse jogo foi cancelado. Sabe o que não foi? A SuperCopa BioFut: faltam {n} dias.", now)
 
 
 def mercado_tick(now=None):
@@ -1365,6 +1366,79 @@ def pix_tick(now=None):
     return []
 
 
+COPA_AT = "12:00"  # the SuperCopa countdown post in the group, once a day from this time, never 23:00-08:00 (2026-10-26)
+COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform"  # index.html's
+COPA_COUNT_URL = os.environ.get("BIOFUT_COPA_COUNT_URL", "")  # optional, GET -> {"inscritos": N}: only the number is used, nothing kept
+COPA_LINES = [  # one per day, rotating by days left; {n} = days left (2026-10-26 drafts)
+    "Na cadeia alimentar da BioFut: o bagre come lodo, o pavão come elogio, o babuíno come o que achar e o axolote regenera. Quem fica no topo? Faltam {n} dias pra SuperCopa.",
+    "Faltam {n} dias. O pavão já abriu a cauda, o babuíno já tá gritando, o bagre ainda tá no fundo do lago pensando. E tu?",
+    "Pela primeira vez os campeões das copas antigas no mesmo campo. Pavões, Bagres, Babuínos e Axolotes: só um sai no topo da cadeia alimentar. Faltam {n} dias.",
+    "O axolote perdeu a perna no último jogo e já regenerou. Tu tem {n} dias pra regenerar o fôlego.",
+    "Documentário da BBC, episódio {n}: o babuíno observa o pavão de longe. Ele sabe que dia 21/11 não tem câmera lenta.",
+]
+COPA_HOJE = "É hoje: SuperCopa BioFut, 21/11, 8:30. Pavões, Bagres, Babuínos e Axolotes no mesmo campo, só um sai no topo da cadeia alimentar."
+
+
+def copa_days(now=None):
+    """Calendar days from today (Brasília) to the SuperCopa: 0 on the day, negative after it."""
+    today = time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600))
+    return (kickoff(time.strftime("%Y-%m-%d", time.gmtime(COPA_TS - 3 * 3600))) - kickoff(today)) // 86400
+
+
+def copa_day(days_left):
+    """The cadence of the noon post (2026-10-26): every day up to the Copa, the day itself included. The one line to change."""
+    return days_left >= 0
+
+
+def copa_n(line, n):
+    """A Copa line with its {n} days filled in, singular on the last day."""
+    return line.format(n=n).replace("altam 1 dias", "alta 1 dia").replace(" 1 dias", " 1 dia")
+
+
+def copa_count():
+    """BIOFUT_COPA_COUNT_URL's {"inscritos": N} -> N, or None on anything else (no URL, down, slow, bad JSON). Never raises."""
+    if not COPA_COUNT_URL:
+        return None
+    try:
+        n = json.loads(urllib.request.urlopen(COPA_COUNT_URL, timeout=5).read())["inscritos"]
+        return n if isinstance(n, int) and n > 0 else None
+    except Exception:
+        return None
+
+
+def copa_caption(days):
+    """The noon post's caption: the day's line (rotating, "é hoje" on the day), the registered count when known, the form."""
+    n = copa_count()
+    line = COPA_HOJE if days == 0 else copa_n(COPA_LINES[days % len(COPA_LINES)], days)
+    return line + (f" Já são {n} inscritos." if n and n > 1 else " Já tem 1 inscrito." if n else "") + f" Inscrição: {COPA_FORM}"
+
+
+def copa_hook(line, now=None):
+    """One Copa line + the form, appended to a cancel or result text while the Copa is still ahead (2026-10-26), else ""."""
+    days = copa_days(now)
+    return f" {copa_n(line, days)} Inscrição: {COPA_FORM}" if days >= 1 else ""
+
+
+def copa_tick(now=None):
+    """From COPA_AT (Brasília), on copa_day() days: the day's countdown image (og/copa-<days>.jpg) + caption in the group.
+    Once a day (st["copa_post"] = the date, a restart never repeats it), never while muted, never 23:00-08:00, no DMs."""
+    now = now or time.time()
+    local, days = now - 3 * 3600, copa_days(now)
+    if not COPA_AT <= time.strftime("%H:%M", time.gmtime(local)) < "23:00" or not copa_day(days):
+        return []
+    today = time.strftime("%Y-%m-%d", time.gmtime(local))
+    with LOCK:
+        st = load_state()
+        if st.get("copa_post") == today or muted(st, now):
+            return []
+        st["copa_post"] = today
+        save_state(st)
+    text, img = "🤖 " + copa_caption(days), HERE / "og" / f"copa-{days}.jpg"
+    bot_post("/group", {"text": text, **({"image": f"{SITE}/og/{img.name}"} if img.exists() else {})})
+    notify(f"🏆 SuperCopa no grupo: {text}", post=False)
+    return []
+
+
 def draft_news(st, action, d0):
     """What the group hears after a draft action (d0: the draft before it). -> text or None."""
     mt, d = st["match"], st["match"]["draft"]
@@ -1383,14 +1457,14 @@ def draft_news(st, action, d0):
     return None
 
 
-def match_news(game):
-    """The group hears the final score once the site closes the game."""
+def match_news(game, now=None):
+    """The group hears the final score once the site closes the game (+ the SuperCopa line while it is ahead, 2026-10-26)."""
     a, b = game["teams"]
     goals = sorted(((p[0], p[1]) for t in game["teams"] for p in t["players"] if p[1]), key=lambda x: -x[1])
     g = ", ".join(f"{n} {k}" for n, k in goals)
     bets = [x for x in game.get("bets", []) if x.get("payout")]
     return f"Fim de jogo: {a['name']} {a['gf']} × {b['gf']} {b['name']}." + (f" Gols: {g}." if g else "") + \
-        (f" BioBet pagou {len(bets)} aposta{'s' * (len(bets) != 1)}." if game.get("bets") else "")
+        (f" BioBet pagou {len(bets)} aposta{'s' * (len(bets) != 1)}." if game.get("bets") else "") + copa_hook("Guarda energia: faltam {n} dias pra SuperCopa.", now)
 
 
 def my_messages(name, _cache={}):
@@ -1862,7 +1936,7 @@ def review_tick(now=None):
 
 def review_loop():
     while True:
-        for tick in (review_tick, mercado_tick, pix_tick):
+        for tick in (review_tick, mercado_tick, pix_tick, copa_tick):
             try:
                 for n in tick():
                     notify(n)
