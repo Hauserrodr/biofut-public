@@ -1446,6 +1446,38 @@ def copa_hook(line, now=None):
     return f" {copa_n(line, days)}{copa_form(now)}" if days >= 1 else ""
 
 
+IG_TOKEN = os.environ.get("BIOFUT_IG_TOKEN", "")  # Instagram API with Instagram login, @biofutmagia; long-lived (60 days) outlives the Copa
+
+
+def ig_story(image_url):
+    """Publish one public JPEG as an @biofutmagia story: the account's id, a STORIES container, then publish (the container
+    can take a few seconds, so 3 tries 5 s apart). -> the story's media id, or None (no token, or Instagram said no: the
+    avisos group hears why, never the token). Never raises."""
+    if not IG_TOKEN:
+        return None
+    def call(path, get=False, **params):  # nothing here logs a URL, so the token can ride in the GET's query
+        q = urllib.parse.urlencode({**params, "access_token": IG_TOKEN})
+        url, body = (f"https://graph.instagram.com/{path}?{q}", None) if get else (f"https://graph.instagram.com/{path}", q.encode())
+        return json.loads(urllib.request.urlopen(urllib.request.Request(url, body), timeout=30).read())
+    try:
+        me = call("me", get=True, fields="user_id")
+        uid = me.get("user_id") or me["id"]
+        box = call(f"{uid}/media", image_url=image_url, media_type="STORIES")["id"]
+        for i in range(3):
+            try:
+                return call(f"{uid}/media_publish", creation_id=box)["id"]
+            except urllib.error.HTTPError:
+                if i == 2:
+                    raise
+                time.sleep(5)
+    except urllib.error.HTTPError as e:
+        why = e.read()[:300].decode("utf-8", "replace")
+    except Exception as e:
+        why = type(e).__name__
+    notify(f"📸 Story da SuperCopa no Instagram falhou: {why}")
+    return None
+
+
 def copa_tick(now=None):
     """From COPA_AT (Brasília), on copa_day() days: the day's countdown image (og/copa-<days>.jpg) + caption in the group.
     Once a day (st["copa_post"] = the date, a restart never repeats it), never while muted, never 23:00-08:00, no DMs."""
@@ -1462,6 +1494,8 @@ def copa_tick(now=None):
         save_state(st)
     text, img = "🤖 " + copa_caption(now), HERE / "og" / f"copa-{days}.jpg"
     bot_post("/group", {"text": text, **({"image": f"{SITE}/og/{img.name}"} if img.exists() else {})})
+    if (HERE / "og" / f"story-{days}.jpg").exists():
+        ig_story(f"{SITE}/og/story-{days}.jpg")
     notify(f"🏆 SuperCopa no grupo: {text}", post=False)
     return []
 
@@ -2491,7 +2525,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js") or re.fullmatch(r"/og/copa-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
