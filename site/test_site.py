@@ -1033,7 +1033,7 @@ assert server.copa_days(k("2026-11-10", "11:00")) == 11 and server.copa_days(k("
 server.copa_tick(k("2026-11-10", "11:59"))
 assert not sent, "not before 12:00"
 server.copa_tick(k("2026-11-10", "12:00"))
-assert len(sent) == 1 and sent[0][0] == "/group" and sent[0][1]["text"].startswith("🤖 Faltam 11 dias.") and server.COPA_FORM in sent[0][1]["text"], sent
+assert len(sent) == 1 and sent[0][0] == "/group" and sent[0][1]["text"].startswith("🤖 Faltam 11 dias.") and server.COPA_FORM not in sent[0][1]["text"], "after 05/11: no form"
 assert sent[0][1].get("image", f"{server.SITE}/og/copa-11.jpg") == f"{server.SITE}/og/copa-11.jpg" and "inscrito" not in sent[0][1]["text"]
 for t in ("12:30", "22:59"):
     server.copa_tick(k("2026-11-10", t))
@@ -1052,26 +1052,37 @@ server.copa_tick(k("2026-11-21", "08:00"))
 assert len(sent) == 4 and sent[-1][1]["text"].startswith("🤖 É hoje"), sent[-1]
 server.copa_tick(k("2026-11-22", "12:00")); server.copa_tick(k("2026-11-30", "12:00"))
 assert len(sent) == 4, "nothing after the Copa"
-# the registered count: only when the URL answers {"inscritos": N}; any failure = no count line
+# the count: only when the URL answers {"inscritos": N}; a goalie call while open and short of 4; no form after 05/11
 URLOPEN0, server.COPA_COUNT_URL = server.urllib.request.urlopen, "http://127.0.0.1:9/inscritos"
-server.urllib.request.urlopen = lambda url, timeout=None: __import__("io").BytesIO(b'{"inscritos": 23}')
-cap = server.copa_caption(5)
-assert cap == server.COPA_LINES[0].format(n=5) + f" Já são 23 inscritos. Inscrição: {server.COPA_FORM}", cap
+def answer(body):
+    server.urllib.request.urlopen = lambda url, timeout=None: __import__("io").BytesIO(body)
+answer(b'{"inscritos": 23}')
+cap = server.copa_caption(k("2026-11-01", "12:00"))
+assert cap == server.COPA_LINES[0].format(n=20) + f" Já são 23 inscritos. Inscrição até 05/11: {server.COPA_FORM}", cap
+answer(b'{"inscritos": 23, "goleiros": 2}')
+assert "Já são 23 inscritos. Procura-se goleiro: só 2 pra 4 times. Inscrição até 05/11" in server.copa_caption(k("2026-11-01", "12:00"))
+answer(b'{"inscritos": 1, "goleiros": 0}')
+assert "Já tem 1 inscrito. Procura-se goleiro: nenhum inscrito ainda pra 4 times." in server.copa_caption(k("2026-11-01", "12:00"))
+answer(b'{"inscritos": 23, "goleiros": 4}')
+assert "goleiro" not in server.copa_caption(k("2026-11-01", "12:00"))
+assert server.copa_caption(k("2026-11-05", "12:00")).endswith(f"Última chance: a inscrição fecha hoje: {server.COPA_FORM}")
+cap = server.copa_caption(k("2026-11-06", "12:00"))
+assert cap.endswith(" 23 artistas confirmados.") and server.COPA_FORM not in cap, cap
 def boom(url, timeout=None):
     raise OSError("down")
 server.urllib.request.urlopen = boom
-assert "inscrito" not in server.copa_caption(5) and server.COPA_FORM in server.copa_caption(5)
-server.urllib.request.urlopen = lambda url, timeout=None: __import__("io").BytesIO(b'{"nomes": ["Rui"]}')
-assert "inscrito" not in server.copa_caption(5) and server.copa_count() is None
+assert "inscrito" not in server.copa_caption(k("2026-11-01", "12:00")) and server.COPA_FORM in server.copa_caption(k("2026-11-01", "12:00"))
+answer(b'{"nomes": ["Rui"]}')
+assert "inscrito" not in server.copa_caption(k("2026-11-01", "12:00")) and server.copa_stats() is None
 server.urllib.request.urlopen, server.COPA_COUNT_URL = URLOPEN0, ""
 # cancel and result texts carry the Copa line before the Copa, not after
 cst = server.load_state(); cst["match"]["date"] = "2026-11-12"
-cn = server.cancel_match(json.loads(json.dumps(cst)), "teste", k("2026-11-10", "10:00"))
-assert cn.startswith("❌ Jogo de 12/11 cancelado (teste).") and "Sabe o que não foi? A SuperCopa BioFut: faltam 11 dias." in cn and cn.endswith(server.COPA_FORM), cn
+cn = server.cancel_match(json.loads(json.dumps(cst)), "teste", k("2026-11-03", "10:00"))
+assert cn.startswith("❌ Jogo de 12/11 cancelado (teste).") and "Sabe o que não foi? A SuperCopa BioFut: faltam 18 dias. Inscrição até 05/11" in cn and cn.endswith(server.COPA_FORM), cn
 assert "SuperCopa" not in server.cancel_match(json.loads(json.dumps(cst)), "teste", k("2026-11-21", "10:00"))
 game = {"teams": [{"name": "Pavões", "gf": 2, "players": [["Zé", 2]]}, {"name": "Bagres", "gf": 1, "players": [["Rui", 1]]}]}
 mn = server.match_news(game, k("2026-11-19", "22:00"))
-assert mn.startswith("Fim de jogo: Pavões 2 × 1 Bagres.") and "Guarda energia: faltam 2 dias pra SuperCopa." in mn and mn.endswith(server.COPA_FORM), mn
+assert mn.startswith("Fim de jogo: Pavões 2 × 1 Bagres.") and mn.endswith("Guarda energia: faltam 2 dias pra SuperCopa."), mn
 assert "SuperCopa" not in server.match_news(game, k("2026-11-21", "22:00"))
 server.bot_post = BOT_POST0
 print("ok")

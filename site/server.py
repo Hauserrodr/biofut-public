@@ -1368,7 +1368,8 @@ def pix_tick(now=None):
 
 COPA_AT = "12:00"  # the SuperCopa countdown post in the group, once a day from this time, never 23:00-08:00 (2026-10-26)
 COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform"  # index.html's
-COPA_COUNT_URL = os.environ.get("BIOFUT_COPA_COUNT_URL", "")  # optional, GET -> {"inscritos": N}: only the number is used, nothing kept
+COPA_COUNT_URL = os.environ.get("BIOFUT_COPA_COUNT_URL", "")  # optional, GET -> {"inscritos": N, "goleiros": G, ...}: two numbers used, nothing kept
+COPA_CLOSE = "2026-11-05"  # the form's last day (its own text: "disponível até o dia 05/11/2026"); after it, no form link
 COPA_LINES = [  # one per day, rotating by days left; {n} = days left (2026-10-26 drafts)
     "Na cadeia alimentar da BioFut: o bagre come lodo, o pavão come elogio, o babuíno come o que achar e o axolote regenera. Quem fica no topo? Faltam {n} dias pra SuperCopa.",
     "Faltam {n} dias. O pavão já abriu a cauda, o babuíno já tá gritando, o bagre ainda tá no fundo do lago pensando. E tu?",
@@ -1395,28 +1396,52 @@ def copa_n(line, n):
     return line.format(n=n).replace("altam 1 dias", "alta 1 dia").replace(" 1 dias", " 1 dia")
 
 
-def copa_count():
-    """BIOFUT_COPA_COUNT_URL's {"inscritos": N} -> N, or None on anything else (no URL, down, slow, bad JSON). Never raises."""
+def copa_stats():
+    """BIOFUT_COPA_COUNT_URL's JSON -> {"inscritos": N, "goleiros": G or None}, or None on anything else (no URL, down,
+    slow, bad JSON, no count). Only these two numbers are read. Never raises."""
     if not COPA_COUNT_URL:
         return None
     try:
-        n = json.loads(urllib.request.urlopen(COPA_COUNT_URL, timeout=5).read())["inscritos"]
-        return n if isinstance(n, int) and n > 0 else None
+        d = json.loads(urllib.request.urlopen(COPA_COUNT_URL, timeout=5).read())
+        n, g = d["inscritos"], d.get("goleiros")
+        return {"inscritos": n, "goleiros": g if isinstance(g, int) else None} if isinstance(n, int) and n > 0 else None
     except Exception:
         return None
 
 
-def copa_caption(days):
-    """The noon post's caption: the day's line (rotating, "é hoje" on the day), the registered count when known, the form."""
-    n = copa_count()
+def copa_open(now=None):
+    """The form still takes sign-ups today (Brasília)."""
+    return time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600)) <= COPA_CLOSE
+
+
+def copa_form(now=None):
+    """The form link while it is open, the last day said out loud; "" after COPA_CLOSE."""
+    if not copa_open(now):
+        return ""
+    last = time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600)) == COPA_CLOSE
+    return f" {'Última chance: a inscrição fecha hoje' if last else 'Inscrição até ' + COPA_CLOSE[8:] + '/' + COPA_CLOSE[5:7]}: {COPA_FORM}"
+
+
+def copa_caption(now=None):
+    """The noon post's caption: the day's line (rotating, "é hoje" on the day), the count when known (+ a goalie call while
+    the form is open and the 4 teams lack one each), the form while it is open."""
+    days, st, open_ = copa_days(now), copa_stats(), copa_open(now)
     line = COPA_HOJE if days == 0 else copa_n(COPA_LINES[days % len(COPA_LINES)], days)
-    return line + (f" Já são {n} inscritos." if n and n > 1 else " Já tem 1 inscrito." if n else "") + f" Inscrição: {COPA_FORM}"
+    if st and open_:
+        n, g = st["inscritos"], st["goleiros"]
+        line += f" Já são {n} inscritos." if n > 1 else " Já tem 1 inscrito."
+        if g is not None and g < 4:
+            line += f" Procura-se goleiro: {'nenhum inscrito ainda' if not g else f'só {g}'} pra 4 times."
+    elif st:
+        n = st["inscritos"]
+        line += f" {n} artista{'s' * (n != 1)} confirmado{'s' * (n != 1)}."
+    return line + copa_form(now)
 
 
 def copa_hook(line, now=None):
-    """One Copa line + the form, appended to a cancel or result text while the Copa is still ahead (2026-10-26), else ""."""
+    """One Copa line (+ the form while open), appended to a cancel or result text while the Copa is still ahead, else ""."""
     days = copa_days(now)
-    return f" {copa_n(line, days)} Inscrição: {COPA_FORM}" if days >= 1 else ""
+    return f" {copa_n(line, days)}{copa_form(now)}" if days >= 1 else ""
 
 
 def copa_tick(now=None):
@@ -1433,7 +1458,7 @@ def copa_tick(now=None):
             return []
         st["copa_post"] = today
         save_state(st)
-    text, img = "🤖 " + copa_caption(days), HERE / "og" / f"copa-{days}.jpg"
+    text, img = "🤖 " + copa_caption(now), HERE / "og" / f"copa-{days}.jpg"
     bot_post("/group", {"text": text, **({"image": f"{SITE}/og/{img.name}"} if img.exists() else {})})
     notify(f"🏆 SuperCopa no grupo: {text}", post=False)
     return []

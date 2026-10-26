@@ -747,13 +747,14 @@ function bindResenha() {  // "isso está errado": goes to the BioWiki's reports 
 // ---------- apoie ----------
 const COPA_FORM = "https://docs.google.com/forms/d/e/1FAIpQLSdvOMmliO9I1_id6lNdLeV8ngEohioMNRxs0cN1dr0phU03vw/viewform";  // ponytail: paste the public registration form link here; empty = "em breve"
 const COPA_DAY = "2026-11-21";
+const copaOpen = () => new Date() < new Date("2026-11-06T00:00");  // the form takes sign-ups up to 05/11 (server.py COPA_CLOSE)
 function copaBanner() {  // home: the SuperCopa in evidence until the day after it (Gab, 2026-10-16)
   const days = Math.ceil((new Date(COPA_DAY + "T08:30") - new Date()) / 864e5);
   if (days < -1) return "";
   return `<a class="copa-hero fade" href="#/copa"><div class="copa-l"><div class="kicker">5ª Copa BioFut · SuperCopa 2026</div>
     <h2>${days > 0 ? `Faltam <b class="num">${days}</b> dia${days > 1 ? "s" : ""}` : days === 0 ? "É <b>hoje</b>!" : "Foi ontem!"}</h2>
     <p>21 de novembro, 8:30 às 14:30 · Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos.</p></div>
-    <div class="copa-r"><span class="btn pri pulse">${COPA_FORM && days > 0 ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
+    <div class="copa-r"><span class="btn pri pulse">${COPA_FORM && copaOpen() ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
 }
 function pageCopa() {
   const feats = [
@@ -770,7 +771,7 @@ function pageCopa() {
   <div class="kicker">5ª Copa BioFut · SuperCopa 2026</div><h1 style="font-size:52px;margin-top:8px">21 de novembro, 8:30 às 14:30</h1>
   <p class="muted" style="max-width:640px;font-size:17px">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Dan, Edu, Canova, Bruno M, Matte e Gab (só a parte tech).</p>
   <div class="copa-hero" style="margin-top:22px"><div class="copa-l"><div class="kicker">Começa em</div><div class="cd" id="cd">${copaClock()}</div></div>
-    <div class="copa-r">${COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}
+    <div class="copa-r">${COPA_FORM && !copaOpen() ? '<span class="pill g">Inscrições encerradas em 05/11</span>' : COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p style="margin:8px 0 0;font-size:13px">Formulário da comissão: garanta a vaga até 05/11.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}
       <p style="margin:10px 0 0;font-size:14px"><b>🪙 Jogou a Copa, ganhou 50 moedas.</b> Depois da Copa, a lista de quem jogou vem da comissão e as moedas caem no seu saldo.</p></div>
   </div>
   <div class="sec"><div class="sec-h"><div><h2>O que o site pode fazer na Copa</h2><p>Ideias em estudo. Vote em cada uma: o que vale a pena e o que é viagem. O voto é anônimo: só a contagem aparece, ninguém vê quem votou em quê.</p></div></div>
