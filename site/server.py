@@ -1400,7 +1400,7 @@ def copa_n(line, n):
 
 def copa_stats():
     """BIOFUT_COPA_COUNT_URL's JSON -> {"inscritos": N, "goleiros": G or None}, or None on anything else (no URL, down, over 20 s (Apps Script takes ~5 s),
-    slow, bad JSON, no count). Only these two numbers are read. Never raises."""
+    bad JSON, no count). Only these two numbers are read. Never raises."""
     if not COPA_COUNT_URL:
         return None
     try:
