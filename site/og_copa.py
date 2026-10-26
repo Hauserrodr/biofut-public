@@ -3,8 +3,8 @@ post in the group) and og/story-<days>.jpg (1080x1920 Instagram story).
 
     python og_copa.py      # deploy.ps1 runs it; needs Pillow on this PC, not on the server
 
-Near-black, Bahnschrift condensed, white + BioFut pink, the 4-colour stripe at the bottom, the mascots' art (copa_art.jpg,
-the Instagram's 18/10 post). Up to 05/11 the sign-up deadline, after it the four teams in their shirt colours.
+Near-black, Bahnschrift condensed, white + BioFut pink, the 4-colour stripe at the bottom, the four team captains in their shirt colours (copa_art.jpg).
+Up to 05/11 the sign-up deadline, after it the four teams in their shirt colours.
 ponytail: pre-rendered per day because the server has no Pillow; a day after the last image /copa falls back to og.png.
 """
 import functools
