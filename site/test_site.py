@@ -1091,5 +1091,21 @@ game = {"teams": [{"name": "Pavões", "gf": 2, "players": [["Zé", 2]]}, {"name"
 mn = server.match_news(game, k("2026-11-19", "22:00"))
 assert mn.startswith("Fim de jogo: Pavões 2 × 1 Bagres.") and mn.endswith("Guarda energia: faltam 2 dias pra SuperCopa."), mn
 assert "SuperCopa" not in server.match_news(game, k("2026-11-21", "22:00"))
+# Instagram story: nothing without a token; with one, me -> STORIES container -> publish (retried), the token never in a notify
+assert server.ig_story("https://x/og/story-5.jpg") is None
+ig, URLOPEN0, NOTIFY0, said = [], server.urllib.request.urlopen, server.notify, []
+def fake_ig(req, timeout=None):
+    url, body = req.full_url, (req.data or b"").decode()
+    ig.append((url.split("?")[0].rsplit("/", 2)[-2:], url + body))
+    if url.endswith("/media_publish") and sum(1 for u, _ in ig if u[-1] == "media_publish") == 1:
+        raise server.urllib.error.HTTPError(url, 400, "not ready", {}, __import__("io").BytesIO(b"{}"))
+    return __import__("io").BytesIO(json.dumps({"user_id": "17"} if "/me?" in url else {"id": "c1" if url.endswith("/media") else "m1"}).encode())
+server.urllib.request.urlopen, server.notify, server.IG_TOKEN, SLEEP0, server.time.sleep = fake_ig, lambda t, post=True: said.append(t), "SEKRIT9", server.time.sleep, lambda s: None
+assert server.ig_story("https://x/og/story-5.jpg") == "m1" and [u for u, _ in ig] == [
+    ["graph.instagram.com", "me"], ["17", "media"], ["17", "media_publish"], ["17", "media_publish"]], ig
+assert "media_type=STORIES" in ig[1][1] and "image_url=https%3A%2F%2Fx%2Fog%2Fstory-5.jpg" in ig[1][1] and "creation_id=c1" in ig[3][1] and not said
+server.urllib.request.urlopen = lambda req, timeout=None: (_ for _ in ()).throw(server.urllib.error.HTTPError(req.full_url, 400, "x", {}, __import__("io").BytesIO(b'{"error":{"message":"Invalid token"}}')))
+assert server.ig_story("https://x/og/story-5.jpg") is None and len(said) == 1 and "Invalid token" in said[0] and "SEKRIT9" not in said[0], said
+server.urllib.request.urlopen, server.notify, server.IG_TOKEN, server.time.sleep = URLOPEN0, NOTIFY0, "", SLEEP0
 server.bot_post = BOT_POST0
 print("ok")
