@@ -744,6 +744,11 @@ assert json.loads(call("/api/me", cookie=me)[1])["truco_tour"]
 call("/api/tour", {"which": "truco", "done": True, "step": 5}, cookie=me); call("/api/tour", {"which": "truco", "done": False, "step": 2}, cookie=me)
 assert not json.loads(call("/api/me", cookie=me)[1])["truco_tour"] and server.load_state()["tour_truco"]["Dan"]["done"]
 assert "tour_truco" not in json.loads(call("/api/state")[1])
+st0 = server.load_state(); st0["tour_truco"]["Dan"].pop("v"); server.save_state(st0)
+assert json.loads(call("/api/me", cookie=me)[1])["truco_tour"], "saw the v0.2 popup: the v0.3 one shows once"
+assert call("/truco-v03.jpg")[0] == 200, "the popup banner"
+call("/api/tour", {"which": "truco", "done": False, "step": 0}, cookie=me)
+assert not json.loads(call("/api/me", cookie=me)[1])["truco_tour"] and server.load_state()["tour_truco"]["Dan"]["done"]
 assert call("/api/jogos")[0] == 403 and json.loads(call("/api/jogos", cookie=me)[1]) == {}
 assert json.loads(call("/api/jogo_errado", {"n": g["n"], "text": "o Victor fez 3"}, cookie=me)[1]) == {"ok": True}
 server.review_tick(now=9e9)
@@ -1214,6 +1219,15 @@ assert len(sent) == 4 and sent[-1][1]["text"].startswith("🤖 É hoje"), sent[-
 server.copa_tick(k("2026-11-22", "12:00")); server.copa_tick(k("2026-11-30", "12:00"))
 assert len(sent) == 4, "nothing after the Copa"
 server.copa_day = COPA_DAY0
+# The one-time BioTruco v0.3 post: once ever, with its banner, never at night, never muted
+n = len(sent); cst = server.load_state(); cst["silencio"] = k("2026-11-12", "13:00"); server.save_state(cst)
+for t in (k("2026-11-12", "07:59"), k("2026-11-12", "12:00"), k("2026-11-12", "23:00")):
+    server.anuncio_tick(t)
+assert len(sent) == n and "anuncio" not in server.load_state(), "night or muted: nothing, still owed"
+server.anuncio_tick(k("2026-11-12", "13:01")); server.anuncio_tick(k("2026-11-13", "13:01"))
+assert sent[n:] == [("/group", {"text": server.ANUNCIO[1], "image": f"{server.SITE}/truco-v03.jpg"})] and server.load_state()["anuncio"] == "truco-v03", sent
+assert (server.HERE / "truco-v03.jpg").exists() and "truco-v03.jpg" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8")
+del sent[n:]
 cst = server.load_state(); cst["copa_post"] = ""; server.save_state(cst)
 server.copa_tick(k("2026-11-13", "12:00")); server.copa_tick(k("2026-11-14", "12:00"))
 assert len(sent) == 5 and "Tu tem 8 dias" in sent[-1][1]["text"], "13/11 (8 left) posts, 14/11 (7 left) does not"
