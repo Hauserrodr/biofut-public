@@ -95,6 +95,8 @@ REVIEW = HERE / "data" / "review.json"
 INBOX = HERE / "data" / "review" / "inbox"
 AVISOS = HERE / "data" / "avisos.jsonl"
 EVENTS = HERE / "data" / "events.jsonl"
+# js_errors that are not ours: "Script error." is a cross-origin script that hides its details, window.ethereum is a crypto wallet some phone browsers inject
+NOISE = re.compile(r"^Script error\.|window\.ethereum")
 SAFE = ("name", "captains", "captain", "player", "bettor", "pick", "stake", "score", "date", "id", "action", "page", "ref", "kind", "side", "out", "p", "h", "n", "min")  # body fields the log keeps
 PHONES = HERE / "data" / "phones.json"
 RADIO = HERE / "data" / "radio"  # the BioFut songs (mp3, Gab picks them: deploy.ps1 -Data), members only: #/radio
@@ -2126,6 +2128,8 @@ def visitor(ip, day=None):
 
 def log_event(ev, user, ip, mobile=False, **extra):
     """One line in data/events.jsonl. Never raises: a full disk must not break a sign-up."""
+    if ev == "js_error" and NOISE.search(str(extra.get("d") or "")):
+        return
     now = time.gmtime(time.time() - 3 * 3600)  # ponytail: Brasília time (no DST since 2019): the group's day, whatever the server's TZ
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", now), "ev": ev, "user": user, "vid": visitor(ip, time.strftime("%Y-%m-%d", now)),
            **({"mob": 1} if mobile else {}),

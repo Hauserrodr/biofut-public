@@ -119,7 +119,7 @@ const uniq = xs => new Set(xs.filter(Boolean)).size;
 const count = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x); if (k) m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
 const hbars = rows => rows.length ? '<div class="hb">' + rows.map(([k, n]) => `<div title="${esc(k)}">${esc(k)}</div><i style="width:${(100 * n / rows[0][1]).toFixed(1)}%"></i><span>${n}</span>`).join('') + '</div>'
   : '<p class="meta">Nada ainda.</p>';
-const bad = x => x.ev === 'js_error' || x.code >= 400;
+const bad = x => x.ev === 'js_error' && !/^Script error\.|window\.ethereum/.test(x.d || '') || x.code >= 400;  // the server drops these since 27/10; older rows stay a week
 const page = p => { try { return decodeURIComponent(p || '') } catch (e) { return p } };
 const brDay = (ago = 0) => new Date(Date.now() - 3 * 3600e3 - ago * 864e5).toISOString().slice(0, 10);  // the server writes Brasília time
 
