@@ -31,7 +31,7 @@ phones.py; the answers go to data/quem.json and every page applies them to the t
 Activity log (/admin, Atividade): every POST and how it went, plus page views and clicks from a beacon (POST /api/ev), in
 data/events.jsonl. No IPs or numbers: a visitor is an HMAC of the IP that changes every day; members appear by name.
 """
-import base64, calendar, csv, gzip, hashlib, hmac, io, json, math, os, random, re, secrets, threading, time, urllib.parse, urllib.request
+import base64, calendar, csv, difflib, gzip, hashlib, hmac, io, json, math, os, random, re, secrets, threading, time, urllib.parse, urllib.request
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
@@ -938,7 +938,7 @@ def apply(state, action, body, data=None, base=None):
                 players.append([p, gl, ast, 0, int(p == cap)])  # G/A coins come via base_of(), not the ledger
                 state["ledger"].append({"player": p, "amount": PLAY, "reason": f"jogou {mt['date']}"})
             gf, ga = score[i], score[1 - i]
-            game["teams"].append({"name": f"Time {cap}", "gf": gf, "ga": ga,
+            game["teams"].append({"name": draft.get("animal", {}).get(cap) or f"Time {cap}", "gf": gf, "ga": ga,
                                   "res": "V" if gf > ga else "D" if gf < ga else "E", "players": players})
         for bet in mt["bets"]:
             bet["payout"] = int(bet["stake"] * bet["odds"]) if bet["pick"] == res else 0
@@ -1589,6 +1589,8 @@ def sync_list(st, text, ts, poster, pk="", wa=""):
         group_post(news)
         if not reset:  # left the group's teams while a short block held them: off the list now (bet-free, refund just ran)
             gone += [p for t in d0["teams"].values() for p in t if p not in names and p not in gone]
+    if teams and (mt["draft"] or {}).get("chat"):  # 'Time MK 💚': the uniform's color names the team on the sheet
+        mt["draft"]["animal"] = {c: t["animal"] for (c, _), t in zip(teams, lst["teams"]) if t.get("animal")} or mt["draft"].get("animal", {})
     drafted = {p for t in (mt["draft"] or {"teams": {}})["teams"].values() for p in t}
     removed = [] if mt["bets"] else [n for n in gone if n in mt["confirmed"] and n not in drafted]
     have = {c.lower() for c in mt["confirmed"]}
@@ -1813,7 +1815,7 @@ def sumula_games(payload, n0):
             ps = [[clean_name(p["name"]), int(p.get("goals") or 0), int(p.get("assists") or 0), int(p.get("own_goals") or 0),
                    int(bool(p.get("captain")))]
                   for p in g[f"players_{side}"]]
-            teams.append({"name": str(g[f"team_{side}"])[:40], "gf": gf, "ga": ga,
+            teams.append({"name": lista.animal(str(g[f"team_{side}"])) or str(g[f"team_{side}"])[:40], "gf": gf, "ga": ga,
                           "res": "V" if gf > ga else "D" if gf < ga else "E", "players": ps})
         out.append({"n": n0 + i, "season": season_of(payload["date"]), "date": payload["date"], "teams": teams, "source": "súmula"})
     return out
@@ -1907,10 +1909,35 @@ def release(item, how):
 CORRECOES = HERE / "data" / "correcoes.jsonl"  # hand fixes on #/planilha before a game went to the sheet: the reader's mistakes
 
 
-def planilha_push(n, rows, who):
+def sheet_names(names, nomes):
+    """#/planilha: each name of a game -> the sheet's Nome list spelling, so the push passes its dropdown. Exact (any
+    case), then the nicknames and the tabela's aliases ('Neco Dei' ~ 'Nego Dei' -> Andrei), then sumula.canon, then the
+    closest list name the game doesn't use yet (Bruney -> Bruno), else Sombra (2026-10-26: a guest nobody knows).
+    -> the new names. ponytail: difflib guesses; the page marks every change ('era: X') for the staff to check."""
+    low = {x.casefold(): x for x in nomes}
+    if not low:
+        return list(names)
+    nick = {k.strip().casefold(): low[t] for row in DATA.get("nicknames", []) if len(row) > 1 for k in str(row[0]).split(",")
+            if (t := re.split(r"[,.]", str(row[1]))[0].strip().casefold()) in low}  # ['Nego Dei, Nego Dola', 'Andrei, um ...']
+    nick.update({k.casefold(): low[v.casefold()] for k, v in name_fixes()[0].items() if v.casefold() in low})
+    out = [low.get(n.casefold()) for n in names]
+    used = set(out)
+    for i, n in enumerate(names):
+        if out[i]:
+            continue
+        f, c = n.casefold(), sumula.canon(n, nomes)
+        hit = nick.get(f) or next((nick[k] for k in difflib.get_close_matches(f, nick, 1, 0.8)), None) or (c if c in nomes else None)
+        if not hit or hit in used:
+            hit = next((low[k] for k in difflib.get_close_matches(f, [k for k, v in low.items() if v not in used], 1, 0.7)), None)
+        out[i] = hit or low.get("sombra", "SOMBRA")
+        used.add(out[i])
+    return out
+
+
+def planilha_push(n, rows, who, times=None):
     """#/planilha "Atualizar tabela": game n (on the site, not in the sheet yet) goes to the sheet, with the staff's hand
-    fixes when rows is given: [[team, name, goals, assists, own goals, captain]], the page's table. The site's copy takes
-    them too, and each changed row is logged to CORRECOES with the súmula photo it came from (to tune the reader's prompt).
+    fixes when rows is given: [[team, name, goals, assists, own goals, captain]], the page's table, and times: the
+    team names renamed on the page (lista.TIMES, the uniform's animal). The site's copy takes them too, and each changed row is logged to CORRECOES with the súmula photo it came from (to tune the reader's prompt).
     -> {"sheet": "ok: jogo N" | "falhou: ..."}"""
     with LOCK:
         st = load_state()
@@ -1918,6 +1945,11 @@ def planilha_push(n, rows, who):
         if not g:
             raise ValueError(f"jogo {n} não está pendente")
         if rows is not None:
+            if times is not None:
+                if not (isinstance(times, list) and len(times) == len(g["teams"]) == len(set(times)) and set(times) <= set(lista.TIMES)):
+                    raise ValueError(f"times inválidos: escolha entre {', '.join(lista.TIMES)}")
+                for t, x in zip(g["teams"], times):
+                    t["name"] = x
             names, new = [t["name"] for t in g["teams"]], []
             if not isinstance(rows, list) or not 0 < len(rows) <= 40:
                 raise ValueError("linhas inválidas")
@@ -1927,7 +1959,7 @@ def planilha_push(n, rows, who):
                     raise ValueError(f"linha inválida: {str(r)[:80]}")
                 new.append([r[0], clean_name(r[1])[:40], *r[2:]])
             old = [[t["name"], *p] for t in g["teams"] for p in t["players"]]
-            if new != old:
+            if new != old or times is not None:
                 CORRECOES.parent.mkdir(exist_ok=True)
                 with CORRECOES.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": who, "n": n, "date": g["date"],
@@ -1969,6 +2001,11 @@ def push_sheet(games):
     """Append released games to the group's sheet (sheet.py fills the next empty game rows), then the group checks
     each one (conferir_grupo, in a thread). Never raises: the game is already on the site, so a failure is reported, not lost."""
     try:
+        bad = [t["name"] for g in games for i, t in enumerate(g["teams"])
+               if t["name"] not in lista.TIMES or t["name"] in [x["name"] for x in g["teams"][:i]]]  # or both the same color
+        if bad:  # the sheet names teams by the uniform's animal (lista.ANIMAL); a captain's name there is a mistake
+            raise ValueError(f"time fora da lista ({', '.join(bad)}): os times são {', '.join(lista.TIMES)}, pela cor do uniforme;"
+                             " corrija em https://biofut.h-brain.org/#/planilha")
         done = sheet.push(games)
         for g, jogo in zip(games, done):
             threading.Thread(target=conferir_grupo, args=(g, jogo), daemon=True).start()
@@ -2565,8 +2602,14 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print("planilha names:", e, flush=True)
                 nomes = []
-            return self.send_json([{"n": g["n"], "line": game_line(g), "tsv": "\n".join("\t".join(r) for r in sheet_rows(g)),
-                                    "rows": [[t["name"], *p] for t in g["teams"] for p in t["players"]], "nomes": nomes} for g in games])
+            out = []
+            for g in games:  # rows: names already on the sheet's list ("era": the game's name, "" when the same)
+                rows = [[t["name"], *p] for t in g["teams"] for p in t["players"]]
+                fixed = sheet_names([r[1] for r in rows], nomes)
+                out.append({"n": g["n"], "line": game_line(g), "tsv": "\n".join("\t".join(r) for r in sheet_rows(g)),
+                            "rows": [[r[0], f, *r[2:]] for r, f in zip(rows, fixed)],
+                            "era": [r[1] if r[1] != f else "" for r, f in zip(rows, fixed)], "times": lista.TIMES, "nomes": nomes})
+            return self.send_json(out)
         if path == "/api/data":
             with LOCK:
                 raw = DATA_RAW
@@ -2704,7 +2747,7 @@ class Handler(SimpleHTTPRequestHandler):
                 role = self.role()
                 if role not in ("admin", "conselho"):
                     return self.send_json({"error": "só o admin e o Conselho atualizam a planilha"}, 403)
-                return self.send_json(planilha_push(int(body.get("n") or 0), body.get("rows"), user or role))
+                return self.send_json(planilha_push(int(body.get("n") or 0), body.get("rows"), user or role, body.get("times")))
             if action == "quem":
                 role = self.role()
                 if not role:

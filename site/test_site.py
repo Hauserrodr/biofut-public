@@ -620,12 +620,13 @@ sent = []
 server.bot_post = lambda route, obj: sent.append((route, obj))
 A = ["Abel (C)", "Bruno", "Caio", "Davi", "Edu", "Fabio", "Gil"]
 B = ["Hugo (c)", "Igor", "Joca", "Kaue", "Lino", "Mauro", "Nilo"]
-blocks = lambda a, b: "🚨 [QUINTA - 05/11 18:30]🚨\nTime Abel\n" + "\n".join(a) + "\n\nTime Hugo\n" + "\n".join(b) + "\n\nBom jogo\n"
+blocks = lambda a, b: "🚨 [QUINTA - 05/11 18:30]🚨\nTime Abel\n" + "\n".join(a) + "\n\nTime Hugo 🩷\n" + "\n".join(b) + "\n\nBom jogo\n"
 nm = lambda xs: [x.split(" (")[0] for x in xs]
 st = new_state()
 server.sync_list(st, blocks(A, B), brt(11, 4), "Rafo"); time.sleep(0.2)
 d = st["match"]["draft"]
 assert d["captains"] == ["Abel", "Hugo"] and d["teams"] == {"Abel": nm(A), "Hugo": nm(B)} and d["ok"] == ["Abel", "Hugo"] and d["chat"], d
+assert d["animal"] == {"Hugo": "AXOLOTES"}, "the pink heart on the team header names the team on the sheet"
 assert len(sent) == 1 and sent[0][0] == "/group" and "Times fechados!\nTime Abel: Abel, Bruno" in sent[0][1]["text"] and "BioBet: Abel" in sent[0][1]["text"], sent
 b0 = balance(st, BASE, "Bruno")
 apply(st, "bet", {"bettor": "Bruno", "pick": "A", "stake": 5}, DATA, BASE)
@@ -808,8 +809,15 @@ assert "error" in json.loads(call("/api/bet", {"bettor": "Victor", "pick": "A", 
 # The jogo da semana closed on the site goes into the group's sheet too, not only a released súmula.
 got, server.sheet.ID = [], "fake-id"
 real_push, server.sheet.push = server.sheet.push, lambda games: got.append(games) or [301]
+for ts in (["Time Dan", "BAGRES"], ["BAGRES", "BAGRES"]):  # a captain's name, or both teams the same color: never on the sheet
+    assert "time fora da lista" in server.push_sheet([{"teams": [{"name": t} for t in ts]}]) and not got, ts
+with server.LOCK:
+    st = server.load_state()
+    st["match"]["draft"]["animal"] = {st["match"]["draft"]["captains"][0]: "BAGRES", st["match"]["draft"]["captains"][1]: "PAVÕES"}
+    server.save_state(st)
 s4 = json.loads(call("/api/close_match", {"score": [2, 1]}, cookie=me)[1])
 assert "error" not in s4 and len(got) == 1 and got[0][0]["date"] == "2099-10-15" and got[0][0]["teams"][0]["gf"] == 2, (s4.get("error"), got)
+assert [t["name"] for t in got[0][0]["teams"]] == ["BAGRES", "PAVÕES"], "the game day's uniform names the teams"
 server.sheet.push, server.sheet.ID = real_push, ""
 # #/planilha "Atualizar tabela": staff only; a hand fix reaches the site's copy, the sheet and the corrections log.
 server.CORRECOES = tmp / "correcoes.jsonl"
@@ -825,10 +833,27 @@ log = [json.loads(x) for x in server.CORRECOES.read_text(encoding="utf-8").split
 assert len(log) == 1 and log[0]["by"] == "Andrei" and log[0]["depois"] == [rows[0]] and log[0]["antes"][0][2] == rows[0][2] - 1, log
 assert server.load_state()["played"][-1]["teams"][0]["players"][0][1] == rows[0][2], "the site's copy has the fix too"
 assert "error" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": [["X", "a", 0, 0, 0, 0]]}, cookie=andrei)[1]), "unknown team"
+assert "error" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": rows, "times": ["MK", "BAGRES"]}, cookie=andrei)[1]), "a team is an animal"
 assert len(log) == 1 and json.loads(call("/api/planilha", {"n": g9["n"]}, cookie=andrei)[1]) == {"sheet": "ok: jogo 302"}, "as is: no log line"
 assert g9["nomes"] == [], "no sheet configured: no list, no marks"
 real_names, server.sheet.names = server.sheet.names, lambda: ["Andrei", "SOMBRA"]
 assert json.loads(call("/api/planilha")[1])[0]["nomes"] == ["Andrei", "SOMBRA"], "the sheet's Nome list reaches #/planilha"
+nomes = ["Andrei", "Bruno", "Bruno M", "Dan", "Matte", "Sombra"]
+assert server.sheet_names(["Neco Dei", "Bruney", "Mateus", "Matte", "bruno m", "Daniel"], nomes) == [
+    "Andrei", "Bruno", "Sombra", "Matte", "Bruno M", "Dan"], "22/10: the names fixed by hand come out fixed"
+g9 = next(g for g in json.loads(call("/api/planilha")[1]) if "2099-10-15" in g["line"])
+assert g9["times"] == ["AXOLOTES", "BABUÍNOS", "BAGRES", "PAVÕES"] and len(g9["era"]) == len(g9["rows"]), g9
+assert all(r[1] in ("Andrei", "SOMBRA") for r in g9["rows"]) and all(e == "" or e != r[1] for e, r in zip(g9["era"], g9["rows"])), g9
+real_names2 = server.sheet.names
+server.sheet.names = lambda: ["Andrei", "Bruno", "Dan", "Sombra"]
+g9 = next(g for g in json.loads(call("/api/planilha")[1]) if "2099-10-15" in g["line"])
+rows = [list(r) for r in g9["rows"]]
+got = []
+r = json.loads(call("/api/planilha", {"n": g9["n"], "rows": [[{g9["rows"][0][0]: "AXOLOTES"}.get(x[0], "BABUÍNOS"), *x[1:]] for x in rows],
+                                      "times": ["AXOLOTES", "BABUÍNOS"]}, cookie=andrei)[1])
+assert r == {"sheet": "ok: jogo 302"} and [t["name"] for t in got[0][0]["teams"]] == ["AXOLOTES", "BABUÍNOS"], (r, got)
+assert server.CORRECOES.read_text(encoding="utf-8").count("\n") == 2, "the rename is logged too"
+server.sheet.names = real_names2
 server.sheet.names = lambda: (_ for _ in ()).throw(ValueError("Sheets API 500"))
 assert json.loads(call("/api/planilha")[1])[0]["nomes"] == [], "list unreadable: the page still loads"
 server.sheet.names = real_names

@@ -16,6 +16,19 @@ STATS = re.compile(r'\b(\d{1,2})\s*(gc|g|a)\b', re.I)  # '2G 1A', '1 GC' (gol co
 SECTION = {'supl': 'waiting', 'corneta': 'corneta', 'sombra': 'guests', 'convidad': 'guests'}
 
 
+ANIMAL = {'💚': 'BAGRES', '🟢': 'BAGRES', 'verde': 'BAGRES', '🖤': 'BABUÍNOS', '⚫': 'BABUÍNOS', 'pret': 'BABUÍNOS',
+          '🩷': 'AXOLOTES', '💗': 'AXOLOTES', 'rosa': 'AXOLOTES', '💜': 'PAVÕES', '🟣': 'PAVÕES', 'rox': 'PAVÕES'}
+TIMES = sorted(set(ANIMAL.values()))  # the sheet's Time column: one animal per uniform color
+ANIMAL.update({a.casefold(): a for a in TIMES})  # ponytail: the 2026 uniforms; new colors or animals go in ANIMAL
+
+
+def animal(text):
+    """'MK 💚', 'VERDE', 'Bagres' -> 'BAGRES': the game day's uniform color names the team, as on the sheet. '' if none."""
+    low = text.casefold()
+    hit = min(((low.find(k), v) for k, v in ANIMAL.items() if k in low), default=(0, ''))
+    return hit[1]
+
+
 def fold(s):
     """Key for comparing names: no accents, lowercase, single spaces."""
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode().lower()
@@ -72,7 +85,7 @@ def parse_list(text, ts):
         t = TEAM.match(l)
         if t and not SLOT.match(l):
             section, bare = 'team', True  # 22/10: bare names under 'Time MK', up to the first blank line after them
-            out['teams'].append({'name': re.sub(r"[^\w\s.'-]", '', t.group(1)).strip(), 'players': []})
+            out['teams'].append({'name': re.sub(r"[^\w\s.'-]", '', t.group(1)).strip(), 'animal': animal(t.group(1)), 'players': []})
             continue
         hit = next((v for k, v in SECTION.items() if low.startswith(k) or low.startswith('* ' + k)), None)
         if hit and not SLOT.match(l):
@@ -141,6 +154,8 @@ def selftest():  # made-up names
                    dt.datetime(2026, 10, 21).timestamp())  # 22/10: bare names under the team headers
     assert [(g['name'], [e['name'] for e in g['players']]) for g in k['teams']] == [
         ('MK', ['Tuca', 'Bino', 'Caco']), ('Nego Dei', ['Duda', 'Fefo'])], k['teams']
+    assert [g['animal'] for g in k['teams']] == ['', 'BABUÍNOS'] and animal('*TIME NEGO DEI* 🩷') == 'AXOLOTES'
+    assert animal('VERDE') == animal('Bagres') == 'BAGRES' and animal('Time Preta') == 'BABUÍNOS' and animal('MK') == ''
     assert k['teams'][0]['players'][1]['captain'] and k['teams'][1]['players'][1]['captain'] and not k['players']
     o = parse_list(t + '\nTime Azul\n- Tito\n- Zeca\nTime Verde\n- Lalo\n- Otto: 2G\n', dt.datetime(2026, 3, 16).timestamp())
     assert [[e['name'] for e in g['players']] for g in o['teams']] == [['Tito', 'Zeca'], ['Lalo', 'Otto']] and o['players'] == p['players']
