@@ -507,6 +507,11 @@ server.log_event("view", None, "203.0.113.9", True, p="/#/tabela", d="")
 assert "203.0.113.9" not in server.EVENTS.read_text(encoding="utf-8")
 e = server.recent_events()[-1]
 assert e["ev"] == "view" and e["mob"] == 1 and e["p"] == "/#/tabela" and "d" not in e, e
+for d in ("Script error. @:0", "TypeError: undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined') @duelo:1"):
+    server.log_event("js_error", "Abel", "203.0.113.9", True, p="/#/duelo", d=d)
+assert server.recent_events()[-1]["ev"] == "view", "a phone browser's injected scripts are not our errors"
+server.log_event("js_error", "Abel", "203.0.113.9", True, p="/#/duelo", d="TypeError: x is null @:1200")
+assert server.recent_events()[-1]["ev"] == "js_error", "our own errors still log"
 assert server.visitor("203.0.113.9", "2026-10-08") == server.visitor("203.0.113.9", "2026-10-08") != server.visitor("203.0.113.9", "2026-10-09")
 class Req:  # just enough of a handler for track()
     path, body, headers = "/api/login/start", {"phone": "(51) 99876-5432"}, {"User-Agent": "Mobile"}
