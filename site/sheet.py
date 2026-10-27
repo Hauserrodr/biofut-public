@@ -50,7 +50,7 @@ def api(path, body=None, method=None):
 
 
 def values(rng, render="FORMATTED_VALUE"):
-    return api(f"/values/{urllib.parse.quote(rng)}?valueRenderOption={render}").get("values", [])
+    return api(f"/values/{urllib.parse.quote(rng, safe='')}?valueRenderOption={render}").get("values", [])
 
 
 def tab():
@@ -166,7 +166,7 @@ def push(games):
         if bad:
             raise ValueError(f"fora da lista da planilha: {', '.join(bad[:6])}. Use o nome da lista; quem não está nela vira SOMBRA")
         # USER_ENTERED: the ISO date becomes a real date cell, numbers stay numbers
-        api(f"/values/{urllib.parse.quote(rng)}?valueInputOption=USER_ENTERED", {"values": rows}, "PUT")
+        api(f"/values/{urllib.parse.quote(rng, safe='')}?valueInputOption=USER_ENTERED", {"values": rows}, "PUT")
         for i, r in enumerate(rows):  # the next game in this call sees these rows as filled
             vals[row + i] = (list(vals[row + i]) + [""] * 14)[:14]
             vals[row + i][NOME], vals[row + i][DATA] = r[2], short_date(g["date"])
@@ -202,7 +202,11 @@ if __name__ == "__main__":
     assert filled_formulas([["=A1", "", "=B1"], [], ["x"]], [["", "", "Ze"]], 10) == ["N10"]  # blank-looking formulas get overwritten
     out = [["2030-01-08", "PRETO", "andrei", 1, "", "", 1], ["2030-01-08", "PRETO", "Neco Dei", "", "", "", ""]]
     assert off_list(out, {2: ["Andrei", "SOMBRA"]}, 4899) == ["N4900 Neco Dei"] and out[0][2] == "Andrei"  # nickname refused, case fixed
-    asked, rule = [], {"dataValidation": {"condition": {"type": "ONE_OF_RANGE", "values": [{"userEnteredValue": "=Jogadores!A2:A"}]}}}
+    asked = []
+    globals()["api"] = lambda p, *a: asked.append(p) or {}
+    values("'TABELA 26/2'!$B$2:$B$51")
+    assert "26%2F2" in asked.pop(), "a / in a tab name must not split the URL path"
+    rule = {"dataValidation": {"condition": {"type": "ONE_OF_RANGE", "values": [{"userEnteredValue": "=Jogadores!A2:A"}]}}}
     globals().update(tab=lambda: "DATABASE", api=lambda p: asked.append(urllib.parse.unquote(p)) or {"sheets": [{"data": [{"rowData": [{}, {"values": [rule]}]}]}]},
                      values=lambda rng, render=None: [["301"]] * 4999 if rng.endswith("!C2:C") else [["SOMBRA"], ["andrei"]])
     assert names() == ["andrei", "SOMBRA"] and "'DATABASE'!N4800:N5000" in asked[0], asked  # the dropdown of the last rows, not the old ones
