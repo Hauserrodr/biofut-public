@@ -1024,6 +1024,83 @@ assert server.truco_act(r1, "Eve", dc, {"op": "novo", "alvo": 13}, day, random.R
 o = json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie=me)[1])
 assert o["jogo_truco"]["alvo"] == 25 and "truco_aberto" not in o and {**json.loads(call("/api/truco", {}, cookie=me)[1])["jogo_truco"], "ev": o["jogo_truco"]["ev"]} == o["jogo_truco"]
 assert "error" in json.loads(call("/api/truco", {"op": "novo", "alvo": 25}, cookie="")[1])
+# BioTruco v0.3: challenge a member. Online, both play; each sees the table as side 0 and never the other's hand.
+T = lambda st, who, body, now=1000: server.truco_act(st, who, dc, body, day, rng, now)
+for st, body in (({"ledger": []}, {"op": "desafiar", "para": "Hugo", "alvo": 13}), ({"ledger": [], "cards": {"Abel": []}}, {"op": "desafiar", "para": "Abel", "alvo": 13}),
+                 ({"ledger": [], "cards": {"Bia": []}}, {"op": "desafiar", "para": "Bia", "alvo": 12}), ({"ledger": []}, {"op": "aceitar", "de": "Bia"})):
+    try:
+        T(st, "Abel", body); raise AssertionError(body)
+    except ValueError:
+        pass
+for k in range(60):
+    st = {"ledger": [], "cards": {"Bia": []}}
+    T(st, "Abel", {"op": "desafiar", "para": "Bia", "alvo": 13})
+    assert server.truco_desafios(st, "Bia", 1000)[0]["de"] == "Abel" and not server.truco_desafios(st, "Bia", 1000 + server.TRUCO_DESAFIO)
+    vb = T(st, "Bia", {"op": "aceitar", "de": "Abel"})
+    i, t = next(iter(st["truco_online"].items()))
+    va = T(st, "Abel", {})
+    assert va["rival"] == "Bia" and vb["rival"] == "Abel" and va["online"] and not st["truco_desafios"] and vb["ev"][0]["k"] == "da"
+    assert va["h"]["you"] == t["h"]["you"] and vb["h"]["you"] == t["h"]["cpu"] and va["h"]["cpu"] == vb["h"]["cpu"] == [None] * 3
+    for _ in range(3000):
+        if t.get("fim"):
+            break
+        who = t["lados"][server.truco_vez(t["h"])]
+        other = t["lados"][1 - t["lados"].index(who)]
+        h = T(st, who, {})["h"]
+        if h["aposta"] and h["aposta"]["ok"] is None:
+            ops = [{"op": "aposta_sim"}, {"op": "aposta_nao"}]
+        elif h["call"]:
+            ops = [{"op": "quero"}, {"op": "nao"}, {"op": "truco"}]
+        else:
+            ops = [{"op": "jogar", "i": i} for i in range(3) if i not in h["usou"][0]] + [{"op": "truco"}, {"op": "aposta"}]
+        try:
+            v = T(st, who, {"op": "desisto"} if rng.random() < .002 else rng.choice(ops))
+        except ValueError:
+            continue
+        assert all(x is None or i in e["v"]["h"]["usou"][1] for e in v["ev"] if e["v"].get("h") for i, x in enumerate(e["v"]["h"]["cpu"])), "never the other's hand"
+        if not v.get("fim"):
+            w = T(st, other, {"desde": v["evn"] - len(v["ev"])})
+            assert w["pts"] == v["pts"][::-1] and w["ev"] == T(st, other, {"desde": v["evn"] - len(v["ev"])})["ev"]
+            assert [e["k"] for e in w["ev"]] == [e["k"] for e in v["ev"]] and all(e.get("s") in (None, 1 - x.get("s", 0)) for e, x in zip(w["ev"], v["ev"]) if "s" in x)
+            for x in (v, w):
+                assert x["ev"][-1]["v"] == {k: y for k, y in x.items() if k not in ("ev", "ultima", "at", "evn")}
+            assert all(c is None or c == w["h"]["you"][j] for j, c in enumerate(v["h"]["cpu"])), "the other's played cards, as they hold them"
+    else:
+        raise AssertionError("an online BioTruco match that never ends")
+    w = T(st, other, {})
+    assert v["fim"]["won"] != w["fim"]["won"] and not st["truco_online"], "both saw the end: the match goes"
+    win = [x for x in (v, w) if x["fim"]["won"]][0]
+    assert sum(x["amount"] for x in st["ledger"]) == win["fim"]["coins"] > 0 and sorted(r["v"] for r in st["truco"].values()) == [0, 1]
+# A bet waits for the other's answer; W.O. after 30 min without the other's move.
+st = {"ledger": [], "cards": {"Bia": []}}
+T(st, "Abel", {"op": "desafiar", "para": "Bia", "alvo": 13}); T(st, "Bia", {"op": "aceitar", "de": "Abel"})
+t = next(iter(st["truco_online"].values()))
+T(st, "Abel", {"op": "aposta"})
+assert T(st, "Bia", {})["h"]["aposta"] == {"by": 1, "ok": None}
+for who, body, now in (("Abel", {"op": "jogar", "i": 0}, 1000), ("Bia", {"op": "jogar", "i": 0}, 1000), ("Bia", {"op": "wo"}, 9999), ("Abel", {"op": "wo"}, 2799)):
+    try:
+        T(st, who, body, now); raise AssertionError(body)
+    except ValueError:
+        pass
+assert T(st, "Bia", {"op": "aposta_sim"})["h"]["aposta"] == {"by": 1, "ok": True} and t["h"]["aposta"] == {"by": 0, "ok": True}
+assert T(st, "Bia", {"op": "wo"}, 1000 + server.TRUCO_ESPERA)["fim"]["won"] and st["truco"]["Abel"]["d"] == 1
+# Against the machine with that member's deck: it deals only from those 5 cards; it counts and pays like a normal match.
+for body in ({"op": "novo", "alvo": 13, "contra": "Eve"}, {"op": "novo", "alvo": 13, "contra": "Hugo"}):
+    try:
+        T({"ledger": [], "cards": {"Eve": [c["name"] for c in dc[:5]]}}, "Eve", body); raise AssertionError(body)
+    except ValueError:
+        pass
+st = {"ledger": [], "cards": {"Bia": [c["name"] for c in dc[5:10]]}}
+v = T(st, "Eve", {"op": "novo", "alvo": 13, "contra": "Bia"})
+while not v.get("fim"):
+    assert {c["name"] for c in st["truco_aberto"]["Eve"]["h"]["cpu"]} <= set(st["cards"]["Bia"]) and v["rival"] == "Bia"
+    v = T(st, "Eve", {"op": "desisto"})
+assert "máquina de Bia" not in str(st["ledger"]) and st["truco"]["Eve"]["d"] == 1
+st0 = server.load_state(); st0.setdefault("cards", {})["Bia"] = []; server.save_state(st0)
+o = json.loads(call("/api/truco", {"op": "desafiar", "para": "Bia", "alvo": 13}, cookie=me)[1])
+assert o["truco_desafios"][0]["para"] == "Bia" and "truco_desafios" not in json.loads(call("/api/state")[1])
+assert set(json.loads(call("/api/truco", {"poll": 1}, cookie=me)[1])) == {"jogo_truco", "truco_desafios"}
+assert json.loads(call("/api/truco", {"op": "cancelar"}, cookie=me)[1])["truco_desafios"] == []
 # Notifications: a phone's subscription (https only), Gab alone sends; the Pix bonus pays each name once per game.
 server.PUSH_SUBS = tmp / "push.json"
 sub = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "BPk", "auth": "xyz"}}

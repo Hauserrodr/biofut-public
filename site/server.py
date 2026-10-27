@@ -485,6 +485,11 @@ TRUCO_WIN = 0.001  # coins per match won (10 Duelos' worth: one match is ~10 han
 TRUCO_V02, TRUCO_X10_END = "2026-10-22", "2026-10-28"  # launch week: x10 coins per win (Gab, 2026-10-20)
 TRUCO_APOSTA = .8  # the machine takes "aposto que perco" only when it expects to win the hand anyway
 TRUCO_BLEFE = .1  # how often it says truco on a weak hand, so a call does not always mean strength
+# v0.3 (2026-10-27): challenge a member. Online, both play live (side 0 is who challenged); or at once against the
+# machine playing that member's deck. Each player sees the table as side 0 (truco_flip), so #/truco draws both the same.
+TRUCO_ESPERA = 1800  # online: after 30 min without the other's move, you may end the match and win (W.O.)
+TRUCO_DESAFIO = 86400  # an online challenge nobody answered drops after a day
+TRUCO_EV = 60  # online: the last events kept, so the other side replays the moves it has not seen
 
 
 def truco_round(ace, x, y):
@@ -507,11 +512,61 @@ def truco_hand_end(rw, mao):
     return None
 
 
+def truco_core(t, ultima=True):
+    return {**{k: t.get(k) for k in ("alvo", "pts", "n", "ace") + ("ultima",) * ultima + ("fim", "x10")}, **({"h": t["h"]} if t.get("h") else {})}
+
+
 def truco_ev(t, k, **kw):
-    """The replay list for #/truco: what just happened, with the table right after it (the machine's hand still hidden)."""
-    v = truco_view(t)
-    v.pop("ultima")
-    t.setdefault("ev", []).append({"k": k, **kw, "v": json.loads(json.dumps(v))})
+    """The replay list for #/truco: what just happened, with the table right after it (each side's view is made when sent)."""
+    t.setdefault("ev", []).append({"k": k, **kw, "v": json.loads(json.dumps(truco_core(t, ultima=False)))})
+
+
+def truco_flip(x, s):
+    """A table, a last hand or an event as side s sees it: for side 1 the two sides swap."""
+    if not s or not x:
+        return x
+    o = lambda w: None if w is None else 1 - w
+    x = dict(x)
+    if "you" in x:
+        x["you"], x["cpu"] = x["cpu"], x["you"]
+    for k in ("usou", "mesa", "pts"):
+        if type(x.get(k)) is list:  # an event's "pts" is the hand's points, not the score
+            x[k] = x[k][::-1]
+    if "jogadas" in x:
+        x["jogadas"] = [j[::-1] for j in x["jogadas"]]
+    if "rw" in x:
+        x["rw"] = [o(w) for w in x["rw"]]
+    for k in ("mao", "turn", "pode", "w", "s"):
+        if k in x:
+            x[k] = o(x[k])
+    for k in ("call", "aposta"):
+        if x.get(k):
+            x[k] = {**x[k], "by": 1 - x[k]["by"]}
+    for k in ("h", "ultima"):
+        if x.get(k):
+            x[k] = truco_flip(x[k], s)
+    return x
+
+
+def truco_see(t, v, s):
+    """What side s may see of the table v: the other side's cards only once played, and its own result."""
+    v = dict(truco_flip(v, s))
+    if v.get("h"):
+        h = v["h"]
+        v["h"] = {**h, "cpu": [c if i in h["usou"][1] else None for i, c in enumerate(h["cpu"])]}
+    if v.get("fim"):
+        won = v["fim"]["won"] != bool(s)
+        v["fim"] = {"won": won, "coins": v["fim"]["coins"] if won else 0}
+    v["deck_proprio"] = t.get("deck_proprio1" if s else "deck_proprio")
+    if t.get("rival"):
+        v["rival"] = t["rival"]
+    if t.get("lados"):
+        v["rival"], v["online"] = t["lados"][1 - s], True
+    return v
+
+
+def truco_ev_out(t, e, s):
+    return {**truco_flip({k: x for k, x in e.items() if k != "v"}, s), "v": truco_see(t, e["v"], s)}
 
 
 def truco_deal(t, cards, r):
@@ -520,7 +575,7 @@ def truco_deal(t, cards, r):
     lo, hi = min(c["ovr"] for c in t["deck"]), max(c["ovr"] for c in t["deck"])
     rest = [c for c in cards if c["name"] not in mine]
     band = [c for c in rest if lo <= c["ovr"] <= hi]  # the machine plays cards as good as your deck, not the whole pile
-    t["h"] = {"you": r.sample(t["deck"], 3), "cpu": r.sample(band if len(band) >= 6 else rest, 3), "usou": [[], []],
+    t["h"] = {"you": r.sample(t["deck"], 3), "cpu": r.sample(t.get("deck2") or (band if len(band) >= 6 else rest), 3), "usou": [[], []],
               "mesa": [None, None], "jogadas": [], "rw": [], "mao": lead, "turn": lead, "val": 1, "call": None, "pode": None, "aposta": None}
     truco_ev(t, "da")
 
@@ -651,34 +706,167 @@ def truco_cpu(t, cards, r):
             return
 
 
-def truco_view(t):
-    h = t["h"]
-    v = {k: t.get(k) for k in ("alvo", "pts", "n", "ace", "ultima", "fim", "x10", "deck_proprio")}
-    if h:
-        v["h"] = {**h, "cpu": [c if i in h["usou"][1] else None for i, c in enumerate(h["cpu"])]}
+def truco_view(t, s=0):
+    v = truco_see(t, truco_core(t), s)
+    if t.get("lados"):
+        v["at"], v["evn"] = t["at"], t["ev0"] + len(t["ev"])
     return v
 
 
-def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
-    """#/truco for a logged-in member. op: (none) the open match or None, "novo" {alvo}, "jogar" {i}, "truco", "quero",
-    "nao", "aposta", "desisto". One open match each. A finished match goes to state truco (public): wins, losses, the run
-    of wins and the longest; a win pays TRUCO_WIN coins (x10 in the launch week) through the ledger."""
+def truco_vez(h):
+    """Which side must act now: answer a bet or a call, else play."""
+    a, c = h["aposta"], h["call"]
+    return 1 - a["by"] if a and a["ok"] is None else 1 - c["by"] if c else h["turn"]
+
+
+def truco_deck(state, user, cards, r):
+    """The member's deck as cards and whether it is their own (else 5 random cards, lent for the match)."""
+    mine = deck_of(state, user)
+    deck = [c for c in cards if c["name"] in mine]
+    return (deck, True) if len(deck) == DECK else (r.sample(cards, DECK), False)
+
+
+def truco_rec(state, user, won, coins, reason):
+    rec = state.setdefault("truco", {}).setdefault(user, {"v": 0, "d": 0, "run": 0, "top": 0})
+    rec["v" if won else "d"] += 1
+    rec["run"] = rec["run"] + 1 if won else 0
+    rec["top"] = max(rec["top"], rec["run"])
+    if coins:
+        state["ledger"].append({"player": user, "amount": coins, "reason": reason})
+
+
+def truco_online(state, user):
+    """The member's online match (id, match), or (None, None). A finished one stays until both sides saw the end."""
+    return next(((i, t) for i, t in state.get("truco_online", {}).items() if user in t["lados"] and user not in t.get("viu", [])), (None, None))
+
+
+def truco_desafios(state, user, now):
+    """The online challenges to and from this member that are less than a day old."""
+    return [d for d in state.get("truco_desafios", []) if user in (d["de"], d["para"]) and now - d["at"] < TRUCO_DESAFIO]
+
+
+def truco_desafio(state, user, cards, body, day, r, now):
+    """op "desafiar" {para, alvo}, "cancelar", "aceitar" {de}, "recusar" {de}. Accepting starts the online match."""
+    op, ds = body["op"], [d for d in state.get("truco_desafios", []) if now - d["at"] < TRUCO_DESAFIO]
+    if op == "desafiar":
+        para = clean_name(body.get("para"))
+        if para == user or para not in state.get("cards", {}) and para not in state.get("truco", {}):
+            raise ValueError("escolha alguém do grupo que já joga no site")
+        if body.get("alvo") not in TRUCO_ALVOS:
+            raise ValueError("escolha 13, 25 ou 37 pontos")
+        if any(d["de"] == user for d in ds):
+            raise ValueError("você já tem um desafio esperando resposta")
+        if truco_online(state, user)[1]:
+            raise ValueError("termine a sua partida online antes")
+        ds.append({"de": user, "para": para, "alvo": body["alvo"], "at": int(now)})
+    elif op == "cancelar":
+        ds = [d for d in ds if d["de"] != user]
+    else:
+        d = next((d for d in ds if d["de"] == body.get("de") and d["para"] == user), None)
+        if not d:
+            raise ValueError("esse desafio não está mais de pé")
+        ds.remove(d)
+        if op == "aceitar":
+            if truco_online(state, user)[1] or truco_online(state, d["de"])[1]:
+                raise ValueError("um de vocês já está numa partida online")
+            (d0, own0), (d1, own1) = truco_deck(state, d["de"], cards, r), truco_deck(state, user, cards, r)
+            t = {"lados": [d["de"], user], "alvo": d["alvo"], "pts": [0, 0], "n": 0, "ace": cards[0]["name"], "ultima": None,
+                 "deck": d0, "deck2": d1, "deck_proprio": own0, "deck_proprio1": own1, "x10": TRUCO_V02 <= day <= TRUCO_X10_END,
+                 "at": int(now), "ev": [], "ev0": 0}
+            truco_deal(t, cards, r)
+            state.setdefault("truco_online", {})[secrets.token_hex(4)] = t
+            ds = [x for x in ds if x["de"] != user]  # you play now: your own challenge drops
+    state["truco_desafios"] = ds
+
+
+def truco_online_act(state, user, i, t, cards, body, day, r, now):
+    """One player's move in an online match: the same rules, each side a person; nobody plays for the other."""
+    s, op, h = t["lados"].index(user), body.get("op"), t["h"]
+    a, n0 = h and h["aposta"], t["ev0"] + len(t["ev"])
+    if op and t.get("fim"):
+        raise ValueError("esta partida acabou")
+    if op == "desisto":
+        t["pts"][1 - s] = t["alvo"]
+        truco_ev(t, "desisto", s=s)
+    elif op == "wo":
+        if truco_vez(h) != 1 - s or now - t["at"] < TRUCO_ESPERA:
+            raise ValueError("o outro ainda tem tempo para jogar")
+        t["pts"][s] = t["alvo"]
+        truco_ev(t, "wo", s=s)
+    elif op and a and a["ok"] is None:
+        if op not in ("aposta_sim", "aposta_nao") or a["by"] == s:
+            raise ValueError("esperando a resposta da aposta" if a["by"] == s else "responda a aposta primeiro")
+        a["ok"] = op == "aposta_sim"
+        truco_ev(t, "aposta", s=a["by"], ok=a["ok"])
+    elif op == "jogar":
+        truco_play(t, s, body.get("i"))
+    elif op == "truco":
+        truco_call(t, s)
+    elif op in ("quero", "nao"):
+        truco_answer(t, s, op == "quero")
+    elif op == "aposta":
+        if h["aposta"] or h["usou"][s] or h["call"]:
+            raise ValueError("a aposta é antes da sua primeira carta da mão")
+        h["aposta"] = {"by": s, "ok": None}
+        truco_ev(t, "aposta", s=s, ok=None)
+    elif op:
+        raise ValueError("jogada desconhecida")
+    if op:
+        t["at"] = int(now)
+        if max(t["pts"]) < t["alvo"] and not t["h"]:
+            truco_deal(t, cards, r)
+        if max(t["pts"]) >= t["alvo"]:
+            w = 0 if t["pts"][0] >= t["alvo"] else 1
+            coins = TRUCO_WIN * (10 if t["x10"] else 1)
+            for k, name in enumerate(t["lados"]):
+                truco_rec(state, name, k == w, coins * (k == w), f"biotruco {day} {t['pts'][k]}x{t['pts'][1 - k]} vs {t['lados'][1 - k]}")
+            t["fim"], t["h"] = {"won": w == 0, "coins": coins}, None
+            truco_ev(t, "fim")
+        drop = len(t["ev"]) - TRUCO_EV
+        if drop > 0:
+            t["ev"], t["ev0"] = t["ev"][drop:], t["ev0"] + drop
+    desde = body.get("desde") if type(body.get("desde")) is int else n0 if op else t["ev0"]  # a move: its own events, as against the machine
+    out = {**truco_view(t, s), "ev": [truco_ev_out(t, e, s) for e in t["ev"][max(0, desde - t["ev0"]):]]}
+    if t.get("fim"):  # this side has the end now; the match goes once both have it
+        t.setdefault("viu", []).append(user)
+        if len(t["viu"]) == 2:
+            del state["truco_online"][i]
+        out["_salvar"] = True
+    return out
+
+
+def truco_act(state, user, cards, body, day, r=random.SystemRandom(), now=None):
+    """#/truco for a logged-in member. op: (none) the open match or None, "novo" {alvo, contra?}, "jogar" {i}, "truco",
+    "quero", "nao", "aposta", "desisto"; the challenge ops (truco_desafio); online also "aposta_sim", "aposta_nao", "wo",
+    and {desde}: the events from that number on. The online match shows before the one against the machine. "contra":
+    the machine plays that member's deck. A finished match goes to state truco (public): wins, losses, the run of wins
+    and the longest; a win pays TRUCO_WIN coins (x10 in the launch week) through the ledger."""
     if not user:
         raise ValueError("entre para jogar o BioTruco")
     if len(cards) < 10:
         raise ValueError("poucas cartas para o BioTruco")
+    now = time.time() if now is None else now
     t, op = state.get("truco_aberto", {}).get(user), body.get("op")
+    if op in ("desafiar", "cancelar", "aceitar", "recusar"):
+        truco_desafio(state, user, cards, body, day, r, now)
+        op = None
+    i, on = truco_online(state, user)
+    if on:
+        return truco_online_act(state, user, i, on, cards, body if op else {"desde": body.get("desde")}, day, r, now)
     if not op:
         return truco_view(t) if t else None
     if op == "novo" and not t:
         if body.get("alvo") not in TRUCO_ALVOS:
             raise ValueError("escolha 13, 25 ou 37 pontos")
-        games = state.setdefault("truco_aberto", {})
-        mine = deck_of(state, user)
-        deck = [c for c in cards if c["name"] in mine]
-        own = len(deck) == DECK
-        t = games[user] = {"alvo": body["alvo"], "pts": [0, 0], "n": 0, "ace": cards[0]["name"], "ultima": None,
-                           "deck": deck if own else r.sample(cards, DECK), "deck_proprio": own, "x10": TRUCO_V02 <= day <= TRUCO_X10_END}
+        rival = body.get("contra") and clean_name(body["contra"])
+        deck2 = [c for c in cards if c["name"] in deck_of(state, rival)] if rival else []
+        if rival and (rival == user or len(deck2) != DECK):
+            raise ValueError("essa pessoa ainda não tem 5 cartas para a máquina jogar")
+        deck, own = truco_deck(state, user, cards, r)
+        t = state.setdefault("truco_aberto", {})[user] = {"alvo": body["alvo"], "pts": [0, 0], "n": 0, "ace": cards[0]["name"], "ultima": None,
+                                                          "deck": deck, "deck_proprio": own, "x10": TRUCO_V02 <= day <= TRUCO_X10_END}
+        if rival:
+            t["rival"], t["deck2"] = rival, deck2
         truco_deal(t, cards, r)
     elif not t:
         raise ValueError("esta partida acabou: comece outra")
@@ -697,7 +885,7 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
             if h["aposta"] or h["usou"][0] or h["call"]:
                 raise ValueError("a aposta é antes da sua primeira carta da mão")
             h["aposta"] = {"by": 0, "ok": truco_odds(t, h)[0] >= TRUCO_APOSTA}
-            truco_ev(t, "aposta", ok=h["aposta"]["ok"])
+            truco_ev(t, "aposta", s=0, ok=h["aposta"]["ok"])
         else:
             raise ValueError("jogada desconhecida")
     while max(t["pts"]) < t["alvo"]:
@@ -708,17 +896,12 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom()):
             break
     if max(t["pts"]) >= t["alvo"]:
         won = t["pts"][0] >= t["alvo"]
-        rec = state.setdefault("truco", {}).setdefault(user, {"v": 0, "d": 0, "run": 0, "top": 0})
-        rec["v" if won else "d"] += 1
-        rec["run"] = rec["run"] + 1 if won else 0
-        rec["top"] = max(rec["top"], rec["run"])
         coins = TRUCO_WIN * (10 if t["x10"] else 1) if won else 0
-        if coins:
-            state["ledger"].append({"player": user, "amount": coins, "reason": f"biotruco {day} {t['pts'][0]}x{t['pts'][1]}"})
+        truco_rec(state, user, won, coins, f"biotruco {day} {t['pts'][0]}x{t['pts'][1]}" + (f" vs máquina de {t['rival']}" if t.get("rival") else ""))
         t["fim"], t["h"] = {"won": won, "coins": coins}, None
         truco_ev(t, "fim")
         del state["truco_aberto"][user]
-    return {**truco_view(t), "ev": t.pop("ev", [])}
+    return {**truco_view(t), "ev": [truco_ev_out(t, e, 0) for e in t.pop("ev", [])]}
 
 
 # --- match / draft state -------------------------------------------------------
@@ -1194,7 +1377,7 @@ def base_of(st, data):
 def public_state(st):
     d = st["match"]["draft"]
     base = base_of(st, DATA)
-    out = {k: v for k, v in st.items() if k not in ("ledger", "owners", "cromo", "fechados", "duelo_aberto", "truco_aberto", "tour", "tour_truco")}  # owners hold phone_pk
+    out = {k: v for k, v in st.items() if k not in ("ledger", "owners", "cromo", "fechados", "duelo_aberto", "truco_aberto", "truco_online", "truco_desafios", "tour", "tour_truco")}  # owners hold phone_pk
     out["cromadas"] = {c: {"by": p, "stat": st.get("cromo", {}).get(c, "")} for c, p in first_buyers(st).items()}
     out["profiles"] = load_profiles()
     out["photos"] = sorted(p.stem for p in PHOTOS.glob("*.jpg")) if PHOTOS.exists() else []
@@ -2126,6 +2309,26 @@ def visitor(ip, day=None):
     return hmac.new(KEY, f"{day or time.strftime('%Y-%m-%d')}|{ip}".encode(), hashlib.sha256).hexdigest()[:8]
 
 
+def push_to(user, msg):
+    """Web push {title, body, url} to one member's phones that said yes (user None: to all). Returns {endpoint: HTTP code};
+    the phones that left are dropped. Quiet without the push package."""
+    if not push:
+        return {}
+    with LOCK:
+        subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
+    subs = {ep: x for ep, x in subs.items() if user is None or x["user"] == user}
+    if not subs:
+        return {}
+    key = push.vapid(VAPID)
+    codes = {ep: push.send(key, {"endpoint": ep, **x}, msg) for ep, x in subs.items()}  # ponytail: one by one, fine for ~70 phones
+    with LOCK:
+        subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
+        for ep in [ep for ep, c in codes.items() if c in (404, 410)]:
+            subs.pop(ep, None)
+        write_json(PUSH_SUBS, subs)
+    return codes
+
+
 def log_event(ev, user, ip, mobile=False, **extra):
     """One line in data/events.jsonl. Never raises: a full disk must not break a sign-up."""
     if ev == "js_error" and NOISE.search(str(extra.get("d") or "")):
@@ -2855,20 +3058,10 @@ class Handler(SimpleHTTPRequestHandler):
                 msg = {"title": str(body.get("title") or "BioFut")[:80], "body": str(body.get("body") or "").strip()[:300], "url": url if url.startswith("/") else "/"}
                 if not msg["body"]:
                     raise ValueError("escreva a notificação")
-                with LOCK:
-                    subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
                 to = clean_name(body.get("to")) if body.get("to") else None
-                if to:
-                    subs = {ep: x for ep, x in subs.items() if x["user"] == to}
-                    if not subs:
-                        raise ValueError(f"{to} não ativou as notificações")
-                key = push.vapid(VAPID)
-                codes = {ep: push.send(key, {"endpoint": ep, **x}, msg) for ep, x in subs.items()}  # ponytail: one by one, fine for ~70 phones
-                with LOCK:
-                    subs = json.loads(PUSH_SUBS.read_text(encoding="utf-8")) if PUSH_SUBS.exists() else {}
-                    for ep in [ep for ep, c in codes.items() if c in (404, 410)]:
-                        subs.pop(ep, None)
-                    write_json(PUSH_SUBS, subs)
+                codes = push_to(to, msg)
+                if to and not codes:
+                    raise ValueError(f"{to} não ativou as notificações")
                 notify(f"🔔 {to + ': ' if to else ''}{msg['body']}", post=False)
                 ok, gone = sum(200 <= c < 300 for c in codes.values()), sum(c in (404, 410) for c in codes.values())
                 return self.send_json({"sent": ok, "gone": gone, "failed": len(codes) - ok - gone})
@@ -2943,12 +3136,16 @@ class Handler(SimpleHTTPRequestHandler):
                     save_state(st)
                     notify(f"🎁 {name}: {f'{coins:+g} moedas ' if coins else ''}{'carta ' + card if card else ''}", post=False)
                     return self.send_json(public_state(st))
-                elif action == "truco":  # BioTruco v0.2: the server deals, plays the machine and judges
+                elif action == "truco":  # BioTruco: the server deals, plays the machine (or relays the other player) and judges
                     truco = truco_act(st, user, duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
                                       time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600)))
-                    if body.get("op"):  # the view alone changes nothing
+                    if (truco or {}).pop("_salvar", False) or body.get("op"):  # the view alone changes nothing, except a seen online end
                         save_state(st)
-                    return self.send_json({**public_state(st), "jogo_truco": truco})  # "truco" is the public ranking
+                    if body.get("op") == "desafiar":
+                        threading.Thread(target=push_to, daemon=True, args=(clean_name(body["para"]), {"title": "BioTruco", "url": "/#/truco",
+                                         "body": f"{user} te desafiou no BioTruco, até {body['alvo']}. Aceita?"})).start()
+                    out = {"jogo_truco": truco, "truco_desafios": truco_desafios(st, user, time.time())}
+                    return self.send_json(out if body.get("poll") else {**public_state(st), **out})  # "truco" is the public ranking
                 elif action in ("mercado", "mercado_bet", "mercado_fim"):  # BioBet mercados: the logged-in member's own coins
                     note = mercado_act(st, action, body, user, self.role())
                     save_state(st)
