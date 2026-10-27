@@ -489,6 +489,8 @@ TRUCO_BLEFE = .1  # how often it says truco on a weak hand, so a call does not a
 # machine playing that member's deck. Each player sees the table as side 0 (truco_flip), so #/truco draws both the same.
 TRUCO_ESPERA = 1800  # online: after 30 min without the other's move, you may end the match and win (W.O.)
 TRUCO_DESAFIO = 86400  # an online challenge nobody answered drops after a day
+TRUCO_NEWS = 3  # the BioTruco popup comes back once for members who saw an older one (tour_truco[user]["v"] < this)
+ANUNCIO = ("truco-v03", '🤖 Chegou o BioTruco v0.3! Agora dá pra desafiar alguém do grupo: online, ao vivo, ou contra a máquina jogando com o deck da pessoa. Escolhe o rival e manda o desafio: https://biofut.h-brain.org/#/truco', "truco-v03.jpg")  # one-time group post: id, text, image at the site root
 TRUCO_EV = 60  # online: the last events kept, so the other side replays the moves it has not seen
 
 
@@ -1665,6 +1667,23 @@ def copa_tick(now=None):
     return []
 
 
+def anuncio_tick(now=None):
+    """ANUNCIO in the group with its banner: once ever (st["anuncio"] = its id), never while muted, never 23:00-08:00."""
+    now = now or time.time()
+    if not "08:00" <= time.strftime("%H:%M", time.gmtime(now - 3 * 3600)) < "23:00":
+        return []
+    key, text, img = ANUNCIO
+    with LOCK:
+        st = load_state()
+        if st.get("anuncio") == key or muted(st, now):
+            return []
+        st["anuncio"] = key
+        save_state(st)
+    bot_post("/group", {"text": text, "image": f"{SITE}/{img}"})
+    notify(f"📣 Anúncio no grupo: {text}", post=False)
+    return []
+
+
 def draft_news(st, action, d0):
     """What the group hears after a draft action (d0: the draft before it). -> text or None."""
     mt, d = st["match"], st["match"]["draft"]
@@ -2266,7 +2285,7 @@ def review_tick(now=None):
 
 def review_loop():
     while True:
-        for tick in (review_tick, mercado_tick, pix_tick, copa_tick):
+        for tick in (review_tick, mercado_tick, pix_tick, copa_tick, anuncio_tick):
             try:
                 for n in tick():
                     notify(n)
@@ -2700,7 +2719,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/me":  # why "ip": a valid cookie from another IP, so the site can say why you are out
             return self.send_json({"user": user, "role": self.role(), "why": "ip" if not user and session(self.cookie()) else None,
                                    "tour": bool(user) and user not in load_state().get("tour", {}),  # the TCG tour: once per member, from its deploy on
-                                   "truco_tour": bool(user) and user not in load_state().get("tour_truco", {})})  # the BioTruco popup + tutorial, same
+                                   "truco_tour": bool(user) and (load_state().get("tour_truco", {}).get(user) or {}).get("v", 2) < TRUCO_NEWS})  # the BioTruco popup + tutorial, same
         if path == "/wiki":
             self.path = "/wiki.html"
             return super().do_GET()
@@ -2827,7 +2846,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
@@ -3091,7 +3110,7 @@ class Handler(SimpleHTTPRequestHandler):
                         raise ValueError("entre primeiro")
                     if body.get("which") == "truco":  # {which, done, step}: done stays true once the member went through it all
                         old = st.setdefault("tour_truco", {}).get(user, {})
-                        st["tour_truco"][user] = {"at": time.strftime("%Y-%m-%d"), "done": bool(old.get("done") or body.get("done")), "step": int(body.get("step") or 0)}
+                        st["tour_truco"][user] = {"at": time.strftime("%Y-%m-%d"), "done": bool(old.get("done") or body.get("done")), "step": int(body.get("step") or 0), "v": TRUCO_NEWS}
                     else:
                         st.setdefault("tour", {})[user] = time.strftime("%Y-%m-%d")
                     save_state(st)

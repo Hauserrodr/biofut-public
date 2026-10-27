@@ -56,9 +56,10 @@
   <a class="btn pri" id="instaGo" target="_blank" rel="noopener">Abrir o reels</a> <button class="btn" value="no">Depois</button>
 </form></dialog>
 <dialog id="trucoDlg" style="text-align:center"><form method="dialog">
-  <div style="font-size:44px;line-height:1">🃏</div><h3>Chegou o BioTruco v0.2!</h3>
-  <p class="muted" style="font-size:14px;margin:8px 0 16px">Truco Gaúcho com as suas cartas contra a máquina: melhor de 3 rodadas, truco, retruco, vale quatro e o novo <b>aposto que perco</b>. Partidas até 13, 25 ou 37, e moedas x10 na semana de lançamento.</p>
-  <button class="btn pri" value="tut">Ver tutorial</button> <button class="btn" value="no">Agora não</button>
+  <img src="/truco-v03.jpg" alt="BioTruco v0.3: desafie alguém do grupo" width="1200" height="630" style="width:100%;height:auto;border-radius:12px;display:block">
+  <h3 style="margin-top:14px">Chegou o BioTruco v0.3!</h3>
+  <p class="muted" style="font-size:14px;margin:8px 0 16px">Agora dá pra <b>desafiar alguém do grupo</b>: online, ao vivo, ou contra a máquina jogando com o deck da pessoa. Quem nunca jogou pode ver o tutorial antes.</p>
+  <button class="btn pri" value="des">Desafiar alguém</button> <button class="btn" value="tut">Ver tutorial</button> <button class="btn" value="no">Agora não</button>
 </form></dialog>
 <dialog id="pinDlg"><form method="dialog">
   <h3>PIN do grupo</h3>
@@ -1413,8 +1414,8 @@ function pageTruco() {
 function trucoNews() {  // once per member (saved on the server, so a new browser doesn't show it again), after the gift and the reels
   if (!TT || $("#tour")) return;
   TT = false; BF.ev("truco_tutorial", "popup");
-  $("#trucoDlg").addEventListener("close", () => $("#trucoDlg").returnValue === "tut" ? trucoTour(0)
-    : (BF.ev("truco_tutorial", "agora não"), post("tour", {which: "truco", done: false, step: 0})), {once: true});
+  $("#trucoDlg").addEventListener("close", () => { const v = $("#trucoDlg").returnValue; v === "tut" ? trucoTour(0)
+    : (BF.ev("truco_tutorial", v === "des" ? "desafiar" : "agora não"), post("tour", {which: "truco", done: false, step: 0}), v === "des" && (location.hash = "#/truco")); }, {once: true});
   $("#trucoDlg").showModal();
 }
 function trucoTour(i = 0, again = false) {  // the steps; analytics: completo / pulou no passo N (rever: from the Ver tutorial button)
