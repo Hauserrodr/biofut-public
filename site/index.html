@@ -1115,48 +1115,62 @@ async function bindPlanilha() {
   const games = await fetch("/api/planilha").then(r => r.json()).catch(() => null), heads = ["Time", "Nome", "Gol", "Assist.", "Gol contra", "Capitão", ""];
   if (!$("#pl")) return;  // left the route while the fetch ran
   const nomes = games?.[0]?.nomes || [], fora = v => nomes.length > 0 && !nomes.some(x => x.toLowerCase() === v.trim().toLowerCase());
+  const times = games?.[0]?.times || [], foraT = v => times.length > 0 && !times.includes(v.trim().toUpperCase());  // the uniform's animal
+  const teams = g => [...new Set(g.rows.map(x => x[0]))];
   const edit = STAFF(), num = (v, k) => `<input class="in" type="number" min="0" max="49" value="${v || 0}" data-k="${k}" style="width:64px">`;
-  const row = (g, r) => edit ? `<tr><td class="l"><select class="in" data-k="0">${[...new Set(g.rows.map(x => x[0]))].map(t => `<option${t === r[0] ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></td>
-      <td class="l"><input class="in" value="${esc(r[1])}" data-k="1" list="${nomes.length ? "plnames" : "names"}" style="min-width:140px"></td>${[2, 3, 4].map(k => `<td>${num(r[k], k)}</td>`).join("")}
+  const row = (g, r, era) => edit ? `<tr><td class="l"><select class="in" data-k="0">${teams(g).map((t, i) => `<option value="${i}"${t === r[0] ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></td>
+      <td class="l"><input class="in" value="${esc(r[1])}" data-k="1" data-era="${esc(era || "")}" list="${nomes.length ? "plnames" : "names"}" style="min-width:140px">${era ? `<div class="dim" style="font-size:12px">era: ${esc(era)}</div>` : ""}</td>${[2, 3, 4].map(k => `<td>${num(r[k], k)}</td>`).join("")}
       <td><input type="checkbox" data-k="5"${r[5] ? " checked" : ""} aria-label="Capitão"></td><td><button class="btn sm" data-del aria-label="Tirar linha">×</button></td></tr>`
     : `<tr>${r.slice(0, 5).map(c => `<td class="l">${esc(String(c || ""))}</td>`).join("")}<td class="l">${r[5] ? "C" : ""}</td><td></td></tr>`;
+  const timeIn = (g, t, i) => `<label class="dim" style="font-size:13px">Time ${i + 1} <input class="in" data-time="${i}" value="${esc(t)}" list="pltimes" style="width:130px"></label>`;
   $("#pl").innerHTML = !games ? '<div class="empty">Não consegui carregar. Tente recarregar.</div>'
     : !games.length ? '<div class="empty">Nada pendente: a planilha já tem todos os jogos do site.</div>'
     : games.map(g => `<div class="card pad" data-n="${g.n}"><div class="row" style="justify-content:space-between"><h3>${esc(g.line)}</h3>
       <div class="row">${edit ? `<button class="btn sm" data-add>+ jogador</button><button class="btn pri sm" data-push data-ev="atualizar jogo ${g.n}">Atualizar tabela</button>` : '<span class="dim" style="font-size:13px">Só o Conselho atualiza: entre se for do Conselho.</span>'}
       <button class="btn sm" data-tsv="${esc(g.tsv)}">ou copiar</button></div></div>
+      ${edit ? `<div class="row" style="margin-top:10px;gap:12px;flex-wrap:wrap">${teams(g).map((t, i) => timeIn(g, t, i)).join("")}<span class="dim" style="font-size:13px">o animal da cor do uniforme</span></div>` : ""}
       <div class="tw" style="margin-top:12px"><table><thead><tr>${heads.map(h => `<th class="l">${h}</th>`).join("")}</tr></thead>
-      <tbody>${g.rows.map(r => row(g, r)).join("")}</tbody></table></div></div>`).join("") + `<datalist id="plnames">${nomes.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`;
+      <tbody>${g.rows.map((r, i) => row(g, r, g.era?.[i])).join("")}</tbody></table></div></div>`).join("") + `<datalist id="plnames">${nomes.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`
+    + `<datalist id="pltimes">${times.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`;
   document.querySelectorAll("[data-tsv]").forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(b.dataset.tsv); toast("Copiado. Cole na coluna L da planilha"); } catch { toast("O navegador bloqueou a cópia: selecione a tabela", true); }
   });
   document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
     const card = b.closest("[data-n]"), g = games.find(x => x.n === +card.dataset.n);
     card.querySelector("tbody").insertAdjacentHTML("beforeend", row(g, [g.rows[0][0], "", 0, 0, 0, 0]));
-    bindPlanilhaRows(card, fora);
+    bindPlanilhaRows(card, fora, foraT);
   });
   document.querySelectorAll("[data-push]").forEach(b => b.onclick = async () => {
-    const card = b.closest("[data-n]"), rows = [...card.querySelectorAll("tbody tr")].map(tr => {
+    const card = b.closest("[data-n]"), ts = [...card.querySelectorAll("[data-time]")].map(i => i.value.trim().toUpperCase());
+    const rows = [...card.querySelectorAll("tbody tr")].map(tr => {
       const v = k => tr.querySelector(`[data-k="${k}"]`);
-      return [v(0).value, v(1).value.trim(), ...[2, 3, 4].map(k => Math.max(0, parseInt(v(k).value, 10) || 0)), v(5).checked ? 1 : 0];
+      return [ts[+v(0).value], v(1).value.trim(), ...[2, 3, 4].map(k => Math.max(0, parseInt(v(k).value, 10) || 0)), v(5).checked ? 1 : 0];
     });
+    if (ts.some(foraT) || new Set(ts).size < ts.length) return toast(`Os times são o animal da cor do uniforme: ${times.join(", ")}, um diferente para cada time`, true);
     if (rows.some(r => !r[1])) return toast("Tem linha sem nome", true);
     const bad = rows.filter(r => fora(r[1])).map(r => r[1]);
     if (bad.length) return toast(`Fora da lista da planilha: ${bad.join(", ")}. Escolha um nome da lista; quem não está nela vira SOMBRA`, true);
     b.disabled = true;
-    const j = await post("planilha", {n: +card.dataset.n, rows});
+    const j = await post("planilha", {n: +card.dataset.n, rows, times: ts});
     b.disabled = false;
     if (!j) return;
     if (j.sheet.startsWith("ok")) { toast(`Planilha atualizada (${j.sheet.slice(4)}). O site lê em até 10 min.`); b.textContent = "Enviado ✓"; b.disabled = true; }
     else toast("A planilha não aceitou: " + j.sheet.replace(/^falhou: /, ""), true);
   });
-  document.querySelectorAll("[data-n]").forEach(c => bindPlanilhaRows(c, fora));
+  document.querySelectorAll("[data-n]").forEach(c => bindPlanilhaRows(c, fora, foraT));
 }
-function bindPlanilhaRows(card, fora) {  // a row taken out or added: the delete buttons of the new ones too; a name the sheet's list lacks gets a red outline
+function bindPlanilhaRows(card, fora, foraT) {  // a row taken out or added: the delete buttons of the new ones too; a name the sheet's list lacks gets a red outline, one the server changed a yellow one
   card.querySelectorAll("[data-del]").forEach(b => b.onclick = () => b.closest("tr").remove());
   card.querySelectorAll('[data-k="1"]').forEach(i => (i.oninput = () => {
-    i.style.outline = fora(i.value) ? "2px solid #e5484d" : "";
-    i.title = fora(i.value) ? "Fora da lista da planilha: escolha um nome da lista ou SOMBRA" : "";
+    const era = i.dataset.era && !i.dataset.touched;
+    i.style.outline = fora(i.value) ? "2px solid #e5484d" : era ? "2px solid #f5a524" : "";
+    i.title = fora(i.value) ? "Fora da lista da planilha: escolha um nome da lista ou SOMBRA" : era ? `Corrigido para a lista da planilha (era: ${i.dataset.era}): confira` : "";
+  })());
+  card.querySelectorAll('[data-k="1"]').forEach(i => i.addEventListener("input", () => { i.dataset.touched = 1; i.oninput(); }, {once: true}));
+  card.querySelectorAll("[data-time]").forEach(i => (i.oninput = () => {  // renaming a team renames it in every row's choice
+    card.querySelectorAll(`[data-k="0"] option[value="${i.dataset.time}"]`).forEach(o => o.textContent = i.value.trim().toUpperCase() || "?");
+    i.style.outline = foraT(i.value) ? "2px solid #e5484d" : "";
+    i.title = foraT(i.value) ? "O time é o animal da cor do uniforme" : "";
   })());
 }
 
