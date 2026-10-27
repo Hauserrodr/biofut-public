@@ -972,11 +972,16 @@ const srvDuel = (key, v, fresh) => {  // the server's view of the duel (fresh: s
   return {key, srv: true, daily: v.mode === "dia", deck: v.mode === "deck", day: v.day, ace: v.ace, you: v.you, cpu: v.cpu, log,
     score: [log.filter(w => w > 0).length, log.filter(w => w < 0).length], round: sh ? n - 1 : n, shown: sh ? {a: v.log[n - 1][0], w: log[n - 1]} : null};
 };
+// a ranking shows the top 3 and, for a member further down, the one just above them and themselves, never the bottom of the list:
+// a public low place makes people stop playing, a near target above keeps them going
+const rankList = (R, li) => { const me = R.findIndex(([n]) => n === ME);
+  return R.map((x, i) => [x, i]).filter(([, i]) => i < 3 || me > 2 && i >= me - 1 && i <= me)
+    .map(([x, i], k, a) => (k && a[k - 1][1] < i - 1 ? '<li class="dim">…</li>' : "") + li(x, i)).join(""); };
 function duelRank() {  // ST.duelo: each member's record, kept by the server
   const R = Object.entries(ST.duelo || {}).filter(([, r]) => r.best);
   if (!R.length) return `<section class="sec"><div class="kicker">Ranking do Duelo</div><p class="muted" style="margin-top:8px">Ninguém terminou um duelo valendo ainda: o primeiro a terminar abre o ranking.</p></section>`;
-  const top = (title, sort, big, small) => `<div class="card pad"><h3>${title}</h3><ul class="list" style="margin-top:8px">${[...R].sort(([, a], [, b]) => sort(a, b)).slice(0, 10).map(([n, r], i) =>
-    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`).join("")}</ul></div>`;
+  const top = (title, sort, big, small) => `<div class="card pad"><h3>${title}</h3><ul class="list" style="margin-top:8px">${rankList([...R].sort(([, a], [, b]) => sort(a, b)), ([n, r], i) =>
+    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`)}</ul></div>`;
   return `<section class="sec"><div class="sec-h"><div><div class="kicker">Ranking do Duelo</div><h2>Quem manda no Duelo</h2></div></div><div class="grid g3">
     ${top("Mais vitórias seguidas", (a, b) => b.top - a.top || b.run - a.run, r => r.top, r => `agora ${r.run}`)}
     ${top("Mais pontos num duelo", (a, b) => b.best[0] - a.best[0] || a.best[1] - b.best[1], r => r.best.join("×"), r => `${r.v + r.e + r.d} duelo${r.v + r.e + r.d > 1 ? "s" : ""}`)}
@@ -1294,8 +1299,8 @@ const trucoAce = () => esc(ui.truco?.ace || CARDS()[0]?.name || "");
 function trucoRank() {
   const R = Object.entries(ST.truco || {}).filter(([, r]) => r.v + r.d);
   if (!R.length) return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><p class="muted" style="margin-top:8px">Ninguém terminou uma partida ainda: a primeira abre o ranking.</p></section>`;
-  return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><ul class="list card pad" style="margin-top:8px">${R.sort(([, a], [, b]) => b.v - a.v || b.top - a.top).slice(0, 10).map(([n, r], i) =>
-    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${r.v}V ${r.d}D</b><small>maior sequência ${r.top}</small></span></li>`).join("")}</ul></section>`;
+  return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><ul class="list card pad" style="margin-top:8px">${rankList(R.sort(([, a], [, b]) => b.v - a.v || b.top - a.top), ([n, r], i) =>
+    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${r.v}V ${r.d}D</b><small>maior sequência ${r.top}</small></span></li>`)}</ul></section>`;
 }
 function trucoWhy(ace, y, m, w) {  // why a round went this way: your card y, the machine's m (server.py truco_round)
   if (y.name === ace || m.name === ace) return (w === 0) === (y.name === ace) ? "Super Craque" : "bronze vence o Super Craque";
