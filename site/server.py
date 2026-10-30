@@ -1667,6 +1667,31 @@ def copa_tick(now=None):
     return []
 
 
+BOT_DOWN = {"since": None, "told": False, "at": 0}  # memory only: a restart forgets an outage, the next checks find it again
+
+
+def bot_tick(now=None):
+    """Every 10 min: is the bot linked to WhatsApp? Down for 20 min -> one web push to Gab (the bot can't tell anyone itself);
+    back up -> one more. ponytail: memory only, the push is the alert."""
+    now = now or time.time()
+    if not BOT_URL or now - BOT_DOWN["at"] < 600:
+        return []
+    BOT_DOWN["at"] = now
+    up = (bot_post("/health", {}) or {}).get("up")
+    if up:
+        if BOT_DOWN["told"]:
+            push_to(load_phones().get("me"), {"title": "🤖 Bot voltou", "body": "O bot do BioFut está de novo no WhatsApp.", "url": "/#/admin"})
+        BOT_DOWN.update(since=None, told=False)
+        return []
+    BOT_DOWN["since"] = BOT_DOWN["since"] or now
+    if not BOT_DOWN["told"] and now - BOT_DOWN["since"] >= 1200:
+        BOT_DOWN["told"] = True
+        push_to(load_phones().get("me"), {"title": "🤖 Bot fora do WhatsApp", "url": "/#/admin",
+                                          "body": "Sem lista, draft nem avisos no grupo. Veja o log do bot: um PAIRING CODE novo = vincular de novo."})
+        print("bot down since", time.strftime("%Y-%m-%d %H:%M", time.gmtime(BOT_DOWN["since"] - 3 * 3600)), flush=True)
+    return []
+
+
 def anuncio_tick(now=None):
     """ANUNCIO in the group with its banner: once ever (st["anuncio"] = its id), never while muted, never 23:00-08:00."""
     now = now or time.time()
@@ -2285,7 +2310,7 @@ def review_tick(now=None):
 
 def review_loop():
     while True:
-        for tick in (review_tick, mercado_tick, pix_tick, copa_tick, anuncio_tick):
+        for tick in (review_tick, mercado_tick, pix_tick, copa_tick, anuncio_tick, bot_tick):
             try:
                 for n in tick():
                     notify(n)

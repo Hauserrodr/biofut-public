@@ -90,6 +90,8 @@ srv.stdout.once('data', async () => {
     assert.strictEqual((await post('/group', { text: '🤖 x', images: [{ data: 'aGVsbG8gd29ybGQ=' }] })).status, 400, 'images: pictures only');
     assert.strictEqual((await post('/group', { text: '🤖 x', poll: { name: 'p', values: ['só'] } })).status, 400, 'poll: 2+ values');
 
+    assert.deepStrictEqual(await (await post('/health', {})).json(), { ok: true, up: true }, 'dry run: always up');
+    assert.strictEqual((await post('/health', {}, 'wrong')).status, 401);
     assert.strictEqual((await post('/notify', { text: 'oi' })).status, 503, 'no avisosJid in the example config');
     assert.strictEqual((await post('/notify', { text: 'oi' }, 'wrong')).status, 401);
     const L = { id: 'abcdefghijklmnopqrstuv', phone: '5551900000003', code: '0420' };
