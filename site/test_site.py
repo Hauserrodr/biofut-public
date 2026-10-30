@@ -747,6 +747,34 @@ assert "tour_truco" not in json.loads(call("/api/state")[1])
 st0 = server.load_state(); st0["tour_truco"]["Dan"].pop("v"); server.save_state(st0)
 assert json.loads(call("/api/me", cookie=me)[1])["truco_tour"], "saw the v0.2 popup: the v0.3 one shows once"
 assert call("/truco-v03.jpg")[0] == 200, "the popup banner"
+# Corre, Saul! (#/corre): the server holds the clock, the daily cap, the upgrades and the rankings; anonymous runs count nowhere.
+assert call("/corre.js")[0] == 200 and "corre_up" in json.loads(call("/api/state")[1])
+assert "error" in json.loads(call("/api/corre", {"op": "go"})[1]), "a run without login counts nowhere"
+assert json.loads(call("/api/corre", {"op": "go"}, cookie=me)[1])["dia"]
+cs, T0 = {"ledger": []}, 1_800_000_000
+C = lambda body, now: server.corre_act(cs, {}, "Abel", body, now)
+for bad in ({"op": "fim", "t": 30, "pts": 500}, {"op": "voa"}, {"op": "up", "item": "asa"}):  # no "go" first; unknown op; unknown upgrade
+    try: C(bad, T0); raise AssertionError(bad)
+    except ValueError: pass
+C({"op": "go"}, T0)
+try: C({"op": "fim", "t": 30, "pts": 500, "chegou": True}, T0 + 10); raise AssertionError("30 s of game in 10 s of clock")
+except ValueError: pass
+run = {"op": "fim", "t": 26, "pts": 3200, "pilas": 30, "chegou": True, "rei": True, "ach": ["rei", "pontual", "voar"]}
+C({"op": "go"}, T0); got = C(run, T0 + 27)["coins"]
+assert got == round(30 * server.CORRE_PILA + server.CORRE_META + server.CORRE_REI, 4), got
+r = cs["corre"]["Abel"]
+assert r["best"] == 3200 and r["runs"] == 1 and r["ach"] == ["pontual", "rei"] and r["cedo"] == server.CORRE_T0 + 26 * 15 <= server.CORRE_GOL
+for i in range(4): C({"op": "go"}, T0 + 100 * i + 100); C(run, T0 + 100 * i + 130)
+assert sum(x["amount"] for x in cs["ledger"]) == server.CORRE_CAP, "coins stop at the daily cap"
+C({"op": "go"}, T0 + 86400); C({**run, "pts": 900}, T0 + 86430)
+assert r["dia"][1] == 900 and r["best"] == 3200 and C({"op": "go"}, T0 + 86500)["dia"] != C({"op": "go"}, T0)["dia"], "a new day, a new daily ranking"
+b0 = server.balance(cs, {}, "Abel"); C({"op": "up", "item": "chuteira"}, T0)
+assert r["up"] == {"chuteira": 1} and server.balance(cs, {}, "Abel") == round(b0 - server.CORRE_UP["chuteira"][0], 4)
+for c in server.CORRE_UP["folego"]: C({"op": "up", "item": "folego"}, T0)
+try: C({"op": "up", "item": "folego"}, T0); raise AssertionError("past the last level")
+except ValueError: pass
+try: server.corre_act({"ledger": []}, {"Eve": 2}, "Eve", {"op": "up", "item": "folego", }, T0); raise AssertionError("3 coins with 2")
+except ValueError as e: assert "custa 3" in str(e)
 call("/api/tour", {"which": "truco", "done": False, "step": 0}, cookie=me)
 assert not json.loads(call("/api/me", cookie=me)[1])["truco_tour"] and server.load_state()["tour_truco"]["Dan"]["done"]
 assert call("/api/jogos")[0] == 403 and json.loads(call("/api/jogos", cookie=me)[1]) == {}

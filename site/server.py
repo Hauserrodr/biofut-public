@@ -728,6 +728,57 @@ def truco_deck(state, user, cards, r):
     return (deck, True) if len(deck) == DECK else (r.sample(cards, DECK), False)
 
 
+# ---------- Corre, Saul! (#/corre, corre.js): the client runs the game, the server keeps the records, the upgrades and the coins
+CORRE_UP = {"chuteira": [1, 2.5, 5], "folego": [3, 8], "cuia": [0.5, 1.5, 3], "ima": [1, 3]}  # coins per level; corre.js reads them from /api/state
+CORRE_PILA, CORRE_META, CORRE_REI, CORRE_CAP = 0.0001, 0.001, 0.001, 0.01  # coins per pila, for arriving on time, for beating the King; at most per day
+CORRE_T0, CORRE_K, CORRE_GOL, CORRE_TMIN = 18 * 3600 + 22 * 60, 15, 18 * 3600 + 30 * 60, 16  # clock start, game s per real s, kick-off; the fastest possible run (s)
+CORRE_ACH = {"pontual", "rei", "limpo", "lista", "raspando", "tabelinha", "minhoca", "esquizo", "apito", "devedor", "pagou"}
+
+
+def corre_act(st, base, user, body, now=None):
+    """One member's runs: op "go" starts the clock, "fim" closes the run with what the client counted, "up" buys an upgrade level.
+    ponytail: the score is the client's word, checked only against the server's clock and loose maxima; replay the inputs on the
+    server (seeded course) if someone fakes the ranking. The coins stay tiny and capped per day, so faking them gains nothing."""
+    now = now or time.time()
+    day = time.strftime("%Y-%m-%d", time.gmtime(now - 3 * 3600))
+    r = st.setdefault("corre", {}).setdefault(user, {"best": 0, "runs": 0, "up": {}, "ach": []})
+    op = body.get("op")
+    if op == "go":
+        r["go"] = now
+        return {"dia": day}
+    if op == "up":
+        item = str(body.get("item"))
+        lvl = r["up"].get(item, 0)
+        if item not in CORRE_UP or lvl >= len(CORRE_UP[item]):
+            raise ValueError("essa melhoria não existe ou já está no máximo")
+        cost = CORRE_UP[item][lvl]
+        if balance(st, base, user) < cost:
+            raise ValueError(f"você tem {balance(st, base, user)} moedas, a melhoria custa {cost}")
+        r["up"][item] = lvl + 1
+        st["ledger"].append({"player": user, "amount": -cost, "reason": f"corre: {item} {lvl + 1}"})
+        return {}
+    if op != "fim":
+        raise ValueError("ação desconhecida")
+    go, t = r.pop("go", None), float(body.get("t") or 0)
+    pts, pilas, chegou = int(body.get("pts") or 0), int(body.get("pilas") or 0), bool(body.get("chegou"))
+    if not go or t < 3 or now - go < t * .85 or not 0 <= pts <= 250 * t + 4000 or not 0 <= pilas <= 3 * t or chegou and t < CORRE_TMIN:
+        raise ValueError("essa corrida não fecha com o relógio")
+    at = round(CORRE_T0 + t * CORRE_K)
+    r["runs"] += 1
+    r["best"] = max(r["best"], pts)
+    if chegou:
+        r["cedo"] = min(r.get("cedo") or at, at)
+    if not r.get("dia") or r["dia"][0] != day or pts > r["dia"][1]:
+        r["dia"] = [day, pts]
+    r["ach"] = sorted(set(r["ach"]) | set(body.get("ach") or []) & CORRE_ACH)
+    why = f"corre {day}"
+    got = sum(x["amount"] for x in st["ledger"] if x["player"] == user and x["reason"] == why)
+    coins = round(min(max(0, CORRE_CAP - got), pilas * CORRE_PILA + (chegou and at <= CORRE_GOL) * CORRE_META + bool(body.get("rei")) * CORRE_REI), 4)
+    if coins > 0:
+        st["ledger"].append({"player": user, "amount": coins, "reason": why})
+    return {"coins": coins}
+
+
 def truco_rec(state, user, won, coins, reason):
     rec = state.setdefault("truco", {}).setdefault(user, {"v": 0, "d": 0, "run": 0, "top": 0})
     rec["v" if won else "d"] += 1
@@ -1385,6 +1436,7 @@ def public_state(st):
     out["photos"] = sorted(p.stem for p in PHOTOS.glob("*.jpg")) if PHOTOS.exists() else []
     out["balances"] = {p: balance(st, base, p) for p in set(base) | {x["player"] for x in st["ledger"]} | set(st.get("duelo", {}))}
     out["prices"] = card_prices(DATA["games"] + unsynced(st["played"], DATA["games"]))
+    out["corre_up"] = CORRE_UP
     out["alias"], out["quem"] = name_fixes()
     if d:
         out["match"] = {**st["match"], "draft": {**d, "flip": sorted(d.get("flip", {})), "votes": len(d.get("votes", {}))}}
@@ -2846,7 +2898,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg", "/corre.js") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
@@ -3105,6 +3157,12 @@ class Handler(SimpleHTTPRequestHandler):
                         st["ledger"].append({"player": user, "amount": BONUS, "reason": BONUS_WHY})
                         save_state(st)
                     return self.send_json({"bonus": BONUS if got else 0})
+                elif action == "corre":  # Corre, Saul!: {op: go | fim | up}
+                    if not user:
+                        raise ValueError("entre para a corrida valer")
+                    res = corre_act(st, base_of(st, DATA), user, body)
+                    save_state(st)
+                    return self.send_json(res if body.get("op") == "go" else {**public_state(st), **res})
                 elif action == "tour":  # the member saw (or skipped) the first-login tour
                     if not user:
                         raise ValueError("entre primeiro")

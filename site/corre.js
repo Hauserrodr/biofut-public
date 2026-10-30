@@ -1,0 +1,630 @@
+// ---------- Corre, Saul! (#/corre), a member's idea (2026-10-30): Saul runs to the Planet Ball before the 18:30 game.
+// index.html loads this file on the first visit (bindCorre) and calls Corre(). It uses the page's globals: ST, D, ME, CARDS, face,
+// slug, av, plink, esc, coin, rankList, post, setState, toast, store, ui, BF, $. The server keeps records, upgrades and coins
+// (server.py corre_act). Everyone runs the same street on the same day: the course comes from the Brasília date.
+"use strict";
+window.Corre = (() => {
+  const K = {len: 12000, t0: 18 * 3600 + 22 * 60, k: 15, gol: 18 * 3600 + 30 * 60, rei: [6800, 10800]};  // same clock as server.py CORRE_*
+  const UP = {  // costs come from the server (ST.corre_up)
+    chuteira: ["👟", "Chuteira nova", "Pula mais alto"],
+    folego: ["🫁", "Fôlego", "+1 tropeço antes do cancelamento"],
+    cuia: ["🧉", "Cuia térmica", "O chimarrão dura mais"],
+    ima: ["🧲", "Ímã de pilas", "Puxa as pilas de longe"],
+  };
+  const ACH = [  // [id, name, how, hidden until found]; ids match server.py CORRE_ACH
+    ["pontual", "Pontual", "Chegue no Planet até 18:30"],
+    ["limpo", "Sem tropeço", "Chegue sem tropeçar"],
+    ["rei", "Rei deposto", "Derrube o BioFut King"],
+    ["lista", "Na lista", "Junte L-I-S-T-A numa corrida", 1],
+    ["raspando", "Raspando", "5 pulos no último instante numa corrida", 1],
+    ["tabelinha", "Tabelinha", "Chute uma bola que derrube um obstáculo", 1],
+    ["minhoca", "Jogada de minhoca", "Deslize por baixo de 3 cornetadas do King", 1],
+    ["pagou", "Pagou o jogo", "Chegue com 12 pilas ou mais", 1],
+    ["devedor", "Devedor", "Chegue sem nenhuma pila", 1],
+    ["apito", "No apito", "Chegue entre 18:29:55 e 18:30:00", 1],
+    ["esquizo", "Esquizofut", "Toque na lua 3 vezes numa corrida", 1],
+  ];
+  const LETRAS = [[1500, "L"], [3300, "I"], [4800, "S"], [6300, "T"], [11300, "A"]], AMIGOS = [2500, 5500, 10950];
+  const SIZE = {cone: [22, 30], lixo: [30, 44], poca: [64, 6], pipoca: [56, 50], pombo: [26, 14], faixa: [74, 270], sombra: [24, 56], bola: [14, 14],
+    pila: [12, 16], cuia: [18, 22], letra: [20, 22], amigo: [24, 62], kbola: [16, 16], corneta: [24, 34], alta: [16, 16]};
+  const HURT = new Set(["cone", "lixo", "poca", "pipoca", "pombo", "faixa", "sombra", "kbola", "corneta", "alta"]);
+  const GROUND = new Set(["cone", "lixo", "pipoca", "sombra", "poca"]);  // what a kicked ball knocks down
+  const FAIXAS = ["LISTA DUPLA", "SUPLÊNCIA", "DEVEDORES", "MENSALISTA", "RESENHA"];
+  const SAUL = {shirt: "#2fae57", trim: "#23864a", num: "10", skin: "#d9a27a", skin2: "#b98463", hair: "#2b1d14", sock: "#f2f2ee", sock2: "#bdbdb6"};  // the green vest
+  const KING = {shirt: "#1b1b20", trim: "#f2c230", num: "K", skin: "#c98d63", skin2: "#a87350", hair: "#1a120c", sock: "#1b1b20", sock2: "#121216"};  // the black one
+
+  const clk = s => [s / 3600, s / 60 % 60, s % 60].map(n => String(Math.floor(n)).padStart(2, "0")).join(":");
+  const dia = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);  // the group's day, as server.py counts it
+  const rng = s => {  // a small seeded generator: the same street for everyone on the same day
+    let h = 1779033703 ^ s.length;
+    for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 3432918353), h = h << 13 | h >>> 19;
+    return () => { h = Math.imul(h ^ h >>> 16, 2246822507); h = Math.imul(h ^ h >>> 13, 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+  };
+  const rec = () => ST.corre?.[ME] || {best: 0, runs: 0, up: {}, ach: []};
+  const lvl = k => ME ? rec().up?.[k] || 0 : 0;
+  const local = () => { try { return JSON.parse(store.get("biofutCorre2") || "{}") } catch { return {} } };  // without login: this browser only
+  const found = () => new Set([...(ME ? rec().ach : []), ...(local().ach || [])]);
+  const nm = n => ST.profiles?.[n]?.nick || n;
+  const tipPool = () => [...(D.glossary || []).map(([k, v]) => ["Dicionário BioFut", k, v]), ...(D.nicknames || []).map(([k, v]) => ["Apelidos", k, v])];
+
+  // ---------- the page around the canvas
+  const CSS = `.corre-wrap{position:relative;margin-top:18px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#0b0a1a}
+#corre{display:block;width:100%;height:clamp(240px,58vw,440px);touch-action:none;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.corre-pad{display:grid;grid-template-columns:1fr 1.3fr 1fr auto;gap:8px;padding:8px;background:#131124}
+.corre-pad button{height:58px;min-width:48px;border-radius:12px;border:1px solid #2d2a45;background:#1d1a33;color:#f2f2ee;font:700 15px var(--cond);letter-spacing:.05em;text-transform:uppercase;
+  display:flex;align-items:center;justify-content:center;gap:8px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:pointer}
+.corre-pad button b{font-size:20px;line-height:1}
+.corre-pad button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.corre-pad button.on{transform:translateY(1px);filter:brightness(1.3)}
+.corre-pad kbd{font:600 11px var(--body);opacity:.55;text-transform:none;letter-spacing:0}
+.corre-wrap:fullscreen{display:flex;flex-direction:column;border:0;border-radius:0}
+.corre-wrap:fullscreen #corre{flex:1;height:auto;min-height:0}
+@media (pointer:fine){.corre-pad button{height:46px}}
+@media (pointer:coarse){.corre-pad kbd{display:none}}
+@media (max-width:520px){#corre{height:78vw}.corre-wrap{margin-left:-16px;margin-right:-16px;border-radius:0;border-left:0;border-right:0}.corre-pad button{font-size:13px;gap:5px}}
+.corre-tip{margin-top:14px;font-size:14px;color:var(--mut);border-left:3px solid var(--gold);padding:2px 0 2px 12px}
+.corre-tip b{color:var(--ink,inherit)}
+.corre-ups{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
+.corre-ups .btn{white-space:normal;line-height:1.2;height:auto;min-height:36px;width:100%;justify-content:center;margin-top:auto}
+.corre-ups .card{display:flex;flex-direction:column;gap:6px}
+.corre-ups .lv{display:flex;gap:4px}.corre-ups .lv i{width:18px;height:6px;border-radius:3px;background:var(--line2)}.corre-ups .lv i.on{background:var(--gold)}
+.corre-ach{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.corre-ach div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--dim)}
+.corre-ach div b{display:block;font:700 15px var(--cond);letter-spacing:.03em;color:var(--mut)}
+.corre-ach div.ok{border-color:var(--gold);color:var(--mut)}.corre-ach div.ok b{color:var(--gold)}`;
+  function page() {
+    return `<div class="kicker">Jogar · novo</div><h1 style="font-size:52px;margin-top:8px">Corre, Saul!</h1>
+  <p class="muted" style="max-width:660px">Quinta, 18:30, Planet Ball, e o Saul saiu atrasado de novo. Pule, deslize e chute o que aparecer na rua, encare o BioFut King e chegue antes que alguém cancele o jogo. A rua muda todo dia e é a mesma para todo mundo.</p>
+  <div class="corre-wrap" id="correWrap">
+    <canvas id="corre" tabindex="0" aria-label="Corre, Saul: toque ou espaço pula, seta para baixo desliza, X chuta"></canvas>
+    <div class="corre-pad">
+      <button data-k="slide" aria-label="Deslizar"><b>⬇</b>Deslizar <kbd>↓</kbd></button>
+      <button data-k="jump" class="pri" aria-label="Pular"><b>⬆</b>Pular <kbd>espaço</kbd></button>
+      <button data-k="kick" aria-label="Chutar"><b>⚽</b>Chutar <kbd>X</kbd></button>
+      ${document.fullscreenEnabled ? '<button data-k="fs" aria-label="Tela cheia" title="Tela cheia"><b>⛶</b></button>' : ""}
+    </div>
+  </div>
+  <div class="row" id="correFim" style="margin-top:12px"></div>
+  <p class="corre-tip" id="correTip"></p>
+  <div id="correMais"></div>`;
+  }
+  function tip() {
+    const T = tipPool(), el = $("#correTip");
+    if (!el) return;
+    if (!T.length) return el.remove();
+    const [src, k, v] = T[Math.floor(Math.random() * T.length)];
+    el.innerHTML = `<span class="dim">${src} ·</span> <b>${esc(k)}</b>: ${esc(v)}`;
+  }
+  function mais() {  // ranking, upgrades and achievements under the game; redrawn after each run without touching the canvas
+    const el = $("#correMais");
+    if (!el) return;
+    const hoje = dia(), R = Object.entries(ST.corre || {}), mine = found();
+    const list = (title, rows, big, small) => `<div class="card pad"><h3>${title}</h3>${rows.length ? `<ul class="list" style="margin-top:8px">${rankList(rows, ([n, r], i) =>
+      `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(nm(n))}</a><span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`)}</ul>`
+      : '<p class="muted" style="margin-top:8px">Ninguém ainda: a primeira corrida abre a lista.</p>'}</div>`;
+    const rank = `<section class="sec"><div class="sec-h"><div><div class="kicker">Ranking</div><h2>Quem chega primeiro</h2></div></div><div class="grid g3">
+      ${list("Corrida de hoje", R.filter(([, r]) => r.dia?.[0] === hoje).sort(([, a], [, b]) => b.dia[1] - a.dia[1]), r => r.dia[1].toLocaleString("pt-BR"), () => "pontos")}
+      ${list("Recorde", R.filter(([, r]) => r.best).sort(([, a], [, b]) => b.best - a.best), r => r.best.toLocaleString("pt-BR"), r => `${r.runs} corrida${r.runs > 1 ? "s" : ""}`)}
+      ${list("Mais cedo no Planet", R.filter(([, r]) => r.cedo).sort(([, a], [, b]) => a.cedo - b.cedo), r => clk(r.cedo), r => r.cedo <= K.gol ? "a tempo" : "atrasado")}</div>
+      ${ME ? "" : `<p class="muted" style="margin-top:12px"><a href="/entrar?next=${encodeURIComponent("/#/corre")}">Entre</a> para entrar no ranking, ganhar moedas e comprar melhorias.</p>`}</section>`;
+    const cost = ST.corre_up || {}, bal = ST.balances?.[ME] ?? 25;
+    const ups = `<section class="sec"><div class="sec-h"><div><div class="kicker">Melhorias</div><h2>O vestiário do Saul</h2></div>${ME ? `<span class="muted">Você tem <b class="num">${coin(bal)}</b> moedas</span>` : ""}</div>
+      <div class="corre-ups">${Object.entries(UP).map(([k, [ico, name, desc]]) => {
+        const c = cost[k] || [], l = lvl(k), next = c[l];
+        return `<div class="card pad"><div style="font-size:28px;line-height:1">${ico}</div><h3>${name}</h3><p class="muted" style="font-size:14px">${desc}</p>
+          <div class="lv">${c.map((_, i) => `<i class="${i < l ? "on" : ""}"></i>`).join("")}</div>
+          ${next === undefined ? '<span class="dim" style="font-size:13px">No máximo</span>' : ME ? `<button class="btn sm${bal >= next ? " pri" : ""}" data-up="${k}">Comprar · ${coin(next)} moeda${next === 1 ? "" : "s"}</button>` : `<span class="dim" style="font-size:13px">${coin(next)} moedas</span>`}</div>`;
+      }).join("")}</div></section>`;
+    const ach = `<section class="sec"><div class="sec-h"><div><div class="kicker">Conquistas</div><h2>${mine.size} de ${ACH.length}</h2></div>
+      <a class="muted" href="/wiki#/p/biofut-king">Quem é o BioFut King? Na wiki →</a></div>
+      <div class="corre-ach">${ACH.map(([id, name, how, hid]) => mine.has(id) ? `<div class="ok"><b>${name}</b>${how}</div>`
+        : hid ? '<div><b>???</b>Segredo. Continue correndo.</div>' : `<div><b>${name}</b>${how}</div>`).join("")}</div></section>`;
+    el.innerHTML = rank + ups + ach;
+    el.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      const j = await post("corre", {op: "up", item: b.dataset.up});
+      if (j) { setState(j); toast(`${UP[b.dataset.up][1]}: comprada`); BF.ev("corre_saul", "up " + b.dataset.up); if (ui.corre?.mode !== "corre") ui.corre = null; }
+      mais();
+      if (j && $("#corre")) Corre();  // the new level counts from the next run: rebuild the idle game
+    });
+  }
+
+  // ---------- the game
+  let cx;  // the canvas being drawn: the game, or the share card for a moment
+  function Corre() {
+    if (!document.getElementById("correCss")) document.head.insertAdjacentHTML("beforeend", `<style id="correCss">${CSS}</style>`);
+    const pg = $("#correPg");
+    if (!pg) return;
+    pg.innerHTML = page();
+    tip(); mais();
+    const cv = $("#corre"), ac = new AbortController(), on = {signal: ac.signal};
+    cx = cv.getContext("2d");
+    const R0 = rng("cidade");
+    const town = Array.from({length: 26}, () => {  // the skyline and its windows once, so they don't flicker
+      const w = 44 + R0() * 52, h = 50 + R0() * 100;
+      return {w, h, lit: Array.from({length: Math.floor(h / 14) * Math.floor((w - 8) / 11)}, () => R0() < .28)};
+    });
+    const townW = town.reduce((s, b) => s + b.w + 6, 0);
+    const faces = {};
+    const fresh = () => {
+      const d = dia(), R = rng(d), lives = 3 + lvl("folego");
+      const pool = CARDS().map(c => c.name).filter(n => !/saul/i.test(n)).sort();
+      const fix = [...LETRAS.map(([x, l]) => ({type: "letra", x, l, b: 70 + R() * 30})),
+        ...AMIGOS.map(x => ({type: "amigo", x, name: pool.length ? pool[Math.floor(R() * pool.length)] : "", b: 0}))].sort((a, b) => a.x - b.x);
+      fix.forEach(o => [o.w, o.h] = SIZE[o.type]);
+      return {mode: "pronto", dia: d, R, RK: rng(d + "/king"), x: 0, y: 0, vy: 0, ht: 0, buf: 0, t: 0, lives, max: lives, hits: 0, inv: 0, slow: 1, boost: 0,
+        slide: 0, sbuf: 0, kick: 0, kcd: 0, obs: [], fix, next: 700, pts: 0, streak: 0, pilas: 0, letras: "", near: 0, shield: 0, pops: [],
+        king: {st: "off", hp: 3, cd: .5, ox: 0, n: 0, minhoca: 0, hit: 0, t: 0}, ach: new Set(), esq: 0, lua: 0, go: false, coins: null, seen: 0};
+    };
+    let g = ui.corre;
+    if (!g || g.mode !== "corre" && g.mode !== "pausa" && g.dia !== dia()) g = ui.corre = fresh();
+    if (g.mode === "corre" && performance.now() - g.seen > 400) g.mode = "pausa";  // came back to the page: wait for a tap
+    if (g.mode === "fim") fimRow();
+    let W = 600, H = 300, G = 256, sc = 1, last = 0, down = false;
+    const sx = () => Math.min(120, W * .2);
+    const fit = () => {
+      const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+      sc = Math.min(r.height / 300, r.width / 400);  // at least 400 units of street on screen, more on wide screens
+      W = r.width / sc; H = r.height / sc; G = H - 44;
+      cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); cx.setTransform(sc * dpr, 0, 0, sc * dpr, 0, 0);
+    };
+    fit(); addEventListener("resize", fit, on); document.addEventListener("fullscreenchange", () => setTimeout(fit, 50), on);
+    const speed = () => (320 + 240 * g.x / K.len) * g.slow * (g.boost > 0 ? 1.3 : 1);
+    const mult = () => Math.min(5, 1 + Math.floor(g.streak / 5));
+    const add = (n, txt, c) => { n = Math.round(n * (g.esq ? 1.5 : 1)); g.pts += n; if (txt) pop(`${txt} +${n}`, c); };
+    const pop = (txt, c = "#fff", big) => g.pops.push({txt, c, big, t: 0, y: big ? H * .36 : G - g.y - 80});
+    const put = (type, x, b = 0, extra) => { const [w, h] = SIZE[type]; g.obs.push({type, x, w, h, b, ...extra}); };
+
+    // the street: everything from the day's seed, in the same order for everyone, so the same day = the same street
+    const spawn = () => {
+      const R = g.R, x = g.next, p = x / K.len;
+      const pool = ["cone", "cone", "lixo", "poca", "pipoca", ...(p > .1 ? ["pombo"] : []), ...(p > .2 ? ["faixa", "faixa"] : []), ...(p > .3 ? ["sombra"] : [])];
+      const type = pool[Math.floor(R() * pool.length)], [w] = SIZE[type], low = type === "faixa" || type === "pombo";
+      put(type, x, type === "pombo" ? 34 + R() * 8 : type === "faixa" ? 30 : 0, type === "faixa" ? {txt: FAIXAS[Math.floor(R() * FAIXAS.length)]} : type === "sombra" ? {vx: -70} : {});
+      if (R() < .4) {  // pilas: an arc over what you jump, a low line under what you slide under
+        const n = 3 + Math.floor(R() * 3);
+        for (let i = 0; i < n; i++) { const k = i - (n - 1) / 2; put("pila", x + w / 2 + k * 24 - 6, low ? 6 : Math.max(8, 78 - k * k * 9)); }
+      }
+      if (R() < .16 && GROUND.has(type) && type !== "sombra") put("bola", x - 150 - R() * 60, 0, {vx: 0, vb: 0});
+      if (R() < .18) put("cuia", x + w + 90 + R() * 60, 30 + R() * 60);
+      g.next = x + w + (320 + 240 * p) * (.62 + R() * .68);
+      if (g.next > K.rei[0] - 200 && g.next < K.rei[1] + 100) g.next = K.rei[1] + 100;  // the King's stretch has no street obstacles
+    };
+    const hurt = o => {
+      if (g.shield) { g.shield = 0; g.inv = 1; o.hit = true; pop("O colete segurou!", "#7dffb0"); return; }
+      o.hit = true; g.lives--; g.hits++; g.inv = 1.3; g.slow = .35; g.streak = 0;
+      if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
+      if (!g.lives) finish(false);
+    };
+    const kingX = () => g.x + g.king.ox;
+    const kingStep = dt => {
+      const k = g.king, v = speed(), home = W - 110 - sx();
+      if (k.st === "off" && g.x >= K.rei[0]) { k.st = "intro"; k.t = 1.2; k.ox = W + 60; pop("BIOFUT KING", "#f2c230", true); BF.ev("corre_saul", "king"); }
+      if (k.st === "off" || k.st === "fim") return;
+      k.hit = Math.max(0, k.hit - dt);
+      if (k.st === "intro" || k.st === "luta") k.ox += (home - k.ox) * Math.min(1, dt * 2.5);
+      if (k.st === "intro" && (k.t -= dt) <= 0) k.st = "luta";
+      if (k.st === "luta") {
+        if (g.x >= K.rei[1]) { k.st = "foge"; pop("O King fugiu!", "#f2c230"); return; }
+        if ((k.cd -= dt) > 0) return;
+        k.n++; k.cd = [.65, .8, .95][k.hp - 1] + g.RK() * .2;  // faster as he gets weaker
+        const kind = k.n % 2 === 0 ? "alta" : g.RK() < .5 ? "kbola" : "corneta", x0 = kingX() - 24;
+        if (kind === "kbola") put("kbola", x0, 0, {vx: -240, vb: 0});
+        else if (kind === "corneta") { put("corneta", x0, 30, {vx: -320}); k.sopro = .4; }
+        else { const T = 1.05, d = x0 - (g.x + 30); put("alta", x0, 60, {vx: v - d / T, vb: 430}); }
+      }
+      if (k.st === "foge") { k.ox += 420 * dt; if (k.ox > W + 120) k.st = "fim"; }
+      if (k.st === "caiu") { k.ox -= v * dt; k.t += dt; if (k.ox < -200) k.st = "fim"; }
+    };
+    const kingDown = () => {
+      const k = g.king; k.st = "caiu"; k.t = 0; g.ach.add("rei"); add(300, "REI DEPOSTO!", "#f2c230");
+      g.obs = g.obs.filter(o => !["kbola", "corneta", "alta"].includes(o.type) || o.back);
+      for (let i = 0; i < 8; i++) put("pila", g.x + W + 40 + i * 70, 10 + (i % 2) * 40);  // the street is clear: the King's change on the floor
+    };
+    const step = dt => {
+      const v = speed();
+      g.t += dt; g.inv = Math.max(0, g.inv - dt); g.boost = Math.max(0, g.boost - dt); g.buf = Math.max(0, g.buf - dt); g.sbuf = Math.max(0, g.sbuf - dt);
+      g.kick = Math.max(0, g.kick - dt); g.kcd = Math.max(0, g.kcd - dt); g.slow = Math.min(1, g.slow + dt * .8);
+      if (g.king.sopro) g.king.sopro = Math.max(0, g.king.sopro - dt);
+      g.x = Math.min(K.len, g.x + v * dt);
+      if (g.slide > 0 && (g.slide -= dt) <= 0) g.slide = 0;
+      if (g.buf && !g.y) { g.slide = 0; g.vy = 700 * (1 + .07 * lvl("chuteira")); g.y = .01; g.ht = 0; g.buf = 0; }
+      if (g.y) {
+        g.ht += dt;
+        if (g.sbuf) g.vy = Math.min(g.vy, -900);  // slide asked in the air: drop fast
+        g.vy -= (down && g.vy > 0 && g.ht < .22 ? 1150 : 2500) * dt; g.y = Math.max(0, g.y + g.vy * dt);
+        if (!g.y && g.sbuf) { g.slide = .55; g.sbuf = 0; }
+      }
+      while (g.next < g.x + W + 60 && g.next < K.len - 600) spawn();
+      while (g.fix.length && g.fix[0].x < g.x + W + 100) g.obs.push(g.fix.shift());
+      kingStep(dt);
+      const ima = [0, 50, 100][lvl("ima")], S = g.slide ? [g.x - 14, g.y + 2, g.x + 16, g.y + 24] : [g.x - 9, g.y + 2, g.x + 9, g.y + 58];
+      for (const o of g.obs) {
+        if (o.vx) o.x += o.vx * dt;
+        if (o.vb !== undefined && (o.type === "alta" || o.type === "kbola" || o.roll)) {
+          o.vb -= 900 * dt; o.b += o.vb * dt;
+          if (o.b < 0) { o.b = 0; o.vb = o.type === "alta" && !o.back ? 0 : -o.vb * .45; }
+        }
+        if (o.type === "pila" && !o.hit && ima && Math.abs(o.x - g.x) < ima) { o.x += (g.x - o.x) * Math.min(1, dt * 8); o.b += (g.y + 30 - o.b) * Math.min(1, dt * 8); }
+        if (o.roll && !o.hit) {  // a kicked ball knocks down the first obstacle in its way
+          const t = g.obs.find(q => GROUND.has(q.type) && !q.hit && !q.done && q.x < o.x + o.w && q.x + q.w > o.x);
+          if (t) { t.hit = t.done = true; t.fly = 0; o.hit = true; g.streak++; g.ach.add("tabelinha"); add(30 * mult(), "Tabelinha!", "#7dffb0"); }
+          if (o.x > g.x + W + 100) o.hit = true;
+        }
+        if (o.back && !o.hit && o.x >= kingX() - 20) {  // returned to the King
+          o.hit = true; const k = g.king;
+          if (["intro", "luta", "foge"].includes(k.st)) { k.hp--; k.hit = .5; add(60, "No King!", "#f2c230"); if (!k.hp) kingDown(); }
+        }
+        if (o.hit || o.done) continue;
+        const ox0 = o.x + 3, ox1 = o.x + o.w - 3, ob0 = o.b + 2, ob1 = o.b + o.h - 2;
+        const xin = ox0 <= S[2] && ox1 >= S[0];
+        if (xin && HURT.has(o.type) && g.y > 0) o.clr = Math.min(o.clr ?? 1e9, S[1] - ob1);
+        if (xin && o.type === "corneta" && g.slide) o.slid = true;
+        if (xin && ob0 <= S[3] && ob1 >= S[1]) {
+          if (o.type === "pila") { o.hit = true; g.pilas++; add(5); }
+          else if (o.type === "cuia") { o.hit = true; g.boost = 2.2 + .8 * lvl("cuia"); pop("Chimarrão!", "#9be07a"); }
+          else if (o.type === "letra") {
+            o.hit = true; g.letras += o.l; pop(o.l, "#f2c230");
+            if (g.letras.length === 5) { g.lives = Math.min(g.lives + 1, g.max + 1); g.ach.add("lista"); pop("ENTROU NA LISTA! +1 vida", "#f2c230", true); }
+          } else if (o.type === "amigo") { o.hit = true; g.shield = 1; pop(`${nm(o.name) || "Um parceiro"} te deu o colete!`, "#7dffb0"); }
+          else if (o.type === "alta" && o.back) continue;
+          else if (HURT.has(o.type) && !g.inv) hurt(o);
+          if (g.mode !== "corre") return;
+          continue;
+        }
+        if (HURT.has(o.type) && !o.back && ox1 < S[0]) {  // passed it clean
+          o.done = true;
+          if (o.type === "corneta" && o.slid && ++g.king.minhoca >= 3) g.ach.add("minhoca");
+          if (["kbola", "corneta", "alta"].includes(o.type)) { add(15); continue; }
+          g.streak++; add(10 * mult());
+          if (o.clr !== undefined && o.clr < 7) { add(25, "Raspando!", "#ffd27a"); if (++g.near >= 5) g.ach.add("raspando"); }
+          if (g.streak % 5 === 0 && mult() > 1) pop(`Sequência x${mult()}`, "#ff7a9a");
+        }
+      }
+      g.obs = g.obs.filter(o => o.x + o.w > g.x - sx() - 60 && (!o.hit || o.fly !== undefined || o.type === "amigo"));
+      for (const o of g.obs) if (o.fly !== undefined) o.fly += dt;
+      g.pops = g.pops.filter(p => (p.t += dt) < (p.big ? 2 : 1.1));
+      if (g.x >= K.len) finish(true);
+    };
+
+    // ---------- input: jump (tap, Space, Up, W), slide (swipe down, Down, S), kick (X, K)
+    const start = () => {
+      Object.assign(g, fresh(), {mode: "corre"}); $("#correFim").innerHTML = ""; tip(); BF.ev("corre_saul", "start");
+      if (ME) post("corre", {op: "go"}).then(j => { if (j) g.go = true; });
+    };
+    const press = () => {
+      down = true;
+      if (g.mode === "fim" && performance.now() - g.end < 700) return;  // a late tap must not restart the run
+      if (g.mode === "pronto" || g.mode === "fim") start();
+      else if (g.mode === "pausa") g.mode = "corre";
+      else g.buf = .14;  // a jump asked a little before landing still counts
+    };
+    const release = () => { down = false; };
+    const slide = () => { if (g.mode !== "corre") return; if (g.y) g.sbuf = .3; else { g.slide = .55; g.buf = 0; } };
+    const kick = () => {
+      if (g.mode !== "corre" || g.kcd) return;
+      g.kick = .28; g.kcd = .4;
+      for (const o of g.obs) {
+        const d = o.x - g.x;
+        if (o.type === "bola" && !o.roll && d > -16 && d < 64) { o.roll = true; o.vx = speed() + 480; o.vb = 140; }
+        if (o.type === "alta" && !o.back && !o.hit && d > -18 && d < 74 && o.b < 90) { o.back = true; o.vx = speed() + 700; o.vb = 260; pop("Devolve!", "#f2c230"); }
+      }
+    };
+    const ACT = {jump: press, slide, kick, fs: () => document.fullscreenElement ? document.exitFullscreen() : $("#correWrap").requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape")).catch(() => {})};
+    let py = null;
+    cv.addEventListener("pointerdown", e => {
+      e.preventDefault(); py = e.clientY;
+      const r = cv.getBoundingClientRect(), mx = (e.clientX - r.left) / sc, my = (e.clientY - r.top) / sc;
+      if (g.mode === "corre" && Math.hypot(mx - W * .62, my - 72) < 26 && ++g.lua === 3 && !g.esq) {  // the moon, three times
+        g.esq = 1; g.ach.add("esquizo"); pop("HOJE É DIA DE ESQUIZOFUT! pontos x1,5", "#c38bff", true); BF.ev("corre_saul", "esquizofut"); return;
+      }
+      press();
+    }, on);
+    cv.addEventListener("pointermove", e => { if (py !== null && e.clientY - py > 28 * Math.max(1, sc)) { py = null; slide(); } }, on);
+    cv.addEventListener("contextmenu", e => e.preventDefault(), on);
+    addEventListener("pointerup", () => { py = null; release(); }, on); addEventListener("pointercancel", () => { py = null; release(); }, on);
+    $("#correWrap").querySelectorAll("[data-k]").forEach(b => {
+      b.addEventListener("pointerdown", e => { e.preventDefault(); b.classList.add("on"); ACT[b.dataset.k](); }, on);
+      for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => { b.classList.remove("on"); if (b.dataset.k === "jump") release(); }, on);
+      b.addEventListener("contextmenu", e => e.preventDefault(), on);
+    });
+    const KEYS = {Space: "jump", ArrowUp: "jump", KeyW: "jump", ArrowDown: "slide", KeyS: "slide", KeyX: "kick", KeyK: "kick"};
+    addEventListener("keydown", e => {
+      const k = KEYS[e.code];
+      if (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(document.activeElement?.tagName || "") && document.activeElement !== cv) return;
+      if (e.code === "KeyP" || e.code === "Escape" && g.mode === "corre") { g.mode === "corre" ? g.mode = "pausa" : g.mode === "pausa" && (g.mode = "corre"); return; }
+      if (!k) return;
+      e.preventDefault();
+      if (!e.repeat) ACT[k]();
+    }, on);
+    addEventListener("keyup", e => KEYS[e.code] === "jump" && release(), on);
+    document.addEventListener("visibilitychange", () => document.hidden && g.mode === "corre" && (g.mode = "pausa"), on);
+
+    // ---------- the end of a run: points, records, coins
+    function finish(won) {
+      g.mode = "fim"; g.won = won; g.end = performance.now();
+      const at = Math.round(K.t0 + g.t * K.k);
+      if (won) {
+        if (at <= K.gol) { g.ach.add("pontual"); add(Math.round((K.gol - at) * 4)); }
+        if (at <= K.gol && at >= K.gol - 5) g.ach.add("apito");
+        if (!g.hits) g.ach.add("limpo");
+        add(g.lives * 50);
+        if (g.pilas >= 12) { g.ach.add("pagou"); add(50); }
+        if (!g.pilas) g.ach.add("devedor");
+      }
+      g.at = at;
+      const L = local();
+      store.set("biofutCorre2", JSON.stringify({best: Math.max(L.best || 0, g.pts), ach: [...new Set([...(L.ach || []), ...g.ach])]}));
+      BF.ev("corre_saul", won ? (at <= K.gol ? "a tempo" : "atrasado") : "cancelado");
+      fimRow();
+      if (ME && g.go) post("corre", {op: "fim", t: g.t, pts: g.pts, pilas: g.pilas, chegou: won, rei: g.ach.has("rei"), ach: [...g.ach]})
+        .then(j => { if (!j) return; setState(j); g.coins = j.coins; mais(); fimRow(); });
+      else mais();
+    }
+    function fimRow() {
+      const el = $("#correFim");
+      if (!el) return;
+      const pos = !ME ? -1 : Object.entries(ST.corre || {}).filter(([, r]) => r.dia?.[0] === dia()).sort(([, a], [, b]) => b.dia[1] - a.dia[1]).findIndex(([n]) => n === ME);
+      g.pos = pos >= 0 ? pos + 1 : 0;
+      el.innerHTML = `<button class="btn sm pri" data-again>Correr de novo</button><button class="btn sm" data-share>Compartilhar imagem</button>
+        <span class="muted" style="font-size:14px">${g.coins ? `+${coin(g.coins)} moeda · ` : ""}${g.pos ? `${g.pos}º hoje` : ME ? "" : "Entre para valer moedas e ranking"}</span>`;
+      el.querySelector("[data-again]").onclick = () => { g.end = 0; press(); release(); };
+      el.querySelector("[data-share]").onclick = shareCard;
+    }
+
+    // ---------- drawing (world units; G = the curb line)
+    const box = (x, y, w, h, c) => { cx.fillStyle = c; cx.fillRect(x, y, w, h); };
+    const glow = (x, y, r, c) => { const q = cx.createRadialGradient(x, y, 0, x, y, r); q.addColorStop(0, c); q.addColorStop(1, "rgba(0,0,0,0)"); cx.fillStyle = q; cx.fillRect(x - r, y - r, r * 2, r * 2); };
+    const txt = (s, x, y, font, c, al = "center") => { cx.font = font; cx.fillStyle = c; cx.textAlign = al; cx.fillText(s, x, y); };
+    const seg = (x, y, a, l, c, w) => { cx.strokeStyle = c; cx.lineWidth = w; cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + Math.sin(a) * l, y + Math.cos(a) * l); cx.stroke(); return [x + Math.sin(a) * l, y + Math.cos(a) * l]; };
+    // angles from straight down, + = forward; thigh/upper arm, then shin/forearm, then the shoe across the shin
+    const limb = (x, y, a1, l1, a2, l2, c1, c2, w, shoe) => {
+      const [kx, ky] = seg(x, y, a1, l1, c1, w), [ex, ey] = seg(kx, ky, a2, l2, c2, w);
+      if (shoe) seg(ex - Math.cos(a2), ey + Math.sin(a2), a2 + Math.PI / 2, 6, shoe, w + 1);
+    };
+    // a runner: pose run | air | slide | kick; P = colors; the King uses it too, mirrored
+    const runner = (x, yb, ph, pose, P) => {
+      const s = Math.sin(ph), air = pose === "air", bob = pose === "run" || pose === "kick" ? Math.abs(Math.cos(ph)) * 2.5 : 0;
+      cx.lineCap = cx.lineJoin = "round";
+      if (pose === "slide") {  // leaning back, legs first
+        const hy = yb - 9;
+        limb(x + 2, hy, 1.45, 14, 1.6, 14, P.skin2, P.sock2, 5, "#111"); limb(x - 2, hy - 18, -1.9, 9, -1.2, 8, P.skin2, P.skin2, 4);
+        cx.save(); cx.translate(x, hy); cx.rotate(-1.2); torso(P); cx.restore();
+        limb(x + 4, hy, 1.35, 14, 1.75, 14, P.skin, P.sock, 5, "#111");
+        return;
+      }
+      const hy = yb - 27 - bob;
+      const leg = (k, skin, sock) => {
+        const t = s * k;
+        if (pose === "kick" && k > 0) return limb(x, hy, 1.7, 14, 1.25, 14, skin, sock, 5, "#111");
+        const a = air ? (k > 0 ? .95 : -.45) : .75 * t;  // the back foot kicks up, the front shin stays near vertical
+        limb(x, hy, a, 14, air ? (k > 0 ? .1 : -1.6) : t > 0 ? .2 * t : a + 1.1 * t, 14, skin, sock, 5, "#111");
+      };
+      const arm = (k, c) => { const a = air ? -2.2 * k : pose === "kick" ? -1.2 * k : -.9 * s * k; limb(x + 3, hy - 17, a, 10, a + 1.5, 9, c, c, 4); };
+      leg(-1, P.skin2, P.sock2); arm(-1, P.skin2);
+      cx.save(); cx.translate(x, hy); cx.rotate(.16); torso(P); cx.restore();
+      leg(1, P.skin, P.sock); arm(1, P.skin);
+    };
+    const torso = P => {
+      box(-7.5, -2, 15, 9, "#141414");  // shorts
+      cx.fillStyle = P.shirt; cx.beginPath(); cx.roundRect(-7.5, -23, 15, 23, 4); cx.fill();
+      box(-7.5, -23, 15, 3, P.trim);
+      txt(P.num, 0, -8, "800 10px 'Barlow Condensed',sans-serif", P.num === "K" ? P.trim : "#fff");
+      cx.fillStyle = P.skin; cx.beginPath(); cx.arc(1.5, -31, 8, 0, 7); cx.fill();  // head
+      cx.fillStyle = P.hair; cx.beginPath(); cx.arc(1, -33, 8.4, Math.PI * .95, Math.PI * 2.08); cx.fill();  // hair
+      box(5, -32, 2, 2.4, "#1a1310");  // eye
+    };
+    const crown = (x, y, s = 1) => {
+      cx.fillStyle = "#f2c230"; cx.beginPath(); cx.moveTo(x - 9 * s, y); cx.lineTo(x - 9 * s, y - 9 * s); cx.lineTo(x - 4.5 * s, y - 4 * s); cx.lineTo(x, y - 11 * s);
+      cx.lineTo(x + 4.5 * s, y - 4 * s); cx.lineTo(x + 9 * s, y - 9 * s); cx.lineTo(x + 9 * s, y); cx.fill();
+      box(x - 9 * s, y - 2 * s, 18 * s, 2 * s, "#c9971a"); cx.fillStyle = "#ff4a6e"; cx.beginPath(); cx.arc(x, y - 5 * s, 1.6 * s, 0, 7); cx.fill();
+    };
+    const king = (px, now) => {
+      const k = g.king, fall = k.st === "caiu";
+      cx.save(); cx.translate(px, G); cx.scale(-1.3, 1.3);  // faces Saul, bigger
+      if (fall) { cx.rotate(Math.min(1.5, k.t * 4)); cx.translate(0, -4); }
+      const cape = Math.sin(now * 9) * 3;
+      cx.fillStyle = "#b0172f"; cx.beginPath(); cx.moveTo(-3, -50); cx.lineTo(-20 - cape, -14); cx.lineTo(-8, -18); cx.lineTo(4, -48); cx.fill();
+      if (!(k.hit && Math.floor(now * 20) % 2)) runner(0, 0, now * 11, k.st === "luta" || k.st === "intro" ? "run" : "air", KING);
+      if (!fall) crown(1.5, -61, .9);
+      if (k.sopro) { cx.fillStyle = "#f2c230"; cx.beginPath(); cx.moveTo(8, -56); cx.lineTo(22, -62); cx.lineTo(22, -48); cx.fill(); }  // the corneta at his mouth
+      cx.restore();
+      if (fall) crown(px + 30 + k.t * 120, G - 40 - k.t * 160 + k.t * k.t * 300, 1.1);  // the crown flies off
+      if (k.st === "luta" || k.st === "intro") {
+        txt("BIOFUT KING", px, G - 124, "800 13px 'Barlow Condensed',sans-serif", "#f2c230");
+        for (let i = 0; i < 3; i++) box(px - 22 + i * 15, G - 117, 13, 4, i < k.hp ? "#f2c230" : "rgba(255,255,255,.18)");
+      }
+    };
+    const pila = (x, y) => {
+      cx.save(); cx.translate(x + 6, y + 8); cx.rotate(-.25);
+      box(-7, -5, 14, 10, "#59b85f"); box(-6, -4, 12, 8, "#7bd383"); txt("R$", 0, 3, "800 6px 'Barlow Condensed',sans-serif", "#1f5a25");
+      cx.restore();
+    };
+    const obstacle = (o, x, now) => {
+      if (o.hit && o.fly === undefined && o.type !== "amigo") return;
+      const y = G - o.b - o.h;
+      if (o.fly !== undefined) { cx.save(); cx.translate(x + o.w / 2 + o.fly * 300, y + o.h / 2 - o.fly * 260 + o.fly * o.fly * 500); cx.rotate(o.fly * 9); cx.translate(-x - o.w / 2, -y - o.h / 2); }
+      const t = o.type;
+      if (t === "cone") {
+        box(x - 2, G - 4, o.w + 4, 4, "#3a2a20");
+        cx.fillStyle = "#ff7a1a"; cx.beginPath(); cx.moveTo(x + 2, G - 4); cx.lineTo(x + o.w / 2 - 3, y); cx.lineTo(x + o.w / 2 + 3, y); cx.lineTo(x + o.w - 2, G - 4); cx.fill();
+        box(x + 6, G - 19, o.w - 12, 5, "#f2f2ee");
+      } else if (t === "lixo") {
+        cx.fillStyle = "#2f7d52"; cx.beginPath(); cx.roundRect(x, y + 6, o.w, o.h - 6, 3); cx.fill();
+        box(x - 2, y, o.w + 4, 7, "#256542"); box(x + 6, y + 16, o.w - 12, 3, "#3f9a68");
+      } else if (t === "poca") {
+        cx.fillStyle = "#35486e"; cx.beginPath(); cx.ellipse(x + o.w / 2, G + 1, o.w / 2, 5, 0, 0, 7); cx.fill();
+        cx.fillStyle = "rgba(255,226,150,.35)"; cx.beginPath(); cx.ellipse(x + o.w * .62, G, o.w / 6, 1.6, 0, 0, 7); cx.fill();
+      } else if (t === "pipoca") {
+        box(x + 4, y, o.w - 8, 4, "#d23a3a"); for (let i = 0; i < 5; i++) box(x + 4 + i * (o.w - 8) / 5, y + 4, (o.w - 8) / 10, 6, "#f2f2ee");
+        box(x + 6, y + 10, o.w - 12, 14, "#f6e7a6"); box(x + 3, y + 24, o.w - 6, 18, "#d23a3a");
+        txt("PIPOCA", x + o.w / 2, y + 36, "800 9px 'Barlow Condensed',sans-serif", "#fff");
+        for (const wx of [x + 11, x + o.w - 11]) { cx.fillStyle = "#222"; cx.beginPath(); cx.arc(wx, G - 5, 5, 0, 7); cx.fill(); }
+      } else if (t === "pombo") {
+        const f = Math.sin(now * 18) * 6;
+        cx.fillStyle = "#8b909b"; cx.beginPath(); cx.ellipse(x + 12, y + 8, 11, 6, 0, 0, 7); cx.fill();
+        cx.beginPath(); cx.arc(x + 2, y + 5, 4.5, 0, 7); cx.fill(); box(x - 4, y + 5, 3, 2, "#e0a040");
+        cx.fillStyle = "#6c717c"; cx.beginPath(); cx.moveTo(x + 8, y + 6); cx.lineTo(x + 20, y + 6 - f); cx.lineTo(x + 18, y + 9); cx.fill();
+      } else if (t === "faixa") {  // a banner hung across the sidewalk: slide under it
+        const top = G - 60;  // the hitbox starts 30 above the street: a slide (24 tall) passes under, a standing Saul doesn't
+        box(x, top - 50, 3, 110, "#3a3548"); box(x + o.w - 3, top - 50, 3, 110, "#3a3548");
+        box(x, top, o.w, 30, "#efe6cf"); box(x, top, o.w, 3, "#ff4a6e"); box(x, top + 27, o.w, 3, "#ff4a6e");
+        txt(o.txt, x + o.w / 2, top + 20, "800 11px 'Barlow Condensed',sans-serif", "#2a2236");
+      } else if (t === "sombra") {  // a guest nobody invited, walking the wrong way
+        cx.save(); cx.globalAlpha = .92; cx.translate(x + 12, G); cx.scale(-1, 1);
+        runner(0, 0, now * 9, "run", {shirt: "#2a2838", trim: "#2a2838", num: "?", skin: "#3b3850", skin2: "#302d42", hair: "#22202e", sock: "#2a2838", sock2: "#22202e"});
+        cx.restore(); txt("SOMBRA", x + 12, y - 6, "700 9px 'Barlow Condensed',sans-serif", "rgba(220,215,255,.6)");
+      } else if (t === "bola" || t === "kbola" || t === "alta") {
+        if (t === "alta" && !o.back) { glow(x + 8, y + 8, 18, "rgba(242,194,48,.45)"); txt("!", x + 8, y - 10, "800 16px 'Barlow Condensed',sans-serif", "#f2c230"); }
+        cx.fillStyle = "#f4f4f0"; cx.beginPath(); cx.arc(x + 7, y + 7, 7, 0, 7); cx.fill();
+        cx.fillStyle = "#1c1c1c"; cx.beginPath(); cx.arc(x + 7, y + 7, 2.6, 0, 7); cx.fill();
+        for (let i = 0; i < 5; i++) { const a = now * (o.roll || o.vx ? 14 : 0) + i * 1.257; box(x + 7 + Math.cos(a) * 5 - 1, y + 7 + Math.sin(a) * 5 - 1, 2.2, 2.2, "#1c1c1c"); }
+      } else if (t === "corneta") {  // the King's corneta: a sound wave at head height
+        cx.strokeStyle = "rgba(242,194,48,.85)"; cx.lineWidth = 3;
+        for (let i = 0; i < 3; i++) { cx.beginPath(); cx.arc(x + 26 + i * 7, y + o.h / 2, 12 + i * 4, Math.PI * .7, Math.PI * 1.3); cx.stroke(); }
+        txt("FOM!", x + 10, y + o.h / 2 + 4, "800 11px 'Barlow Condensed',sans-serif", "#f2c230");
+      } else if (t === "pila") pila(x, y);
+      else if (t === "cuia") {
+        glow(x + 9, y + 12, 22, "rgba(140,220,110,.28)");
+        cx.fillStyle = "#7a4a24"; cx.beginPath(); cx.ellipse(x + 9, y + 14, 8.5, 9, 0, 0, 7); cx.fill();
+        box(x + 1.5, y + 4, 15, 4, "#5a361a"); box(x + 3, y + 3, 12, 3, "#6aa84f");
+        cx.strokeStyle = "#cfd4da"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x + 10, y + 6); cx.lineTo(x + 15, y - 6); cx.stroke();
+      } else if (t === "letra") {
+        glow(x + 10, y + 11, 20, "rgba(242,194,48,.3)");
+        cx.fillStyle = "#f2c230"; cx.beginPath(); cx.roundRect(x, y, 20, 22, 4); cx.fill();
+        txt(o.l, x + 10, y + 17, "800 16px 'Barlow Condensed',sans-serif", "#2a1d04");
+      } else if (t === "amigo") {  // a teammate from the group cheering on the curb: pass by and get the colete
+        cx.save(); cx.translate(x + 12, G); if (!o.hit) cx.translate(0, -Math.abs(Math.sin(now * 6)) * 3);
+        runner(0, 0, 0, o.hit ? "run" : "air", {...SAUL, shirt: "#ff4a6e", trim: "#d93358", num: "", skin: "#c48a62", skin2: "#a87350"});
+        cx.restore();
+        const img = o.name && faces[o.name];
+        if (img?.complete && img.naturalWidth) { cx.save(); cx.beginPath(); cx.arc(x + 13, y - 14, 11, 0, 7); cx.clip(); cx.drawImage(img, x + 2, y - 25, 22, 22); cx.restore(); }
+        if (o.name) txt(nm(o.name).split(" ")[0], x + 12, y - (img ? 30 : 6), "700 10px 'Barlow Condensed',sans-serif", "#ffd2dc");
+      }
+      if (o.fly !== undefined) cx.restore();
+    };
+    const heart = (x, y, c) => {
+      cx.fillStyle = c; cx.beginPath(); cx.moveTo(x, y + 4); cx.bezierCurveTo(x, y - 2, x - 9, y - 2, x - 9, y + 4); cx.bezierCurveTo(x - 9, y + 9, x - 2, y + 12, x, y + 15);
+      cx.bezierCurveTo(x + 2, y + 12, x + 9, y + 9, x + 9, y + 4); cx.bezierCurveTo(x + 9, y - 2, x, y - 2, x, y + 4); cx.fill();
+    };
+    const planet = px => {  // the Planet Ball: the field's fence, its floodlights and the sign
+      box(px - 30, G - 150, 360, 150, "#10241a");
+      cx.strokeStyle = "rgba(120,200,150,.18)"; cx.lineWidth = 1;
+      for (let i = 0; i < 360; i += 12) { cx.beginPath(); cx.moveTo(px - 30 + i, G - 150); cx.lineTo(px - 30 + i + 40, G); cx.stroke(); cx.beginPath(); cx.moveTo(px - 30 + i + 40, G - 150); cx.lineTo(px - 30 + i, G); cx.stroke(); }
+      for (const lx of [px + 40, px + 300]) { box(lx, G - 196, 5, 196, "#3a3d44"); box(lx - 14, G - 204, 33, 10, "#e9eef5"); glow(lx + 2, G - 199, 90, "rgba(235,245,255,.22)"); }
+      box(px - 2, G - 62, 38, 62, "#ffd98a"); box(px + 2, G - 58, 30, 58, "#ffcc66");
+      txt("QUADRA 4", px + 17, G - 68, "700 9px 'Barlow Condensed',sans-serif", "#7dffb0");
+      cx.save(); cx.shadowColor = "#43d17f"; cx.shadowBlur = 18; txt("PLANET BALL", px + 70, G - 160, "800 34px 'Barlow Condensed',sans-serif", "#7dffb0", "left"); cx.restore();
+    };
+    const sky = (w, h, gnd) => {
+      const q = cx.createLinearGradient(0, 0, 0, gnd);
+      q.addColorStop(0, g.esq ? "#1d0b33" : "#0b0a1a"); q.addColorStop(1, g.esq ? "#0f3b2a" : "#33182f");
+      box(0, 0, w, h, q);
+    };
+    const skyline = (w, gnd, off) => {
+      for (let bx = -(off % townW), i = 0; bx < w; i = (i + 1) % town.length) {
+        const b = town[i], top = gnd - 30 - b.h, cols = Math.floor((b.w - 8) / 11);
+        box(bx, top, b.w, b.h + 30, "#181430");
+        b.lit.forEach((on, j) => on && box(bx + 6 + (j % cols) * 11, top + 8 + Math.floor(j / cols) * 14, 5, 7, "rgba(242,194,48,.55)"));
+        bx += b.w + 6;
+      }
+    };
+    const scrim = (title, sub, c = "#fff", sub2) => {
+      box(0, 0, W, H, "rgba(6,5,14,.66)");
+      txt(title, W / 2, H / 2 - 8, `800 ${Math.min(52, W / 9)}px 'Barlow Condensed',sans-serif`, c);
+      txt(sub, W / 2, H / 2 + 24, "600 18px 'Barlow',sans-serif", "#e4e2ec");
+      if (sub2) txt(sub2, W / 2, H / 2 + 48, "500 14px 'Barlow',sans-serif", "#a9a6b8");
+    };
+    const draw = now => {
+      const x0 = sx();
+      sky(W, H, G);
+      glow(W * .62, 72, 70, g.esq ? "rgba(195,139,255,.25)" : "rgba(255,240,210,.12)"); cx.fillStyle = g.esq ? "#d9b8ff" : "#f4ecd8"; cx.beginPath(); cx.arc(W * .62, 72, 15, 0, 7); cx.fill();
+      skyline(W, G, g.x * .2);
+      for (let lx = 140 - ((g.x * .6) % 260); lx < W + 40; lx += 260) {  // street lamps
+        box(lx, G - 132, 4, 132, "#2c2838"); box(lx - 2, G - 134, 22, 4, "#2c2838"); glow(lx + 18, G - 126, 60, "rgba(255,190,110,.2)"); box(lx + 13, G - 130, 10, 4, "#ffd7a0");
+      }
+      box(0, G, W, H - G, "#17151c"); box(0, G, W, 18, "#2b2731"); box(0, G, W, 3, "#4a4552");  // sidewalk and street
+      for (let tx = -(g.x % 48); tx < W; tx += 48) box(tx, G + 3, 2, 15, "#221f27");
+      for (let dx = -(g.x % 90); dx < W; dx += 90) box(dx, G + 29, 40, 3, "rgba(242,194,48,.45)");
+      const toEnd = K.len - g.x;
+      if (toEnd < W + 400) planet(x0 + toEnd - 18);  // the door ends up under Saul
+      for (const o of g.obs) if (o.type === "amigo") obstacle(o, o.x - g.x + x0, now);
+      for (const o of g.obs) if (o.type !== "amigo") obstacle(o, o.x - g.x + x0, now);
+      if (["intro", "luta", "foge", "caiu"].includes(g.king.st)) king(x0 + g.king.ox, now);
+      if (g.shield) glow(x0, G - g.y - 28, 40, "rgba(125,255,176,.22)");
+      if (!(g.inv && Math.floor(now * 12) % 2)) runner(x0, G - g.y, g.x / 19, g.slide ? "slide" : g.kick ? "kick" : g.y > 0 ? "air" : "run", SAUL);
+      if (g.boost) { cx.fillStyle = "rgba(140,220,110,.5)"; for (let i = 0; i < 3; i++) box(x0 - 30 - i * 12 - (now * 300 % 12), G - 20 - g.y - i * 12, 14, 2); }
+      // HUD: clock and points, the way to the Planet, lives, the colete, L-I-S-T-A, pilas
+      const at = K.t0 + g.t * K.k;
+      txt(clk(at), 14, 30, "700 24px 'Barlow Condensed',sans-serif", at > K.gol ? "#ff7a45" : "#f2f2ee", "left");
+      txt(`${g.pts.toLocaleString("pt-BR")} pts`, 14, 50, "700 15px 'Barlow Condensed',sans-serif", "#d8d6e0", "left");
+      if (mult() > 1) txt(`x${mult()}`, 14 + cx.measureText(`${g.pts.toLocaleString("pt-BR")} pts`).width + 8, 50, "800 15px 'Barlow Condensed',sans-serif", "#ff7a9a", "left");
+      const hw = 22 * g.max + (g.lives > g.max ? 22 : 0), bx0 = 108, bw = Math.max(60, W - bx0 - hw - 92), p = g.x / K.len;
+      box(bx0, 19, bw, 6, "rgba(255,255,255,.14)"); box(bx0, 19, bw * p, 6, "#ff4a6e");
+      if (g.king.st === "off" || g.king.st === "intro" || g.king.st === "luta") crown(bx0 + bw * K.rei[0] / K.len, 17, .6);
+      cx.fillStyle = "#ff4a6e"; cx.beginPath(); cx.arc(bx0 + bw * p, 22, 6, 0, 7); cx.fill();
+      txt("PLANET", bx0 + bw + 8, 27, "800 13px 'Barlow Condensed',sans-serif", "#7dffb0", "left");
+      for (let i = 0; i < Math.max(g.max, g.lives); i++) heart(W - 20 - i * 22, 13, i < g.lives ? "#ff4a6e" : "rgba(255,255,255,.18)");
+      [..."LISTA"].forEach((l, i) => txt(l, W - 106 + i * 19, 50, "800 14px 'Barlow Condensed',sans-serif", g.letras.includes(l) ? "#f2c230" : "rgba(255,255,255,.2)"));
+      txt(`R$ ${g.pilas}`, W - 14, 68, "700 13px 'Barlow Condensed',sans-serif", "#9be07a", "right");
+      if (g.shield) txt("COLETE", W - 60, 68, "800 12px 'Barlow Condensed',sans-serif", "#7dffb0", "right");
+      for (const q of g.pops) {
+        const a = Math.max(0, 1 - q.t / (q.big ? 2 : 1.1));
+        cx.globalAlpha = a;
+        if (q.big) { cx.save(); cx.shadowColor = q.c; cx.shadowBlur = 14; txt(q.txt, W / 2, q.y, `800 ${Math.min(34, W / 14)}px 'Barlow Condensed',sans-serif`, q.c); cx.restore(); }
+        else txt(q.txt, x0 + 30, q.y - q.t * 40, "800 15px 'Barlow Condensed',sans-serif", q.c, "left");
+        cx.globalAlpha = 1;
+      }
+      const br = g.dia.slice(8) + "/" + g.dia.slice(5, 7);
+      if (g.mode === "pronto") scrim("CORRE, SAUL!", "Toque para correr até o Planet", "#fff", `A rua de ${br}: a mesma para todo mundo hoje`);
+      else if (g.mode === "pausa") scrim("PAUSA", "Toque para continuar");
+      else if (g.mode === "fim") g.won ? scrim(`${g.pts.toLocaleString("pt-BR")} PONTOS`, `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo!" : ", atrasado"}`, "#7dffb0", "Toque para correr de novo")
+        : scrim("JOGO CANCELADO", `${g.pts.toLocaleString("pt-BR")} pontos. Toque para tentar de novo`, "#ff4a6e");
+    };
+
+    // ---------- the share card: 1080x1350, drawn with the game's own art
+    async function shareCard() {
+      const c = document.createElement("canvas"); c.width = 1080; c.height = 1350;
+      const old = cx; cx = c.getContext("2d");
+      try {
+        const w = 1080, h = 1350, gnd = 1010;
+        sky(w, h, gnd);
+        cx.save(); cx.translate(0, gnd); cx.scale(2.6, 2.6); cx.translate(0, -gnd / 2.6); skyline(w / 2.6, gnd / 2.6, 500); cx.restore();
+        box(0, gnd, w, h - gnd, "#17151c"); box(0, gnd, w, 46, "#2b2731"); box(0, gnd, w, 7, "#4a4552");
+        cx.save(); cx.translate(640, gnd); cx.scale(5, 5); runner(0, 0, 1.2, "air", SAUL); cx.restore();
+        if (g.ach.has("rei")) crown(910, gnd - 30, 5);
+        box(0, 0, w, 420, "rgba(6,5,14,.55)");
+        glow(900, 190, 200, "rgba(255,240,210,.12)"); cx.fillStyle = "#f4ecd8"; cx.beginPath(); cx.arc(900, 190, 56, 0, 7); cx.fill();
+        txt("BIOFUT · CORRE, SAUL!", 72, 110, "600 40px 'Barlow',sans-serif", "#bdb9cc", "left");
+        txt(g.pts.toLocaleString("pt-BR"), 66, 290, "800 200px 'Barlow Condensed',sans-serif", "#fff", "left");
+        txt("PONTOS", 72, 360, "800 56px 'Barlow Condensed',sans-serif", "#ff4a6e", "left");
+        const line = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo" : ", atrasado"}` : "Jogo cancelado: três tropeços";
+        txt(line, 72, 490, "700 52px 'Barlow Condensed',sans-serif", g.won ? "#7dffb0" : "#ff7a9a", "left");
+        const extra = [g.pos && `${g.pos}º na corrida de hoje`, g.ach.has("rei") && "Derrubou o BioFut King", g.coins && `+${coin(g.coins)} moeda`].filter(Boolean);
+        extra.forEach((s, i) => txt(s, 72, 556 + i * 52, "600 40px 'Barlow',sans-serif", "#e4e2ec", "left"));
+        box(0, h - 150, w, 150, "#0b0a14");
+        txt(ME ? nm(ME) : `Rua de ${g.dia.slice(8)}/${g.dia.slice(5, 7)}`, 72, h - 62, "800 48px 'Barlow Condensed',sans-serif", "#fff", "left");
+        txt("biofut.h-brain.org/#/corre", w - 72, h - 62, "600 34px 'Barlow',sans-serif", "#ff4a6e", "right");
+        ["#ff4a6e", "#f06060", "#f2c230", "#480078"].forEach((col, i) => box(i * w / 4, h - 12, w / 4, 12, col));
+      } finally { cx = old; }
+      const blob = await new Promise(r => c.toBlob(r, "image/png"));
+      const text = `Corre, Saul! ${g.pts.toLocaleString("pt-BR")} pontos${g.won ? `, cheguei no Planet às ${clk(g.at)}` : ", jogo cancelado"}. Tenta bater: https://biofut.h-brain.org/#/corre`;
+      const file = new File([blob], "corre-saul.png", {type: "image/png"});
+      BF.ev("corre_saul", "share");
+      if (navigator.canShare?.({files: [file]})) { try { await navigator.share({files: [file], text}); return; } catch (e) { if (e.name === "AbortError") return; } }
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "corre-saul.png"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      try { await navigator.clipboard.writeText(text); toast("Imagem salva e texto copiado: cole no grupo"); } catch { toast("Imagem salva"); }
+    }
+
+    for (const o of [...g.fix, ...g.obs]) if (o.name && !faces[o.name]) { const f = face(slug(o.name)); if (f) { faces[o.name] = new Image(); faces[o.name].src = f; } }
+    const loop = ts => {
+      if (!cv.isConnected) return ac.abort();  // left the page (render() rebuilt it): stop drawing and listening
+      const dt = Math.min(.033, (ts - (last || ts)) / 1000); last = ts; g.seen = performance.now();
+      if (g.mode === "corre") step(dt);
+      draw(ts / 1000);
+      requestAnimationFrame(loop);
+    };
+    document.fonts?.ready.then(() => requestAnimationFrame(loop));
+  }
+  return Corre;
+})();
