@@ -433,19 +433,39 @@ def duel_deal(state, user, cards, mode, name, day):
     return {"mode": mode, "day": day, "ace": cards[0]["name"], "you": deck[:5], "cpu": deck[5:10], "log": []}
 
 
+GAMES = {"corre", "duelo", "truco"}  # the POSTs a visitor may make
+SOMBRAS, SOMBRAS_MAX = "Sombras", 300  # visitors who play without logging in: one name in the rankings, no coins (2026-10-30)
+
+
+def jogador(st, user, body):
+    """Who plays a game: the member, or "~id" for a visitor (the id their browser made). A visitor's open match is keyed by
+    that id, their records all go under SOMBRAS (rank_of). Only the newest SOMBRAS_MAX visitors keep an open match."""
+    if user:
+        return user
+    sid = str(body.get("sombra") or "")
+    if not re.fullmatch(r"[A-Za-z0-9]{8,32}", sid):
+        raise ValueError("recarregue a página para jogar")
+    for k in ("duelo_aberto", "truco_aberto", "corre_go"):
+        for x in [x for x in st.get(k, {}) if x.startswith("~")][:-SOMBRAS_MAX]:
+            del st[k][x]
+    return "~" + sid
+
+
+def rank_of(user):
+    return SOMBRAS if user.startswith("~") else user
+
+
 def duel_act(state, user, cards, body, day):
     """The Duelo of a logged-in member, best of 5: they pick the attribute in rounds 1, 3, 5, the machine its card's best
     in 2 and 4. One open duel each, so opening again returns it (no dealing again for a better hand), and the Duelo do
     dia once a day. A finished duel goes to the member's record (state duelo, public): wins (DUEL_WIN coins each), draws,
     losses, the run of wins now and the longest, the best score. The machine's cards stay hidden until played."""
-    if not user:
-        raise ValueError("entre para jogar o Duelo valendo")
-    rec = state.setdefault("duelo", {}).setdefault(user, {"v": 0, "e": 0, "d": 0, "run": 0, "top": 0, "best": None, "dia": None})
+    rec = state.setdefault("duelo", {}).setdefault(rank_of(user), {"v": 0, "e": 0, "d": 0, "run": 0, "top": 0, "best": None, "dia": None})
     duels = state.setdefault("duelo_aberto", {})
     d, at = duels.get(user), body.get("at")
     if at is None:
         mode = body.get("mode") if body.get("mode") in ("livre", "deck") else "dia"
-        if not d and mode == "dia" and (rec["dia"] or [""])[0] == day:
+        if not d and mode == "dia" and user == rank_of(user) and (rec["dia"] or [""])[0] == day:
             return {"feito": rec["dia"][1]}
         d = duels[user] = d or duel_deal(state, user, cards, mode, str(body.get("name") or ""), day)
     else:
@@ -731,8 +751,9 @@ def truco_deck(state, user, cards, r):
 # ---------- Corre, Saul! (#/corre, corre.js): the client runs the game, the server keeps the records, the upgrades and the coins
 CORRE_UP = {"chuteira": [1, 2.5, 5], "folego": [3, 8], "cuia": [0.5, 1.5, 3], "ima": [1, 3]}  # coins per level; corre.js reads them from /api/state
 CORRE_PILA, CORRE_META, CORRE_REI, CORRE_CAP = 0.0001, 0.001, 0.001, 0.01  # coins per pila, for arriving on time, for beating the King; at most per day
-CORRE_T0, CORRE_K, CORRE_GOL, CORRE_TMIN = 18 * 3600 + 22 * 60, 15, 18 * 3600 + 30 * 60, 16  # clock start, game s per real s, kick-off; the fastest possible run (s)
-CORRE_ACH = {"pontual", "rei", "limpo", "lista", "raspando", "tabelinha", "minhoca", "esquizo", "apito", "devedor", "pagou"}
+CORRE_T0, CORRE_K, CORRE_GOL, CORRE_TMIN = 18 * 3600 + 20 * 60, 15, 18 * 3600 + 30 * 60, 24  # clock start, game s per real s, kick-off; the fastest possible run (s)
+CORRE_N = {"pulos": 6, "deslizes": 6, "chutes": 6, "tombos": 1, "metros": 100}  # the stats a run adds, at most this much per second of run
+CORRE_ACH = {"pontual", "rei", "limpo", "lista", "raspando", "tabelinha", "minhoca", "esquizo", "apito", "devedor", "pagou", "saulnaro"}
 
 
 def corre_act(st, base, user, body, now=None):
@@ -741,12 +762,14 @@ def corre_act(st, base, user, body, now=None):
     server (seeded course) if someone fakes the ranking. The coins stay tiny and capped per day, so faking them gains nothing."""
     now = now or time.time()
     day = time.strftime("%Y-%m-%d", time.gmtime(now - 3 * 3600))
-    r = st.setdefault("corre", {}).setdefault(user, {"best": 0, "runs": 0, "up": {}, "ach": []})
-    op = body.get("op")
+    r = st.setdefault("corre", {}).setdefault(rank_of(user), {"best": 0, "runs": 0, "up": {}, "ach": []})
+    op, gos = body.get("op"), st.setdefault("corre_go", {})
     if op == "go":
-        r["go"] = now
+        gos[user] = now
         return {"dia": day}
     if op == "up":
+        if user != rank_of(user):
+            raise ValueError("entre para comprar melhorias")
         item = str(body.get("item"))
         lvl = r["up"].get(item, 0)
         if item not in CORRE_UP or lvl >= len(CORRE_UP[item]):
@@ -759,7 +782,7 @@ def corre_act(st, base, user, body, now=None):
         return {}
     if op != "fim":
         raise ValueError("ação desconhecida")
-    go, t = r.pop("go", None), float(body.get("t") or 0)
+    go, t = gos.pop(user, None), float(body.get("t") or 0)
     pts, pilas, chegou = int(body.get("pts") or 0), int(body.get("pilas") or 0), bool(body.get("chegou"))
     if not go or t < 3 or now - go < t * .85 or not 0 <= pts <= 250 * t + 4000 or not 0 <= pilas <= 3 * t or chegou and t < CORRE_TMIN:
         raise ValueError("essa corrida não fecha com o relógio")
@@ -771,6 +794,13 @@ def corre_act(st, base, user, body, now=None):
     if not r.get("dia") or r["dia"][0] != day or pts > r["dia"][1]:
         r["dia"] = [day, pts]
     r["ach"] = sorted(set(r["ach"]) | set(body.get("ach") or []) & CORRE_ACH)
+    n, sent = r.setdefault("n", {}), body.get("n") if isinstance(body.get("n"), dict) else {}
+    for k, cap in CORRE_N.items():
+        n[k] = n.get(k, 0) + min(max(0, int(sent.get(k) or 0)), int(cap * t))
+    for k, v in (("chegadas", chegou), ("na_hora", chegou and at <= CORRE_GOL), ("reis", bool(body.get("rei"))), ("pilas", pilas)):
+        n[k] = n.get(k, 0) + int(v)
+    if user != rank_of(user):
+        return {"coins": 0}
     why = f"corre {day}"
     got = sum(x["amount"] for x in st["ledger"] if x["player"] == user and x["reason"] == why)
     coins = round(min(max(0, CORRE_CAP - got), pilas * CORRE_PILA + (chegou and at <= CORRE_GOL) * CORRE_META + bool(body.get("rei")) * CORRE_REI), 4)
@@ -894,13 +924,13 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom(), now=None):
     and {desde}: the events from that number on. The online match shows before the one against the machine. "contra":
     the machine plays that member's deck. A finished match goes to state truco (public): wins, losses, the run of wins
     and the longest; a win pays TRUCO_WIN coins (x10 in the launch week) through the ledger."""
-    if not user:
-        raise ValueError("entre para jogar o BioTruco")
     if len(cards) < 10:
         raise ValueError("poucas cartas para o BioTruco")
     now = time.time() if now is None else now
     t, op = state.get("truco_aberto", {}).get(user), body.get("op")
     if op in ("desafiar", "cancelar", "aceitar", "recusar"):
+        if user != rank_of(user):
+            raise ValueError("entre para desafiar alguém do grupo")
         truco_desafio(state, user, cards, body, day, r, now)
         op = None
     i, on = truco_online(state, user)
@@ -949,8 +979,8 @@ def truco_act(state, user, cards, body, day, r=random.SystemRandom(), now=None):
             break
     if max(t["pts"]) >= t["alvo"]:
         won = t["pts"][0] >= t["alvo"]
-        coins = TRUCO_WIN * (10 if t["x10"] else 1) if won else 0
-        truco_rec(state, user, won, coins, f"biotruco {day} {t['pts'][0]}x{t['pts'][1]}" + (f" vs máquina de {t['rival']}" if t.get("rival") else ""))
+        coins = TRUCO_WIN * (10 if t["x10"] else 1) if won and user == rank_of(user) else 0
+        truco_rec(state, rank_of(user), won, coins, f"biotruco {day} {t['pts'][0]}x{t['pts'][1]}" + (f" vs máquina de {t['rival']}" if t.get("rival") else ""))
         t["fim"], t["h"] = {"won": won, "coins": coins}, None
         truco_ev(t, "fim")
         del state["truco_aberto"][user]
@@ -1430,7 +1460,7 @@ def base_of(st, data):
 def public_state(st):
     d = st["match"]["draft"]
     base = base_of(st, DATA)
-    out = {k: v for k, v in st.items() if k not in ("ledger", "owners", "cromo", "fechados", "duelo_aberto", "truco_aberto", "truco_online", "truco_desafios", "tour", "tour_truco")}  # owners hold phone_pk
+    out = {k: v for k, v in st.items() if k not in ("ledger", "owners", "cromo", "fechados", "duelo_aberto", "truco_aberto", "corre_go", "truco_online", "truco_desafios", "tour", "tour_truco")}  # owners hold phone_pk
     out["cromadas"] = {c: {"by": p, "stat": st.get("cromo", {}).get(c, "")} for c, p in first_buyers(st).items()}
     out["profiles"] = load_profiles()
     out["photos"] = sorted(p.stem for p in PHOTOS.glob("*.jpg")) if PHOTOS.exists() else []
@@ -2987,7 +3017,10 @@ class Handler(SimpleHTTPRequestHandler):
             if re.fullmatch(r"[a-z_]{1,24}", str(b.get("e"))) and not too_many_fails("ev:" + self.ip(), failed=True, limit=300):
                 log_event(b["e"], user, self.ip(), self.mobile(), p=str(b.get("p") or "")[:120], d=str(b.get("d") or "")[:120])
             return self.send_json({})
-        if not action.startswith("login/") and not user and not self.admin() and not pin_ok(self.headers.get("X-BioFut-Pin")):
+        if action in GAMES and not user:  # the games are open to visitors (Sombras) without the group PIN, with a cap per IP
+            if too_many_fails("sombra:" + self.ip(), failed=True, limit=1500):
+                return self.send_json({"error": "muitas jogadas: tente daqui a pouco"}, 429)
+        elif not action.startswith("login/") and not user and not self.admin() and not pin_ok(self.headers.get("X-BioFut-Pin")):
             too_many_fails(self.ip(), failed=True)
             return self.send_json({"error": "PIN do grupo errado"}, 403)
         try:
@@ -3158,9 +3191,7 @@ class Handler(SimpleHTTPRequestHandler):
                         save_state(st)
                     return self.send_json({"bonus": BONUS if got else 0})
                 elif action == "corre":  # Corre, Saul!: {op: go | fim | up}
-                    if not user:
-                        raise ValueError("entre para a corrida valer")
-                    res = corre_act(st, base_of(st, DATA), user, body)
+                    res = corre_act(st, base_of(st, DATA), jogador(st, user, body), body)
                     save_state(st)
                     return self.send_json(res if body.get("op") == "go" else {**public_state(st), **res})
                 elif action == "tour":  # the member saw (or skipped) the first-login tour
@@ -3176,7 +3207,7 @@ class Handler(SimpleHTTPRequestHandler):
                     claim_cromo(st, user, clean_name(body.get("card")), str(body.get("stat") or ""))
                     save_state(st)
                 elif action == "duelo":  # the server deals and judges: the ranking and the coins are real
-                    duel = duel_act(st, user, duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
+                    duel = duel_act(st, jogador(st, user, body), duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
                                     time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600)))  # the group's day
                     save_state(st)
                     return self.send_json({**public_state(st), "duel": duel})
@@ -3214,7 +3245,7 @@ class Handler(SimpleHTTPRequestHandler):
                     notify(f"🎁 {name}: {f'{coins:+g} moedas ' if coins else ''}{'carta ' + card if card else ''}", post=False)
                     return self.send_json(public_state(st))
                 elif action == "truco":  # BioTruco: the server deals, plays the machine (or relays the other player) and judges
-                    truco = truco_act(st, user, duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
+                    truco = truco_act(st, jogador(st, user, body), duel_cards(DATA["games"] + unsynced(st["played"], DATA["games"])), body,
                                       time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600)))
                     if (truco or {}).pop("_salvar", False) or body.get("op"):  # the view alone changes nothing, except a seen online end
                         save_state(st)

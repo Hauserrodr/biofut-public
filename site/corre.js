@@ -1,10 +1,12 @@
 // ---------- Corre, Saul! (#/corre), a member's idea (2026-10-30): Saul runs to the Planet Ball before the 18:30 game.
 // index.html loads this file on the first visit (bindCorre) and calls Corre(). It uses the page's globals: ST, D, ME, CARDS, face,
-// slug, av, plink, esc, coin, rankList, post, setState, toast, store, ui, BF, $. The server keeps records, upgrades and coins
-// (server.py corre_act). Everyone runs the same street on the same day: the course comes from the Brasília date.
+// slug, av, pname, esc, coin, rankList, post, setState, toast, store, ui, BF, $, SOMBRAS. The server keeps records, upgrades and
+// coins (server.py corre_act); a visitor runs as SOMBRAS. Everyone runs the same street on the same day: the course comes from
+// the Brasília date. Everything but the title lives in the game window: the canvas, the pad and the menus over them.
 "use strict";
 window.Corre = (() => {
-  const K = {len: 12000, t0: 18 * 3600 + 22 * 60, k: 15, gol: 18 * 3600 + 30 * 60, rei: [6800, 10800]};  // same clock as server.py CORRE_*
+  const K = {len: 12000, t0: 18 * 3600 + 20 * 60, k: 15, gol: 18 * 3600 + 30 * 60, rei: [6800, 10800]};  // same clock as server.py CORRE_*
+  const spd = p => 220 + 300 * p, KMH = .05;  // street units per second at p of the way (slow start, faster near the Planet); km/h per unit/s
   const UP = {  // costs come from the server (ST.corre_up)
     chuteira: ["👟", "Chuteira nova", "Pula mais alto"],
     folego: ["🫁", "Fôlego", "+1 tropeço antes do cancelamento"],
@@ -16,6 +18,7 @@ window.Corre = (() => {
     ["limpo", "Sem tropeço", "Chegue sem tropeçar"],
     ["rei", "Rei deposto", "Derrube o BioFut King"],
     ["lista", "Na lista", "Junte L-I-S-T-A numa corrida", 1],
+    ["saulnaro", "Saulnaro", "Faça o L três vezes numa corrida", 1],
     ["raspando", "Raspando", "5 pulos no último instante numa corrida", 1],
     ["tabelinha", "Tabelinha", "Chute uma bola que derrube um obstáculo", 1],
     ["minhoca", "Jogada de minhoca", "Deslize por baixo de 3 cornetadas do King", 1],
@@ -25,13 +28,16 @@ window.Corre = (() => {
     ["esquizo", "Esquizofut", "Toque na lua 3 vezes numa corrida", 1],
   ];
   const LETRAS = [[1500, "L"], [3300, "I"], [4800, "S"], [6300, "T"], [11300, "A"]], AMIGOS = [2500, 5500, 10950];
+  const ELES = [[1950, "Saulnaro fez o L?!"], [5150, "De novo, Saulnaro?"], [11650, "SAULNARO VIROU A CASACA!"]];  // the group's Faz o L sticker, for Leo
+  const FIX = [...LETRAS.map(([x]) => x), ...AMIGOS, ...ELES.map(([x]) => x)];  // where the fixed pickups stand: no obstacle right there
   const SIZE = {cone: [22, 30], lixo: [30, 44], poca: [64, 6], pipoca: [56, 50], pombo: [26, 14], faixa: [74, 270], sombra: [24, 56], bola: [14, 14],
-    pila: [12, 16], cuia: [18, 22], letra: [20, 22], amigo: [24, 62], kbola: [16, 16], corneta: [24, 34], alta: [16, 16]};
+    pila: [12, 16], cuia: [18, 22], letra: [20, 22], amigo: [24, 62], kbola: [16, 16], corneta: [24, 34], alta: [16, 16], ele: [26, 26]};
   const HURT = new Set(["cone", "lixo", "poca", "pipoca", "pombo", "faixa", "sombra", "kbola", "corneta", "alta"]);
   const GROUND = new Set(["cone", "lixo", "pipoca", "sombra", "poca"]);  // what a kicked ball knocks down
-  const FAIXAS = ["LISTA DUPLA", "SUPLÊNCIA", "DEVEDORES", "MENSALISTA", "RESENHA"];
-  const SAUL = {shirt: "#2fae57", trim: "#23864a", num: "10", skin: "#d9a27a", skin2: "#b98463", hair: "#2b1d14", sock: "#f2f2ee", sock2: "#bdbdb6"};  // the green vest
+  const FAIXAS = ["LISTA DUPLA", "SUPLÊNCIA", "DEVEDORES", "MENSALISTA", "RESENHA", "SAULNARO 22"];
+  const SAUL = {shirt: "#2fae57", trim: "#23864a", num: "77", skin: "#d9a27a", skin2: "#b98463", hair: "#2b1d14", sock: "#f2f2ee", sock2: "#bdbdb6"};  // the green vest
   const KING = {shirt: "#1b1b20", trim: "#f2c230", num: "K", skin: "#c98d63", skin2: "#a87350", hair: "#1a120c", sock: "#1b1b20", sock2: "#121216"};  // the black one
+  const N = [["pulos", "pulos"], ["deslizes", "deslizes"], ["chutes", "chutes"], ["tombos", "tropeços"]];  // what a run counts (server.py CORRE_N)
 
   const clk = s => [s / 3600, s / 60 % 60, s % 60].map(n => String(Math.floor(n)).padStart(2, "0")).join(":");
   const dia = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);  // the group's day, as server.py counts it
@@ -42,28 +48,45 @@ window.Corre = (() => {
   };
   const rec = () => ST.corre?.[ME] || {best: 0, runs: 0, up: {}, ach: []};
   const lvl = k => ME ? rec().up?.[k] || 0 : 0;
-  const local = () => { try { return JSON.parse(store.get("biofutCorre2") || "{}") } catch { return {} } };  // without login: this browser only
+  const local = () => { try { return JSON.parse(store.get("biofutCorre2") || "{}") } catch { return {} } };  // this browser: a visitor's own numbers
   const found = () => new Set([...(ME ? rec().ach : []), ...(local().ach || [])]);
   const nm = n => ST.profiles?.[n]?.nick || n;
+  const num = n => Math.round(n || 0).toLocaleString("pt-BR");
+  const touch = matchMedia("(pointer:coarse)").matches;
   const tipPool = () => [...(D.glossary || []).map(([k, v]) => ["Dicionário BioFut", k, v]), ...(D.nicknames || []).map(([k, v]) => ["Apelidos", k, v])];
 
-  // ---------- the page around the canvas
+  // ---------- the game window: canvas, pad and the menus over both (dark like the street, in both site themes)
   const CSS = `.corre-wrap{position:relative;margin-top:18px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#0b0a1a}
-#corre{display:block;width:100%;height:clamp(240px,58vw,440px);touch-action:none;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-.corre-pad{display:grid;grid-template-columns:1fr 1.3fr 1fr auto;gap:8px;padding:8px;background:#131124}
-.corre-pad button{height:58px;min-width:48px;border-radius:12px;border:1px solid #2d2a45;background:#1d1a33;color:#f2f2ee;font:700 15px var(--cond);letter-spacing:.05em;text-transform:uppercase;
+#corre{display:block;width:100%;height:clamp(260px,58vw,460px);touch-action:none;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.corre-pad{display:grid;grid-template-columns:1fr 1.4fr 1fr auto auto;gap:8px;padding:8px;background:#131124}
+.corre-pad button{height:50px;min-width:50px;border-radius:12px;border:1px solid #2d2a45;background:#1d1a33;color:#f2f2ee;font:700 15px var(--cond);letter-spacing:.05em;text-transform:uppercase;
   display:flex;align-items:center;justify-content:center;gap:8px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:pointer}
 .corre-pad button b{font-size:20px;line-height:1}
 .corre-pad button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
-.corre-pad button.on{transform:translateY(1px);filter:brightness(1.3)}
+.corre-pad button.on{transform:scale(.96);filter:brightness(1.3)}
 .corre-pad kbd{font:600 11px var(--body);opacity:.55;text-transform:none;letter-spacing:0}
+@media (pointer:coarse){.corre-pad{gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom))}.corre-pad button{height:72px;flex-direction:column;gap:3px;font-size:12px;border-radius:16px}.corre-pad button b{font-size:24px}.corre-pad kbd{display:none}}
 .corre-wrap:fullscreen{display:flex;flex-direction:column;border:0;border-radius:0}
 .corre-wrap:fullscreen #corre{flex:1;height:auto;min-height:0}
-@media (pointer:fine){.corre-pad button{height:46px}}
-@media (pointer:coarse){.corre-pad kbd{display:none}}
-@media (max-width:520px){#corre{height:78vw}.corre-wrap{margin-left:-16px;margin-right:-16px;border-radius:0;border-left:0;border-right:0}.corre-pad button{font-size:13px;gap:5px}}
-.corre-tip{margin-top:14px;font-size:14px;color:var(--mut);border-left:3px solid var(--gold);padding:2px 0 2px 12px}
-.corre-tip b{color:var(--ink,inherit)}
+@media (max-width:520px){#corre{height:min(84vw,62vh)}.corre-wrap{margin-left:-16px;margin-right:-16px;border-radius:0;border-left:0;border-right:0}}
+.corre-menu{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;background:rgba(9,8,20,.9);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+  --bg:#0b0a1a;--card:#16142a;--card2:#1d1a33;--line:#2d2a45;--line2:#3d3960;--ink:#f2f2ee;--mut:#b6b3c6;--dim:#807c96;--acc:#ff4a6e;--acc-ink:#16060a;--gold:#f2c230;--win:#43d17f;color:var(--ink);color-scheme:dark}
+.corre-menu[hidden]{display:none}
+.corre-tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;flex:none}
+.corre-tabs::-webkit-scrollbar{display:none}
+.corre-tabs button{flex:none;height:38px;padding:0 14px;border-radius:10px;border:0;background:none;color:var(--mut);font:700 15px var(--cond);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.corre-tabs button[aria-selected=true]{background:var(--card2);color:var(--ink)}
+.corre-tabs .x{margin-left:auto;position:sticky;right:0;font-size:20px;color:var(--ink);background:#131124;box-shadow:-10px 0 10px #131124}
+@media (max-width:520px){.corre-tabs button{padding:0 9px;font-size:13px}.corre-body{padding:14px 16px 18px}}
+.corre-body{flex:1;overflow:auto;overscroll-behavior:contain;padding:18px 18px 22px}
+.corre-body h2{font:800 clamp(34px,7vw,56px)/1 var(--cond);letter-spacing:.01em;margin:0}
+.corre-body h3{margin:0}
+.corre-body .lead{max-width:620px;margin:10px 0 0;color:var(--mut)}
+.corre-body .row{margin-top:16px}
+.corre-tip{margin-top:18px;font-size:14px;color:var(--mut);border-left:3px solid var(--gold);padding:2px 0 2px 12px;max-width:620px}
+.corre-tip b{color:var(--ink)}
+.corre-help{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:14px;color:var(--mut)}.corre-help b{color:var(--ink)}
+.corre-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px}
 .corre-ups{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
 .corre-ups .btn{white-space:normal;line-height:1.2;height:auto;min-height:36px;width:100%;justify-content:center;margin-top:auto}
 .corre-ups .card{display:flex;flex-direction:column;gap:6px}
@@ -71,63 +94,30 @@ window.Corre = (() => {
 .corre-ach{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
 .corre-ach div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--dim)}
 .corre-ach div b{display:block;font:700 15px var(--cond);letter-spacing:.03em;color:var(--mut)}
-.corre-ach div.ok{border-color:var(--gold);color:var(--mut)}.corre-ach div.ok b{color:var(--gold)}`;
+.corre-ach div.ok{border-color:var(--gold);color:var(--mut)}.corre-ach div.ok b{color:var(--gold)}
+.corre-num{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:10px 0 20px}
+.corre-num div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.corre-num b{display:block;font:800 26px/1.05 var(--cond)}.corre-num small{color:var(--mut);font-size:13px}`;
   function page() {
     return `<div class="kicker">Jogar · novo</div><h1 style="font-size:52px;margin-top:8px">Corre, Saul!</h1>
-  <p class="muted" style="max-width:660px">Quinta, 18:30, Planet Ball, e o Saul saiu atrasado de novo. Pule, deslize e chute o que aparecer na rua, encare o BioFut King e chegue antes que alguém cancele o jogo. A rua muda todo dia e é a mesma para todo mundo.</p>
   <div class="corre-wrap" id="correWrap">
-    <canvas id="corre" tabindex="0" aria-label="Corre, Saul: toque ou espaço pula, seta para baixo desliza, X chuta"></canvas>
+    <canvas id="corre" tabindex="0" aria-label="Corre, Saul: toque ou espaço pula, deslize para baixo ou seta para baixo desliza, deslize para a direita ou X chuta"></canvas>
     <div class="corre-pad">
       <button data-k="slide" aria-label="Deslizar"><b>⬇</b>Deslizar <kbd>↓</kbd></button>
       <button data-k="jump" class="pri" aria-label="Pular"><b>⬆</b>Pular <kbd>espaço</kbd></button>
       <button data-k="kick" aria-label="Chutar"><b>⚽</b>Chutar <kbd>X</kbd></button>
+      <button data-k="menu" aria-label="Menu e pausa" title="Menu (Esc)"><b>☰</b></button>
       ${document.fullscreenEnabled ? '<button data-k="fs" aria-label="Tela cheia" title="Tela cheia"><b>⛶</b></button>' : ""}
     </div>
-  </div>
-  <div class="row" id="correFim" style="margin-top:12px"></div>
-  <p class="corre-tip" id="correTip"></p>
-  <div id="correMais"></div>`;
+    <div class="corre-menu" id="correMenu" hidden></div>
+  </div>`;
   }
-  function tip() {
-    const T = tipPool(), el = $("#correTip");
-    if (!el) return;
-    if (!T.length) return el.remove();
+  const tip = () => {
+    const T = tipPool();
+    if (!T.length) return "";
     const [src, k, v] = T[Math.floor(Math.random() * T.length)];
-    el.innerHTML = `<span class="dim">${src} ·</span> <b>${esc(k)}</b>: ${esc(v)}`;
-  }
-  function mais() {  // ranking, upgrades and achievements under the game; redrawn after each run without touching the canvas
-    const el = $("#correMais");
-    if (!el) return;
-    const hoje = dia(), R = Object.entries(ST.corre || {}), mine = found();
-    const list = (title, rows, big, small) => `<div class="card pad"><h3>${title}</h3>${rows.length ? `<ul class="list" style="margin-top:8px">${rankList(rows, ([n, r], i) =>
-      `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(nm(n))}</a><span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`)}</ul>`
-      : '<p class="muted" style="margin-top:8px">Ninguém ainda: a primeira corrida abre a lista.</p>'}</div>`;
-    const rank = `<section class="sec"><div class="sec-h"><div><div class="kicker">Ranking</div><h2>Quem chega primeiro</h2></div></div><div class="grid g3">
-      ${list("Corrida de hoje", R.filter(([, r]) => r.dia?.[0] === hoje).sort(([, a], [, b]) => b.dia[1] - a.dia[1]), r => r.dia[1].toLocaleString("pt-BR"), () => "pontos")}
-      ${list("Recorde", R.filter(([, r]) => r.best).sort(([, a], [, b]) => b.best - a.best), r => r.best.toLocaleString("pt-BR"), r => `${r.runs} corrida${r.runs > 1 ? "s" : ""}`)}
-      ${list("Mais cedo no Planet", R.filter(([, r]) => r.cedo).sort(([, a], [, b]) => a.cedo - b.cedo), r => clk(r.cedo), r => r.cedo <= K.gol ? "a tempo" : "atrasado")}</div>
-      ${ME ? "" : `<p class="muted" style="margin-top:12px"><a href="/entrar?next=${encodeURIComponent("/#/corre")}">Entre</a> para entrar no ranking, ganhar moedas e comprar melhorias.</p>`}</section>`;
-    const cost = ST.corre_up || {}, bal = ST.balances?.[ME] ?? 25;
-    const ups = `<section class="sec"><div class="sec-h"><div><div class="kicker">Melhorias</div><h2>O vestiário do Saul</h2></div>${ME ? `<span class="muted">Você tem <b class="num">${coin(bal)}</b> moedas</span>` : ""}</div>
-      <div class="corre-ups">${Object.entries(UP).map(([k, [ico, name, desc]]) => {
-        const c = cost[k] || [], l = lvl(k), next = c[l];
-        return `<div class="card pad"><div style="font-size:28px;line-height:1">${ico}</div><h3>${name}</h3><p class="muted" style="font-size:14px">${desc}</p>
-          <div class="lv">${c.map((_, i) => `<i class="${i < l ? "on" : ""}"></i>`).join("")}</div>
-          ${next === undefined ? '<span class="dim" style="font-size:13px">No máximo</span>' : ME ? `<button class="btn sm${bal >= next ? " pri" : ""}" data-up="${k}">Comprar · ${coin(next)} moeda${next === 1 ? "" : "s"}</button>` : `<span class="dim" style="font-size:13px">${coin(next)} moedas</span>`}</div>`;
-      }).join("")}</div></section>`;
-    const ach = `<section class="sec"><div class="sec-h"><div><div class="kicker">Conquistas</div><h2>${mine.size} de ${ACH.length}</h2></div>
-      <a class="muted" href="/wiki#/p/biofut-king">Quem é o BioFut King? Na wiki →</a></div>
-      <div class="corre-ach">${ACH.map(([id, name, how, hid]) => mine.has(id) ? `<div class="ok"><b>${name}</b>${how}</div>`
-        : hid ? '<div><b>???</b>Segredo. Continue correndo.</div>' : `<div><b>${name}</b>${how}</div>`).join("")}</div></section>`;
-    el.innerHTML = rank + ups + ach;
-    el.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => {
-      b.disabled = true;
-      const j = await post("corre", {op: "up", item: b.dataset.up});
-      if (j) { setState(j); toast(`${UP[b.dataset.up][1]}: comprada`); BF.ev("corre_saul", "up " + b.dataset.up); if (ui.corre?.mode !== "corre") ui.corre = null; }
-      mais();
-      if (j && $("#corre")) Corre();  // the new level counts from the next run: rebuild the idle game
-    });
-  }
+    return `<p class="corre-tip"><span class="dim">${src} ·</span> <b>${esc(k)}</b>: ${esc(v)}</p>`;
+  };
 
   // ---------- the game
   let cx;  // the canvas being drawn: the game, or the share card for a moment
@@ -136,7 +126,6 @@ window.Corre = (() => {
     const pg = $("#correPg");
     if (!pg) return;
     pg.innerHTML = page();
-    tip(); mais();
     const cv = $("#corre"), ac = new AbortController(), on = {signal: ac.signal};
     cx = cv.getContext("2d");
     const R0 = rng("cidade");
@@ -150,16 +139,16 @@ window.Corre = (() => {
       const d = dia(), R = rng(d), lives = 3 + lvl("folego");
       const pool = CARDS().map(c => c.name).filter(n => !/saul/i.test(n)).sort();
       const fix = [...LETRAS.map(([x, l]) => ({type: "letra", x, l, b: 70 + R() * 30})),
-        ...AMIGOS.map(x => ({type: "amigo", x, name: pool.length ? pool[Math.floor(R() * pool.length)] : "", b: 0}))].sort((a, b) => a.x - b.x);
+        ...AMIGOS.map(x => ({type: "amigo", x, name: pool.length ? pool[Math.floor(R() * pool.length)] : "", b: 0})),
+        ...ELES.map(([x, say]) => ({type: "ele", x, say, b: 40 + R() * 50}))].sort((a, b) => a.x - b.x);
       fix.forEach(o => [o.w, o.h] = SIZE[o.type]);
       return {mode: "pronto", dia: d, R, RK: rng(d + "/king"), x: 0, y: 0, vy: 0, ht: 0, buf: 0, t: 0, lives, max: lives, hits: 0, inv: 0, slow: 1, boost: 0,
         slide: 0, sbuf: 0, kick: 0, kcd: 0, obs: [], fix, next: 700, pts: 0, streak: 0, pilas: 0, letras: "", near: 0, shield: 0, pops: [],
-        king: {st: "off", hp: 3, cd: .5, ox: 0, n: 0, minhoca: 0, hit: 0, t: 0}, ach: new Set(), esq: 0, lua: 0, go: false, coins: null, seen: 0};
+        king: {st: "off", hp: 3, cd: .5, ox: 0, n: 0, minhoca: 0, hit: 0, t: 0}, ach: new Set(), esq: 0, lua: 0, go: false, coins: null, seen: 0, eles: 0, vmax: 0, n: {pulos: 0, deslizes: 0, chutes: 0, tombos: 0}};
     };
     let g = ui.corre;
     if (!g || g.mode !== "corre" && g.mode !== "pausa" && g.dia !== dia()) g = ui.corre = fresh();
-    if (g.mode === "corre" && performance.now() - g.seen > 400) g.mode = "pausa";  // came back to the page: wait for a tap
-    if (g.mode === "fim") fimRow();
+    if (g.mode === "corre" && performance.now() - g.seen > 400) g.mode = "pausa";  // came back to the page: wait in the menu
     let W = 600, H = 300, G = 256, sc = 1, last = 0, down = false;
     const sx = () => Math.min(120, W * .2);
     const fit = () => {
@@ -169,7 +158,7 @@ window.Corre = (() => {
       cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); cx.setTransform(sc * dpr, 0, 0, sc * dpr, 0, 0);
     };
     fit(); addEventListener("resize", fit, on); document.addEventListener("fullscreenchange", () => setTimeout(fit, 50), on);
-    const speed = () => (320 + 240 * g.x / K.len) * g.slow * (g.boost > 0 ? 1.3 : 1);
+    const speed = () => spd(g.x / K.len) * g.slow * (g.boost > 0 ? 1.3 : 1);
     const mult = () => Math.min(5, 1 + Math.floor(g.streak / 5));
     const add = (n, txt, c) => { n = Math.round(n * (g.esq ? 1.5 : 1)); g.pts += n; if (txt) pop(`${txt} +${n}`, c); };
     const pop = (txt, c = "#fff", big) => g.pops.push({txt, c, big, t: 0, y: big ? H * .36 : G - g.y - 80});
@@ -178,7 +167,8 @@ window.Corre = (() => {
     // the street: everything from the day's seed, in the same order for everyone, so the same day = the same street
     const spawn = () => {
       const R = g.R, x = g.next, p = x / K.len;
-      const pool = ["cone", "cone", "lixo", "poca", "pipoca", ...(p > .1 ? ["pombo"] : []), ...(p > .2 ? ["faixa", "faixa"] : []), ...(p > .3 ? ["sombra"] : [])];
+      if (FIX.some(f => f > x - 70 && f < x + 110)) return void (g.next = x + 120);  // a pickup and an obstacle at once is a coin toss
+      const pool = ["cone", "cone", "lixo", "poca", ...(p > .15 ? ["pipoca"] : []), ...(p > .1 ? ["pombo"] : []), ...(p > .2 ? ["faixa", "faixa"] : []), ...(p > .3 ? ["sombra"] : [])];
       const type = pool[Math.floor(R() * pool.length)], [w] = SIZE[type], low = type === "faixa" || type === "pombo";
       put(type, x, type === "pombo" ? 34 + R() * 8 : type === "faixa" ? 30 : 0, type === "faixa" ? {txt: FAIXAS[Math.floor(R() * FAIXAS.length)]} : type === "sombra" ? {vx: -70} : {});
       if (R() < .4) {  // pilas: an arc over what you jump, a low line under what you slide under
@@ -187,12 +177,12 @@ window.Corre = (() => {
       }
       if (R() < .16 && GROUND.has(type) && type !== "sombra") put("bola", x - 150 - R() * 60, 0, {vx: 0, vb: 0});
       if (R() < .18) put("cuia", x + w + 90 + R() * 60, 30 + R() * 60);
-      g.next = x + w + (320 + 240 * p) * (.62 + R() * .68);
+      g.next = x + w + spd(p) * (.75 + R() * .7);
       if (g.next > K.rei[0] - 200 && g.next < K.rei[1] + 100) g.next = K.rei[1] + 100;  // the King's stretch has no street obstacles
     };
     const hurt = o => {
       if (g.shield) { g.shield = 0; g.inv = 1; o.hit = true; pop("O colete segurou!", "#7dffb0"); return; }
-      o.hit = true; g.lives--; g.hits++; g.inv = 1.3; g.slow = .35; g.streak = 0;
+      o.hit = true; g.lives--; g.hits++; g.n.tombos++; g.inv = 1.3; g.slow = .35; g.streak = 0;
       if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
       if (!g.lives) finish(false);
     };
@@ -226,14 +216,14 @@ window.Corre = (() => {
       g.t += dt; g.inv = Math.max(0, g.inv - dt); g.boost = Math.max(0, g.boost - dt); g.buf = Math.max(0, g.buf - dt); g.sbuf = Math.max(0, g.sbuf - dt);
       g.kick = Math.max(0, g.kick - dt); g.kcd = Math.max(0, g.kcd - dt); g.slow = Math.min(1, g.slow + dt * .8);
       if (g.king.sopro) g.king.sopro = Math.max(0, g.king.sopro - dt);
-      g.x = Math.min(K.len, g.x + v * dt);
+      g.x = Math.min(K.len, g.x + v * dt); g.vmax = Math.max(g.vmax, v);
       if (g.slide > 0 && (g.slide -= dt) <= 0) g.slide = 0;
-      if (g.buf && !g.y) { g.slide = 0; g.vy = 700 * (1 + .07 * lvl("chuteira")); g.y = .01; g.ht = 0; g.buf = 0; }
+      if (g.buf && !g.y) { g.n.pulos++; g.slide = 0; g.vy = 700 * (1 + .07 * lvl("chuteira")); g.y = .01; g.ht = 0; g.buf = 0; }
       if (g.y) {
         g.ht += dt;
         if (g.sbuf) g.vy = Math.min(g.vy, -900);  // slide asked in the air: drop fast
         g.vy -= (down && g.vy > 0 && g.ht < .22 ? 1150 : 2500) * dt; g.y = Math.max(0, g.y + g.vy * dt);
-        if (!g.y && g.sbuf) { g.slide = .55; g.sbuf = 0; }
+        if (!g.y && g.sbuf) { g.slide = .55; g.sbuf = 0; g.n.deslizes++; }
       }
       while (g.next < g.x + W + 60 && g.next < K.len - 600) spawn();
       while (g.fix.length && g.fix[0].x < g.x + W + 100) g.obs.push(g.fix.shift());
@@ -262,6 +252,7 @@ window.Corre = (() => {
         if (xin && o.type === "corneta" && g.slide) o.slid = true;
         if (xin && ob0 <= S[3] && ob1 >= S[1]) {
           if (o.type === "pila") { o.hit = true; g.pilas++; add(5); }
+          else if (o.type === "ele") { o.hit = true; add(50); const all = ++g.eles === ELES.length; pop(o.say, all ? "#ff4a6e" : "#ffd2dc", all); if (all) g.ach.add("saulnaro"); }
           else if (o.type === "cuia") { o.hit = true; g.boost = 2.2 + .8 * lvl("cuia"); pop("Chimarrão!", "#9be07a"); }
           else if (o.type === "letra") {
             o.hit = true; g.letras += o.l; pop(o.l, "#f2c230");
@@ -287,60 +278,77 @@ window.Corre = (() => {
       if (g.x >= K.len) finish(true);
     };
 
-    // ---------- input: jump (tap, Space, Up, W), slide (swipe down, Down, S), kick (X, K)
+    // ---------- input: jump (tap, swipe up, Space, Up, W), slide (swipe down, Down, S), kick (swipe right, X, K), menu (Esc, P)
     const start = () => {
-      Object.assign(g, fresh(), {mode: "corre"}); $("#correFim").innerHTML = ""; tip(); BF.ev("corre_saul", "start");
-      if (ME) post("corre", {op: "go"}).then(j => { if (j) g.go = true; });
+      Object.assign(g, fresh(), {mode: "corre"}); ui.correTip = null; menu(false); BF.ev("corre_saul", "start");
+      post("corre", {op: "go"}).then(j => { if (j) g.go = true; });  // a visitor runs as Sombras (index.html post sends their browser's id)
+      if (touch && (local().runs || 0) < 3) pop("Deslize: ↑ pula · ↓ desliza · → chuta", "#ffd27a", true);
+      cv.focus({preventScroll: true});
     };
+    const pause = () => { if (g.mode === "corre") g.mode = "pausa"; menu("jogar"); };
+    const resume = () => { menu(false); if (g.mode === "pausa") g.mode = "corre"; cv.focus({preventScroll: true}); };
+    const go = () => g.mode === "pausa" ? resume() : g.mode !== "corre" && !(g.mode === "fim" && performance.now() - g.end < 700) && start();  // a late tap must not restart the run
     const press = () => {
       down = true;
-      if (g.mode === "fim" && performance.now() - g.end < 700) return;  // a late tap must not restart the run
-      if (g.mode === "pronto" || g.mode === "fim") start();
-      else if (g.mode === "pausa") g.mode = "corre";
-      else g.buf = .14;  // a jump asked a little before landing still counts
+      if (g.mode === "corre") g.buf = .14;  // a jump asked a little before landing still counts
+      else go();
     };
     const release = () => { down = false; };
-    const slide = () => { if (g.mode !== "corre") return; if (g.y) g.sbuf = .3; else { g.slide = .55; g.buf = 0; } };
+    const slide = () => { if (g.mode !== "corre") return; if (g.y) g.sbuf = .3; else { if (!g.slide) g.n.deslizes++; g.slide = .55; g.buf = 0; } };
     const kick = () => {
       if (g.mode !== "corre" || g.kcd) return;
-      g.kick = .28; g.kcd = .4;
+      g.kick = .28; g.kcd = .4; g.n.chutes++;
       for (const o of g.obs) {
         const d = o.x - g.x;
         if (o.type === "bola" && !o.roll && d > -16 && d < 64) { o.roll = true; o.vx = speed() + 480; o.vb = 140; }
         if (o.type === "alta" && !o.back && !o.hit && d > -18 && d < 74 && o.b < 90) { o.back = true; o.vx = speed() + 700; o.vb = 260; pop("Devolve!", "#f2c230"); }
       }
     };
-    const ACT = {jump: press, slide, kick, fs: () => document.fullscreenElement ? document.exitFullscreen() : $("#correWrap").requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape")).catch(() => {})};
-    let py = null;
+    const buzz = () => { if (touch) try { navigator.vibrate?.(8); } catch {} };
+    const ACT = {jump: press, slide, kick, menu: pause, fs: () => document.fullscreenElement ? document.exitFullscreen() : $("#correWrap").requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape")).catch(() => {})};
+    let tp = null;  // a finger on the street: a tap or a swipe up jumps (held: higher), a swipe down slides, a swipe right kicks
     cv.addEventListener("pointerdown", e => {
-      e.preventDefault(); py = e.clientY;
+      e.preventDefault();
       const r = cv.getBoundingClientRect(), mx = (e.clientX - r.left) / sc, my = (e.clientY - r.top) / sc;
       if (g.mode === "corre" && Math.hypot(mx - W * .62, my - 72) < 26 && ++g.lua === 3 && !g.esq) {  // the moon, three times
         g.esq = 1; g.ach.add("esquizo"); pop("HOJE É DIA DE ESQUIZOFUT! pontos x1,5", "#c38bff", true); BF.ev("corre_saul", "esquizofut"); return;
       }
-      press();
+      if (e.pointerType === "mouse" || g.mode !== "corre") return press();
+      clearTimeout(tp?.tm);
+      tp = {x: e.clientX, y: e.clientY, id: e.pointerId, tm: setTimeout(() => { if (tp && !tp.done) { tp.done = true; press(); } }, 90)};  // still after 90 ms: a held jump
     }, on);
-    cv.addEventListener("pointermove", e => { if (py !== null && e.clientY - py > 28 * Math.max(1, sc)) { py = null; slide(); } }, on);
+    cv.addEventListener("pointermove", e => {
+      if (!tp || tp.id !== e.pointerId) return;
+      const dx = e.clientX - tp.x, dy = e.clientY - tp.y;
+      if (!tp.done && Math.hypot(dx, dy) > 16) { tp.done = true; clearTimeout(tp.tm); Math.abs(dx) > Math.abs(dy) ? dx > 0 && kick() : dy < 0 ? press() : slide(); }
+      else if (tp.done && !tp.fall && dy > 30 && g.y) { tp.fall = true; slide(); }  // jumped, then down: drop fast
+    }, on);
+    const lift = e => {
+      if (tp && tp.id === e.pointerId) { clearTimeout(tp.tm); if (!tp.done) press(); tp = null; }  // a quick tap: a short hop
+      release();
+    };
+    addEventListener("pointerup", lift, on); addEventListener("pointercancel", lift, on);
     cv.addEventListener("contextmenu", e => e.preventDefault(), on);
-    addEventListener("pointerup", () => { py = null; release(); }, on); addEventListener("pointercancel", () => { py = null; release(); }, on);
     $("#correWrap").querySelectorAll("[data-k]").forEach(b => {
-      b.addEventListener("pointerdown", e => { e.preventDefault(); b.classList.add("on"); ACT[b.dataset.k](); }, on);
+      b.addEventListener("pointerdown", e => { e.preventDefault(); b.classList.add("on"); buzz(); ACT[b.dataset.k](); }, on);
       for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => { b.classList.remove("on"); if (b.dataset.k === "jump") release(); }, on);
       b.addEventListener("contextmenu", e => e.preventDefault(), on);
     });
     const KEYS = {Space: "jump", ArrowUp: "jump", KeyW: "jump", ArrowDown: "slide", KeyS: "slide", KeyX: "kick", KeyK: "kick"};
     addEventListener("keydown", e => {
-      const k = KEYS[e.code];
       if (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(document.activeElement?.tagName || "") && document.activeElement !== cv) return;
-      if (e.code === "KeyP" || e.code === "Escape" && g.mode === "corre") { g.mode === "corre" ? g.mode = "pausa" : g.mode === "pausa" && (g.mode = "corre"); return; }
+      const open = $("#correMenu")?.hidden === false, k = KEYS[e.code];
+      if (e.code === "KeyP" || e.code === "Escape") { if (open) g.mode === "pausa" && resume(); else if (g.mode === "corre") pause(); return; }
       if (!k) return;
       e.preventDefault();
-      if (!e.repeat) ACT[k]();
+      if (e.repeat) return;
+      if (open) { if (k === "jump") go(); return; }
+      ACT[k]();
     }, on);
     addEventListener("keyup", e => KEYS[e.code] === "jump" && release(), on);
-    document.addEventListener("visibilitychange", () => document.hidden && g.mode === "corre" && (g.mode = "pausa"), on);
+    document.addEventListener("visibilitychange", () => document.hidden && g.mode === "corre" && pause(), on);
 
-    // ---------- the end of a run: points, records, coins
+    // ---------- the end of a run: points, records, coins; the result opens in the menu
     function finish(won) {
       g.mode = "fim"; g.won = won; g.end = performance.now();
       const at = Math.round(K.t0 + g.t * K.k);
@@ -353,23 +361,101 @@ window.Corre = (() => {
         if (!g.pilas) g.ach.add("devedor");
       }
       g.at = at;
-      const L = local();
-      store.set("biofutCorre2", JSON.stringify({best: Math.max(L.best || 0, g.pts), ach: [...new Set([...(L.ach || []), ...g.ach])]}));
+      const L = local(), n = {...L.n}, more = {...g.n, metros: Math.round(g.x / 10), pilas: g.pilas, chegadas: +won, na_hora: +(won && at <= K.gol), reis: +g.ach.has("rei")};
+      for (const k in more) n[k] = (n[k] || 0) + more[k];
+      store.set("biofutCorre2", JSON.stringify({best: Math.max(L.best || 0, g.pts), runs: (L.runs || 0) + 1, cedo: won ? Math.min(L.cedo || at, at) : L.cedo, n,
+        ach: [...new Set([...(L.ach || []), ...g.ach])]}));
       BF.ev("corre_saul", won ? (at <= K.gol ? "a tempo" : "atrasado") : "cancelado");
-      fimRow();
-      if (ME && g.go) post("corre", {op: "fim", t: g.t, pts: g.pts, pilas: g.pilas, chegou: won, rei: g.ach.has("rei"), ach: [...g.ach]})
-        .then(j => { if (!j) return; setState(j); g.coins = j.coins; mais(); fimRow(); });
-      else mais();
+      setTimeout(() => ui.corre === g && g.mode === "fim" && menu("jogar"), 900);
+      if (g.go) post("corre", {op: "fim", t: g.t, pts: g.pts, pilas: g.pilas, chegou: won, rei: g.ach.has("rei"), ach: [...g.ach], n: {...g.n, metros: more.metros}})
+        .then(j => { if (!j) return; setState(j); g.coins = j.coins; if ($("#correMenu")?.hidden === false) menu(); });
     }
-    function fimRow() {
-      const el = $("#correFim");
-      if (!el) return;
-      const pos = !ME ? -1 : Object.entries(ST.corre || {}).filter(([, r]) => r.dia?.[0] === dia()).sort(([, a], [, b]) => b.dia[1] - a.dia[1]).findIndex(([n]) => n === ME);
-      g.pos = pos >= 0 ? pos + 1 : 0;
-      el.innerHTML = `<button class="btn sm pri" data-again>Correr de novo</button><button class="btn sm" data-share>Compartilhar imagem</button>
-        <span class="muted" style="font-size:14px">${g.coins ? `+${coin(g.coins)} moeda · ` : ""}${g.pos ? `${g.pos}º hoje` : ME ? "" : "Entre para valer moedas e ranking"}</span>`;
-      el.querySelector("[data-again]").onclick = () => { g.end = 0; press(); release(); };
-      el.querySelector("[data-share]").onclick = shareCard;
+
+    // ---------- the menus over the game: Jogar (title, pause, result), Ranking, Vestiário, Conquistas, Números
+    const TABS = [["jogar", "Jogar"], ["ranking", "Ranking"], ["vestiario", "Vestiário"], ["conquistas", "Conquistas"], ["numeros", "Números"]];
+    const comoJoga = () => `<div class="corre-help">${touch ? "<span><b>Toque</b> ou deslize <b>↑</b>: pula</span><span>Deslize <b>↓</b>: desliza</span><span>Deslize <b>→</b>: chuta</span><span>Segure: pula mais alto</span>"
+      : "<span><b>Espaço</b>: pula (segure: mais alto)</span><span><b>↓</b>: desliza</span><span><b>X</b>: chuta</span><span><b>Esc</b>: pausa</span>"}</div>`;
+    const sombras = () => ME ? "" : `<p class="muted" style="font-size:14px;margin-top:14px;max-width:620px">Sem entrar, você corre como <b>Sombras</b>: um nome só para todos os visitantes no ranking, sem moedas nem melhorias.
+      <a class="link" href="/entrar?next=${encodeURIComponent("/#/corre")}">Entre com seu WhatsApp</a> para correr com o seu nome.</p>`;
+    function telaJogar() {
+      const T = ui.correTip ??= tip(), br = g.dia.slice(8) + "/" + g.dia.slice(5, 7);
+      if (g.mode === "pausa") return `<div class="kicker">Pausa</div><h2>${clk(K.t0 + g.t * K.k)}</h2><p class="lead">${num(g.pts)} pontos até aqui. O Planet não sai do lugar.</p>
+        <div class="row"><button class="btn pri" data-go>Continuar</button><button class="btn" data-new>Recomeçar</button></div>${comoJoga()}${T}`;
+      if (g.mode === "fim") {
+        const me = ME || SOMBRAS, i = Object.entries(ST.corre || {}).filter(([, r]) => r.dia?.[0] === dia()).sort(([, a], [, b]) => b.dia[1] - a.dia[1]).findIndex(([n]) => n === me);
+        g.pos = ME && i >= 0 ? i + 1 : 0;
+        const head = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo!" : ", atrasado."}` : "Tropeçou demais e cancelaram o jogo.";
+        const line = [`${g.t.toFixed(1).replace(".", ",")} s de corrida`, `máxima de ${Math.round(g.vmax * KMH)} km/h`, `${g.pilas} pila${g.pilas === 1 ? "" : "s"}`,
+          g.coins && `+${coin(g.coins)} moeda`, g.pos ? `${g.pos}º hoje` : !ME && i >= 0 && `Sombras em ${i + 1}º hoje`].filter(Boolean).join(" · ");
+        return `<div class="kicker" style="color:${g.won ? "var(--win)" : "var(--acc)"}">${g.won ? "Chegou" : "Jogo cancelado"}</div><h2>${num(g.pts)} pontos</h2>
+          <p class="lead"><b style="color:var(--ink)">${head}</b><br>${line}</p>
+          <div class="row"><button class="btn pri" data-go>Correr de novo</button><button class="btn" data-share>Compartilhar imagem</button></div>${sombras()}${T}`;
+      }
+      return `<h2>Corre, Saul!</h2><p class="lead">Quinta, 18:30, Planet Ball, e o Saul (vulgo Saulnaro) saiu atrasado de novo. Pule, deslize e chute o que aparecer na rua,
+        encare o BioFut King e chegue antes que alguém cancele o jogo. Começa devagar e acelera até o Planet. A rua de ${br} é a mesma para todo mundo.</p>
+        <div class="row"><button class="btn pri" data-go>Correr</button></div>${comoJoga()}${sombras()}${T}`;
+    }
+    function telaRanking() {
+      const hoje = dia(), R = Object.entries(ST.corre || {});
+      const list = (title, rows, big, small) => `<div class="card pad"><h3>${title}</h3>${rows.length ? `<ul class="list" style="margin-top:8px">${rankList(rows, ([n, r], i) =>
+        `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}${pname(n, esc(nm(n)))}<span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`)}</ul>`
+        : '<p class="muted" style="margin-top:8px">Ninguém ainda: a primeira corrida abre a lista.</p>'}</div>`;
+      return `<h3>Quem chega primeiro</h3><div class="corre-grid">
+        ${list("Corrida de hoje", R.filter(([, r]) => r.dia?.[0] === hoje).sort(([, a], [, b]) => b.dia[1] - a.dia[1]), r => num(r.dia[1]), () => "pontos")}
+        ${list("Recorde", R.filter(([, r]) => r.best).sort(([, a], [, b]) => b.best - a.best), r => num(r.best), r => `${r.runs} corrida${r.runs > 1 ? "s" : ""}`)}
+        ${list("Mais cedo no Planet", R.filter(([, r]) => r.cedo).sort(([, a], [, b]) => a.cedo - b.cedo), r => clk(r.cedo), r => r.cedo <= K.gol ? "a tempo" : "atrasado")}</div>
+        <p class="muted" style="font-size:14px;margin-top:12px">Quem joga sem entrar aparece como <b>Sombras</b>, um nome só para todos os visitantes.</p>`;
+    }
+    function telaVestiario() {
+      const cost = ST.corre_up || {}, bal = ST.balances?.[ME] ?? 25;
+      return `<h3>O vestiário do Saul</h3><p class="muted" style="margin-top:6px">${ME ? `Você tem <b class="num">${coin(bal)}</b> moedas. A melhoria vale da próxima corrida em diante.`
+        : `<a class="link" href="/entrar?next=${encodeURIComponent("/#/corre")}">Entre</a> para comprar melhorias com as suas moedas.`}</p>
+        <div class="corre-ups">${Object.entries(UP).map(([k, [ico, name, desc]]) => {
+          const c = cost[k] || [], l = lvl(k), next = c[l];
+          return `<div class="card pad"><div style="font-size:28px;line-height:1">${ico}</div><h3>${name}</h3><p class="muted" style="font-size:14px">${desc}</p>
+            <div class="lv">${c.map((_, i) => `<i class="${i < l ? "on" : ""}"></i>`).join("")}</div>
+            ${next === undefined ? '<span class="dim" style="font-size:13px">No máximo</span>' : ME ? `<button class="btn sm${bal >= next ? " pri" : ""}" data-up="${k}">Comprar · ${coin(next)} moeda${next === 1 ? "" : "s"}</button>` : `<span class="dim" style="font-size:13px">${coin(next)} moedas</span>`}</div>`;
+        }).join("")}</div>`;
+    }
+    function telaConquistas() {
+      const mine = found();
+      return `<h3>${mine.size} de ${ACH.length} conquistas</h3><p class="muted" style="margin-top:6px"><a class="link" href="/wiki#/p/biofut-king">Quem é o BioFut King? Na wiki</a></p>
+        <div class="corre-ach">${ACH.map(([id, name, how, hid]) => mine.has(id) ? `<div class="ok"><b>${name}</b>${how}</div>`
+          : hid ? '<div><b>???</b>Segredo. Continue correndo.</div>' : `<div><b>${name}</b>${how}</div>`).join("")}</div>`;
+    }
+    function telaNumeros() {
+      const r = ME ? rec() : local(), n = r.n || {}, all = Object.values(ST.corre || {}), sum = k => all.reduce((s, x) => s + (x.n?.[k] || 0), 0);
+      const km = m => (m / 1000).toFixed(1).replace(".", ","), tiles = T => `<div class="corre-num">${T.map(([v, l]) => `<div><b class="num">${v}</b><small>${l}</small></div>`).join("")}</div>`;
+      return `<h3>${ME ? "Você" : "Você, neste navegador"}</h3>${tiles([[num(r.runs), "corridas"], [num(n.chegadas), "chegadas no Planet"], [num(n.na_hora), "a tempo"],
+          [r.cedo ? clk(r.cedo) : "ainda não", "a chegada mais cedo"], [num(r.best), "recorde de pontos"], [num(n.reis), "reis derrubados"], [num(n.pilas), "pilas"],
+          [km(n.metros || 0), "km corridos"], ...N.map(([k, l]) => [num(n[k]), l])])}
+        <h3>Todo mundo</h3>${tiles([[num(all.reduce((s, x) => s + (x.runs || 0), 0)), "corridas"], [num(all.filter(x => x.dia?.[0] === dia()).length), "nomes no ranking de hoje"],
+          [num(sum("chegadas")), "chegadas"], [num(sum("reis")), "reis derrubados"], [num(sum("pilas")), "pilas"], [km(sum("metros")), "km corridos"], [num(sum("pulos")), "pulos"], [num(sum("tombos")), "tropeços"]])}
+        <p class="muted" style="font-size:13px">A corrida começa a ${Math.round(spd(0) * KMH)} km/h e chega a ${Math.round(spd(1) * KMH)} km/h perto do Planet. O chimarrão dá +30%, um tropeço freia.</p>`;
+    }
+    function menu(tab) {
+      const m = $("#correMenu");
+      if (!m) return;
+      if (tab === false) return void (m.hidden = true);
+      if (tab) ui.correTab = tab;
+      tab = ui.correTab || "jogar";
+      const keep = !m.hidden && m.dataset.tab === tab ? m.querySelector(".corre-body")?.scrollTop || 0 : 0;  // a redraw after the server's reply keeps the scroll
+      m.dataset.tab = tab; m.hidden = false;
+      m.innerHTML = `<div class="corre-tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" data-tab="${k}">${l}</button>`).join("")}
+        <button class="x" data-x aria-label="Fechar o menu" title="Fechar">✕</button></div>
+        <div class="corre-body">${{jogar: telaJogar, ranking: telaRanking, vestiario: telaVestiario, conquistas: telaConquistas, numeros: telaNumeros}[tab]()}</div>`;
+      m.querySelector(".corre-body").scrollTop = keep;
+      m.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => menu(b.dataset.tab));
+      m.querySelector("[data-x]").onclick = () => g.mode === "pausa" ? resume() : menu(false);
+      m.querySelectorAll("[data-go]").forEach(b => b.onclick = go);
+      m.querySelectorAll("[data-new]").forEach(b => b.onclick = start);
+      m.querySelectorAll("[data-share]").forEach(b => b.onclick = shareCard);
+      m.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => {
+        b.disabled = true;
+        const j = await post("corre", {op: "up", item: b.dataset.up});
+        if (j) { setState(j); toast(`${UP[b.dataset.up][1]}: comprada`); BF.ev("corre_saul", "up " + b.dataset.up); }
+        menu();
+      });
     }
 
     // ---------- drawing (world units; G = the curb line)
@@ -435,6 +521,17 @@ window.Corre = (() => {
         for (let i = 0; i < 3; i++) box(px - 22 + i * 15, G - 117, 13, 4, i < k.hp ? "#f2c230" : "rgba(255,255,255,.18)");
       }
     };
+    const ele = (x, y, k = 1) => {  // the group's Faz o L sticker: a red disc with a white rim, the hand making the L, a star
+      cx.save(); cx.translate(x, y); cx.scale(k, k);
+      cx.fillStyle = "#fff"; cx.beginPath(); cx.arc(0, 0, 13.5, 0, 7); cx.fill();
+      cx.fillStyle = "#e3262f"; cx.beginPath(); cx.arc(0, 0, 12, 0, 7); cx.fill();
+      cx.fillStyle = "#fff";
+      for (const [x0, y0, w, h, r] of [[-7, -1, 9.5, 8.5, 2.6], [-7, -11, 3.8, 12, 1.9], [1, 3.6, 8.4, 3.8, 1.9]]) { cx.beginPath(); cx.roundRect(x0, y0, w, h, r); cx.fill(); }
+      cx.beginPath();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 1.5 : 3.6; cx.lineTo(5.5 + Math.cos(a) * r, -5 + Math.sin(a) * r); }
+      cx.fill();
+      cx.restore();
+    };
     const pila = (x, y) => {
       cx.save(); cx.translate(x + 6, y + 8); cx.rotate(-.25);
       box(-7, -5, 14, 10, "#59b85f"); box(-6, -4, 12, 8, "#7bd383"); txt("R$", 0, 3, "800 6px 'Barlow Condensed',sans-serif", "#1f5a25");
@@ -483,7 +580,8 @@ window.Corre = (() => {
         cx.strokeStyle = "rgba(242,194,48,.85)"; cx.lineWidth = 3;
         for (let i = 0; i < 3; i++) { cx.beginPath(); cx.arc(x + 26 + i * 7, y + o.h / 2, 12 + i * 4, Math.PI * .7, Math.PI * 1.3); cx.stroke(); }
         txt("FOM!", x + 10, y + o.h / 2 + 4, "800 11px 'Barlow Condensed',sans-serif", "#f2c230");
-      } else if (t === "pila") pila(x, y);
+      } else if (t === "ele") { glow(x + 13, y + 13, 26, "rgba(255,74,110,.3)"); ele(x + 13, y + 13 + Math.sin(now * 4) * 2); }
+      else if (t === "pila") pila(x, y);
       else if (t === "cuia") {
         glow(x + 9, y + 12, 22, "rgba(140,220,110,.28)");
         cx.fillStyle = "#7a4a24"; cx.beginPath(); cx.ellipse(x + 9, y + 14, 8.5, 9, 0, 0, 7); cx.fill();
@@ -558,6 +656,7 @@ window.Corre = (() => {
       const at = K.t0 + g.t * K.k;
       txt(clk(at), 14, 30, "700 24px 'Barlow Condensed',sans-serif", at > K.gol ? "#ff7a45" : "#f2f2ee", "left");
       txt(`${g.pts.toLocaleString("pt-BR")} pts`, 14, 50, "700 15px 'Barlow Condensed',sans-serif", "#d8d6e0", "left");
+      txt(`${Math.round(speed() * KMH)} km/h`, 14, 68, "700 13px 'Barlow Condensed',sans-serif", g.boost ? "#9be07a" : "#a9a6b8", "left");
       if (mult() > 1) txt(`x${mult()}`, 14 + cx.measureText(`${g.pts.toLocaleString("pt-BR")} pts`).width + 8, 50, "800 15px 'Barlow Condensed',sans-serif", "#ff7a9a", "left");
       const hw = 22 * g.max + (g.lives > g.max ? 22 : 0), bx0 = 108, bw = Math.max(60, W - bx0 - hw - 92), p = g.x / K.len;
       box(bx0, 19, bw, 6, "rgba(255,255,255,.14)"); box(bx0, 19, bw * p, 6, "#ff4a6e");
@@ -593,12 +692,13 @@ window.Corre = (() => {
         box(0, gnd, w, h - gnd, "#17151c"); box(0, gnd, w, 46, "#2b2731"); box(0, gnd, w, 7, "#4a4552");
         cx.save(); cx.translate(640, gnd); cx.scale(5, 5); runner(0, 0, 1.2, "air", SAUL); cx.restore();
         if (g.ach.has("rei")) crown(910, gnd - 30, 5);
+        if (g.ach.has("saulnaro")) ele(935, 1170, 4.6);
         box(0, 0, w, 420, "rgba(6,5,14,.55)");
         glow(900, 190, 200, "rgba(255,240,210,.12)"); cx.fillStyle = "#f4ecd8"; cx.beginPath(); cx.arc(900, 190, 56, 0, 7); cx.fill();
         txt("BIOFUT · CORRE, SAUL!", 72, 110, "600 40px 'Barlow',sans-serif", "#bdb9cc", "left");
         txt(g.pts.toLocaleString("pt-BR"), 66, 290, "800 200px 'Barlow Condensed',sans-serif", "#fff", "left");
         txt("PONTOS", 72, 360, "800 56px 'Barlow Condensed',sans-serif", "#ff4a6e", "left");
-        const line = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo" : ", atrasado"}` : "Jogo cancelado: três tropeços";
+        const line = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo" : ", atrasado"}` : "Jogo cancelado: tropeçou demais";
         txt(line, 72, 490, "700 52px 'Barlow Condensed',sans-serif", g.won ? "#7dffb0" : "#ff7a9a", "left");
         const extra = [g.pos && `${g.pos}º na corrida de hoje`, g.ach.has("rei") && "Derrubou o BioFut King", g.coins && `+${coin(g.coins)} moeda`].filter(Boolean);
         extra.forEach((s, i) => txt(s, 72, 556 + i * 52, "600 40px 'Barlow',sans-serif", "#e4e2ec", "left"));
@@ -613,6 +713,7 @@ window.Corre = (() => {
       BF.ev("corre_saul", "share");
       if (navigator.canShare?.({files: [file]})) { try { await navigator.share({files: [file], text}); return; } catch (e) { if (e.name === "AbortError") return; } }
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "corre-saul.png"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      if (navigator.share) { toast("Imagem salva"); try { await navigator.share({text}); return; } catch (e) { if (e.name === "AbortError") return; } }  // a phone that can't share files: the text through the share sheet
       try { await navigator.clipboard.writeText(text); toast("Imagem salva e texto copiado: cole no grupo"); } catch { toast("Imagem salva"); }
     }
 
@@ -624,6 +725,7 @@ window.Corre = (() => {
       draw(ts / 1000);
       requestAnimationFrame(loop);
     };
+    if (g.mode !== "corre") menu();
     document.fonts?.ready.then(() => requestAnimationFrame(loop));
   }
   return Corre;
