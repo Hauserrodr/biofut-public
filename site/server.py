@@ -753,7 +753,8 @@ CORRE_UP = {"chuteira": [1, 2.5, 5], "folego": [3, 8], "cuia": [0.5, 1.5, 3], "i
 CORRE_PILA, CORRE_META, CORRE_REI, CORRE_CAP = 0.0001, 0.001, 0.001, 0.01  # coins per pila, for arriving on time, for beating the King; at most per day
 CORRE_T0, CORRE_K, CORRE_GOL, CORRE_TMIN = 18 * 3600 + 20 * 60, 15, 18 * 3600 + 30 * 60, 24  # clock start, game s per real s, kick-off; the fastest possible run (s)
 CORRE_N = {"pulos": 6, "deslizes": 6, "chutes": 6, "tombos": 1, "metros": 100}  # the stats a run adds, at most this much per second of run
-CORRE_ACH = {"pontual", "rei", "limpo", "lista", "raspando", "tabelinha", "minhoca", "esquizo", "apito", "devedor", "pagou", "saulnaro"}
+CORRE_ACH = {"pontual", "rei", "limpo", "lista", "raspando", "tabelinha", "minhoca", "esquizo", "apito", "devedor", "pagou", "saulnaro",
+             "pulinho", "canguru", "carrinho", "mergulho", "voadora"}
 
 
 def corre_act(st, base, user, body, now=None):
@@ -2928,7 +2929,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg", "/corre.js") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg", "/corre.js", "/ad-torres.png", "/ad-baita.png", "/ad-duplaface.png") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()

@@ -9,7 +9,7 @@ window.Corre = (() => {
   const spd = p => 220 + 300 * p, KMH = .05;  // street units per second at p of the way (slow start, faster near the Planet); km/h per unit/s
   const UP = {  // costs come from the server (ST.corre_up)
     chuteira: ["👟", "Chuteira nova", "Pula mais alto"],
-    folego: ["🫁", "Fôlego", "+1 tropeço antes do cancelamento"],
+    folego: ["🫁", "Fôlego", "+1 tropeço antes do jogo canelado"],
     cuia: ["🧉", "Cuia térmica", "O chimarrão dura mais"],
     ima: ["🧲", "Ímã de pilas", "Puxa as pilas de longe"],
   };
@@ -26,6 +26,11 @@ window.Corre = (() => {
     ["devedor", "Devedor", "Chegue sem nenhuma pila", 1],
     ["apito", "No apito", "Chegue entre 18:29:55 e 18:30:00", 1],
     ["esquizo", "Esquizofut", "Toque na lua 3 vezes numa corrida", 1],
+    ["pulinho", "Pulinho", "Passe 5 obstáculos com pulos curtinhos numa corrida"],
+    ["canguru", "Canguru", "3 pulos bem altos numa corrida (segure ou deslize o dedo longe)"],
+    ["carrinho", "Carrinho", "3 deslizes longos numa corrida (segure ↓)"],
+    ["mergulho", "Mergulho", "5 vezes do alto direto para o chão deslizando", 1],
+    ["voadora", "Voadora", "Devolva a bola do King lá do alto", 1],
   ];
   const LETRAS = [[1500, "L"], [3300, "I"], [4800, "S"], [6300, "T"], [11300, "A"]], AMIGOS = [2500, 5500, 10950];
   const ELES = [[1950, "Saulnaro fez o L?!"], [5150, "De novo, Saulnaro?"], [11650, "SAULNARO VIROU A CASACA!"]];  // the group's Faz o L sticker, for Leo
@@ -134,6 +139,9 @@ window.Corre = (() => {
       return {w, h, lit: Array.from({length: Math.floor(h / 14) * Math.floor((w - 8) / 11)}, () => R0() < .28)};
     });
     const townW = town.reduce((s, b) => s + b.w + 6, 0);
+    const ADS = [["torres", "#f4ecd8"], ["baita", "#eee9e6"], ["duplaface", "#000"]].map(([n, bg]) => {  // the Apoie sponsors, on rooftop billboards
+      const im = new Image(); im.src = `/ad-${n}.png`; return {im, bg};
+    });
     const faces = {};
     const fresh = () => {
       const d = dia(), R = rng(d), lives = 3 + lvl("folego");
@@ -144,7 +152,8 @@ window.Corre = (() => {
       fix.forEach(o => [o.w, o.h] = SIZE[o.type]);
       return {mode: "pronto", dia: d, R, RK: rng(d + "/king"), x: 0, y: 0, vy: 0, ht: 0, buf: 0, t: 0, lives, max: lives, hits: 0, inv: 0, slow: 1, boost: 0,
         slide: 0, sbuf: 0, kick: 0, kcd: 0, obs: [], fix, next: 700, pts: 0, streak: 0, pilas: 0, letras: "", near: 0, shield: 0, pops: [],
-        king: {st: "off", hp: 3, cd: .5, ox: 0, n: 0, minhoca: 0, hit: 0, t: 0}, ach: new Set(), esq: 0, lua: 0, go: false, coins: null, seen: 0, eles: 0, vmax: 0, n: {pulos: 0, deslizes: 0, chutes: 0, tombos: 0}};
+        king: {st: "off", hp: 3, cd: .5, ox: 0, n: 0, minhoca: 0, hit: 0, t: 0}, ach: new Set(), esq: 0, lua: 0, go: false, coins: null, seen: 0, eles: 0, vmax: 0, n: {pulos: 0, deslizes: 0, chutes: 0, tombos: 0},
+        jcap: .26, jsw: 0, jh: 0, jc: false, sl: 0, sdur: .55, ph: 0, sm: 0, badge: null, c: {pulinho: 0, canguru: 0, carrinho: 0, mergulho: 0}, seenC: {}};
     };
     let g = ui.corre;
     if (!g || g.mode !== "corre" && g.mode !== "pausa" && g.dia !== dia()) g = ui.corre = fresh();
@@ -161,7 +170,12 @@ window.Corre = (() => {
     const speed = () => spd(g.x / K.len) * g.slow * (g.boost > 0 ? 1.3 : 1);
     const mult = () => Math.min(5, 1 + Math.floor(g.streak / 5));
     const add = (n, txt, c) => { n = Math.round(n * (g.esq ? 1.5 : 1)); g.pts += n; if (txt) pop(`${txt} +${n}`, c); };
-    const pop = (txt, c = "#fff", big) => g.pops.push({txt, c, big, t: 0, y: big ? H * .36 : G - g.y - 80});
+    const pop = (txt, c = "#fff", big) => {  // a big pop slows the street for a moment, so the joke lands
+      if (big) g.sm = .7;
+      if (!big) g.pops = g.pops.filter(q => q.big || q.txt.split(" ")[0] !== txt.split(" ")[0]);  // the new streak count replaces the old one
+      g.pops.push({txt, c, big, t: 0, y: big ? H * .42 + 40 * g.pops.filter(q => q.big).length : Math.max(140, G - g.y - 86 - 24 * g.pops.filter(q => !q.big).length)});  // never up in the HUD
+    };
+    const got = id => { if (g.ach.has(id)) return; g.ach.add(id); g.badge = {txt: ACH.find(a => a[0] === id)[1], t: 0}; };
     const put = (type, x, b = 0, extra) => { const [w, h] = SIZE[type]; g.obs.push({type, x, w, h, b, ...extra}); };
 
     // the street: everything from the day's seed, in the same order for everyone, so the same day = the same street
@@ -180,11 +194,16 @@ window.Corre = (() => {
       g.next = x + w + spd(p) * (.75 + R() * .7);
       if (g.next > K.rei[0] - 200 && g.next < K.rei[1] + 100) g.next = K.rei[1] + 100;  // the King's stretch has no street obstacles
     };
+    const endSlide = () => { if (g.sl >= .8 && ++g.c.carrinho === 3) got("carrinho"); g.slide = 0; };
     const hurt = o => {
       if (g.shield) { g.shield = 0; g.inv = 1; o.hit = true; pop("O colete segurou!", "#7dffb0"); return; }
       o.hit = true; g.lives--; g.hits++; g.n.tombos++; g.inv = 1.3; g.slow = .35; g.streak = 0;
       if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
       if (!g.lives) finish(false);
+    };
+    const ballHit = (o, S) => {  // the ball as drawn (a circle) against the body, plus the head when standing
+      const bx = o.x + 8, by = o.b + 8, top = g.slide ? S[3] : S[1] + 48;
+      return Math.hypot(bx - Math.max(S[0], Math.min(bx, S[2])), by - Math.max(S[1], Math.min(by, top))) < 6.5 || !g.slide && Math.hypot(bx - g.x - 6, by - g.y - 58) < 14;
     };
     const kingX = () => g.x + g.king.ox;
     const kingStep = dt => {
@@ -207,7 +226,7 @@ window.Corre = (() => {
       if (k.st === "caiu") { k.ox -= v * dt; k.t += dt; if (k.ox < -200) k.st = "fim"; }
     };
     const kingDown = () => {
-      const k = g.king; k.st = "caiu"; k.t = 0; g.ach.add("rei"); add(300, "REI DEPOSTO!", "#f2c230");
+      const k = g.king; k.st = "caiu"; k.t = 0; got("rei"); add(300, "REI DEPOSTO!", "#f2c230");
       g.obs = g.obs.filter(o => !["kbola", "corneta", "alta"].includes(o.type) || o.back);
       for (let i = 0; i < 8; i++) put("pila", g.x + W + 40 + i * 70, 10 + (i % 2) * 40);  // the street is clear: the King's change on the floor
     };
@@ -217,13 +236,20 @@ window.Corre = (() => {
       g.kick = Math.max(0, g.kick - dt); g.kcd = Math.max(0, g.kcd - dt); g.slow = Math.min(1, g.slow + dt * .8);
       if (g.king.sopro) g.king.sopro = Math.max(0, g.king.sopro - dt);
       g.x = Math.min(K.len, g.x + v * dt); g.vmax = Math.max(g.vmax, v);
-      if (g.slide > 0 && (g.slide -= dt) <= 0) g.slide = 0;
-      if (g.buf && !g.y) { g.n.pulos++; g.slide = 0; g.vy = 700 * (1 + .07 * lvl("chuteira")); g.y = .01; g.ht = 0; g.buf = 0; }
+      g.ph += dt * (6 + v / 30);  // faster street, faster legs
+      if (g.slide && (g.sl += dt) >= g.sdur) endSlide();
+      if (g.buf && !g.y) { g.n.pulos++; if (g.slide) endSlide(); g.vy = 700 * (1 + .07 * lvl("chuteira")); g.y = .01; g.ht = g.jh = 0; g.jc = false; g.buf = 0; }
       if (g.y) {
         g.ht += dt;
         if (g.sbuf) g.vy = Math.min(g.vy, -900);  // slide asked in the air: drop fast
-        g.vy -= (down && g.vy > 0 && g.ht < .22 ? 1150 : 2500) * dt; g.y = Math.max(0, g.y + g.vy * dt);
-        if (!g.y && g.sbuf) { g.slide = .55; g.sbuf = 0; g.n.deslizes++; }
+        const lift = (down || g.ht < g.jsw) && g.vy > 0 && g.ht < g.jcap;  // held longer, or swiped further: higher, up to .26 s of lift
+        if (lift) g.jh += dt;
+        g.vy -= (lift ? 1150 : 2500) * dt; g.y = Math.max(0, g.y + g.vy * dt);
+        if (!g.y) {  // landed
+          if (g.jh < .05 && g.jc && ++g.c.pulinho === 5) got("pulinho");
+          if (g.jh > .24 && ++g.c.canguru === 3) got("canguru");
+          if (g.sbuf) { g.sbuf = 0; g.slide = 1; g.sl = 0; g.n.deslizes++; if (++g.c.mergulho === 5) got("mergulho"); }
+        }
       }
       while (g.next < g.x + W + 60 && g.next < K.len - 600) spawn();
       while (g.fix.length && g.fix[0].x < g.x + W + 100) g.obs.push(g.fix.shift());
@@ -238,7 +264,7 @@ window.Corre = (() => {
         if (o.type === "pila" && !o.hit && ima && Math.abs(o.x - g.x) < ima) { o.x += (g.x - o.x) * Math.min(1, dt * 8); o.b += (g.y + 30 - o.b) * Math.min(1, dt * 8); }
         if (o.roll && !o.hit) {  // a kicked ball knocks down the first obstacle in its way
           const t = g.obs.find(q => GROUND.has(q.type) && !q.hit && !q.done && q.x < o.x + o.w && q.x + q.w > o.x);
-          if (t) { t.hit = t.done = true; t.fly = 0; o.hit = true; g.streak++; g.ach.add("tabelinha"); add(30 * mult(), "Tabelinha!", "#7dffb0"); }
+          if (t) { t.hit = t.done = true; t.fly = 0; o.hit = true; g.streak++; got("tabelinha"); add(30 * mult(), "Tabelinha!", "#7dffb0"); }
           if (o.x > g.x + W + 100) o.hit = true;
         }
         if (o.back && !o.hit && o.x >= kingX() - 20) {  // returned to the King
@@ -247,16 +273,16 @@ window.Corre = (() => {
         }
         if (o.hit || o.done) continue;
         const ox0 = o.x + 3, ox1 = o.x + o.w - 3, ob0 = o.b + 2, ob1 = o.b + o.h - 2;
-        const xin = ox0 <= S[2] && ox1 >= S[0];
+        const xin = ox0 <= S[2] && ox1 >= S[0], ball = o.type === "kbola" || o.type === "alta";
         if (xin && HURT.has(o.type) && g.y > 0) o.clr = Math.min(o.clr ?? 1e9, S[1] - ob1);
         if (xin && o.type === "corneta" && g.slide) o.slid = true;
-        if (xin && ob0 <= S[3] && ob1 >= S[1]) {
+        if (ball ? ballHit(o, S) : xin && ob0 <= S[3] && ob1 >= S[1]) {
           if (o.type === "pila") { o.hit = true; g.pilas++; add(5); }
-          else if (o.type === "ele") { o.hit = true; add(50); const all = ++g.eles === ELES.length; pop(o.say, all ? "#ff4a6e" : "#ffd2dc", all); if (all) g.ach.add("saulnaro"); }
+          else if (o.type === "ele") { o.hit = true; add(50); const all = ++g.eles === ELES.length; pop(o.say, all ? "#ff4a6e" : "#ffd2dc", true); if (all) got("saulnaro"); }
           else if (o.type === "cuia") { o.hit = true; g.boost = 2.2 + .8 * lvl("cuia"); pop("Chimarrão!", "#9be07a"); }
           else if (o.type === "letra") {
             o.hit = true; g.letras += o.l; pop(o.l, "#f2c230");
-            if (g.letras.length === 5) { g.lives = Math.min(g.lives + 1, g.max + 1); g.ach.add("lista"); pop("ENTROU NA LISTA! +1 vida", "#f2c230", true); }
+            if (g.letras.length === 5) { g.lives = Math.min(g.lives + 1, g.max + 1); got("lista"); pop("ENTROU NA LISTA! +1 vida", "#f2c230", true); }
           } else if (o.type === "amigo") { o.hit = true; g.shield = 1; pop(`${nm(o.name) || "Um parceiro"} te deu o colete!`, "#7dffb0"); }
           else if (o.type === "alta" && o.back) continue;
           else if (HURT.has(o.type) && !g.inv) hurt(o);
@@ -265,16 +291,17 @@ window.Corre = (() => {
         }
         if (HURT.has(o.type) && !o.back && ox1 < S[0]) {  // passed it clean
           o.done = true;
-          if (o.type === "corneta" && o.slid && ++g.king.minhoca >= 3) g.ach.add("minhoca");
+          if (o.type === "corneta" && o.slid && ++g.king.minhoca >= 3) got("minhoca");
           if (["kbola", "corneta", "alta"].includes(o.type)) { add(15); continue; }
-          g.streak++; add(10 * mult());
-          if (o.clr !== undefined && o.clr < 7) { add(25, "Raspando!", "#ffd27a"); if (++g.near >= 5) g.ach.add("raspando"); }
+          g.streak++; add(10 * mult()); if (g.y > 0) g.jc = true;
+          if (o.clr !== undefined && o.clr < 7) { add(25, "Raspando!", "#ffd27a"); if (++g.near >= 5) got("raspando"); }
           if (g.streak % 5 === 0 && mult() > 1) pop(`Sequência x${mult()}`, "#ff7a9a");
         }
       }
       g.obs = g.obs.filter(o => o.x + o.w > g.x - sx() - 60 && (!o.hit || o.fly !== undefined || o.type === "amigo"));
       for (const o of g.obs) if (o.fly !== undefined) o.fly += dt;
-      g.pops = g.pops.filter(p => (p.t += dt) < (p.big ? 2 : 1.1));
+      g.pops = g.pops.filter(p => (p.t += dt) < (p.big ? 3 : 1.8));
+      if (g.badge && (g.badge.t += dt) > 2.6) g.badge = null;
       if (g.x >= K.len) finish(true);
     };
 
@@ -289,29 +316,34 @@ window.Corre = (() => {
     const resume = () => { menu(false); if (g.mode === "pausa") g.mode = "corre"; cv.focus({preventScroll: true}); };
     const go = () => g.mode === "pausa" ? resume() : g.mode !== "corre" && !(g.mode === "fim" && performance.now() - g.end < 700) && start();  // a late tap must not restart the run
     const press = () => {
-      down = true;
+      down = true; g.jcap = .26; g.jsw = 0;
       if (g.mode === "corre") g.buf = .14;  // a jump asked a little before landing still counts
       else go();
     };
     const release = () => { down = false; };
-    const slide = () => { if (g.mode !== "corre") return; if (g.y) g.sbuf = .3; else { if (!g.slide) g.n.deslizes++; g.slide = .55; g.buf = 0; } };
+    const slide = d => {  // d: how long in s; a held key or button slides up to .9 s, a longer swipe slides further
+      if (g.mode !== "corre") return;
+      g.sdur = g.slide || g.sbuf ? Math.max(g.sdur, d) : d;
+      if (g.y) g.sbuf = .3; else if (!g.slide) { g.n.deslizes++; g.slide = 1; g.sl = 0; g.buf = 0; }
+    };
+    const unslide = () => { g.sdur = Math.min(g.sdur, g.slide ? Math.max(.3, g.sl) : .55); };  // let go: get up, after at least .3 s (a dive from the air: .55 s)
     const kick = () => {
       if (g.mode !== "corre" || g.kcd) return;
       g.kick = .28; g.kcd = .4; g.n.chutes++;
       for (const o of g.obs) {
         const d = o.x - g.x;
         if (o.type === "bola" && !o.roll && d > -16 && d < 64) { o.roll = true; o.vx = speed() + 480; o.vb = 140; }
-        if (o.type === "alta" && !o.back && !o.hit && d > -18 && d < 74 && o.b < 90) { o.back = true; o.vx = speed() + 700; o.vb = 260; pop("Devolve!", "#f2c230"); }
+        if (o.type === "alta" && !o.back && !o.hit && d > -18 && d < 74 && o.b < 90) { o.back = true; o.vx = speed() + 700; o.vb = 260; pop("Devolve!", "#f2c230"); if (g.y > 40) got("voadora"); }
       }
     };
     const buzz = () => { if (touch) try { navigator.vibrate?.(8); } catch {} };
-    const ACT = {jump: press, slide, kick, menu: pause, fs: () => document.fullscreenElement ? document.exitFullscreen() : $("#correWrap").requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape")).catch(() => {})};
+    const ACT = {jump: press, slide: () => slide(.9), kick, menu: pause, fs: () => document.fullscreenElement ? document.exitFullscreen() : $("#correWrap").requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape")).catch(() => {})};
     let tp = null;  // a finger on the street: a tap or a swipe up jumps (held: higher), a swipe down slides, a swipe right kicks
     cv.addEventListener("pointerdown", e => {
       e.preventDefault();
       const r = cv.getBoundingClientRect(), mx = (e.clientX - r.left) / sc, my = (e.clientY - r.top) / sc;
       if (g.mode === "corre" && Math.hypot(mx - W * .62, my - 72) < 26 && ++g.lua === 3 && !g.esq) {  // the moon, three times
-        g.esq = 1; g.ach.add("esquizo"); pop("HOJE É DIA DE ESQUIZOFUT! pontos x1,5", "#c38bff", true); BF.ev("corre_saul", "esquizofut"); return;
+        g.esq = 1; got("esquizo"); pop("HOJE É DIA DE ESQUIZOFUT! pontos x1,5", "#c38bff", true); BF.ev("corre_saul", "esquizofut"); return;
       }
       if (e.pointerType === "mouse" || g.mode !== "corre") return press();
       clearTimeout(tp?.tm);
@@ -320,8 +352,13 @@ window.Corre = (() => {
     cv.addEventListener("pointermove", e => {
       if (!tp || tp.id !== e.pointerId) return;
       const dx = e.clientX - tp.x, dy = e.clientY - tp.y;
-      if (!tp.done && Math.hypot(dx, dy) > 16) { tp.done = true; clearTimeout(tp.tm); Math.abs(dx) > Math.abs(dy) ? dx > 0 && kick() : dy < 0 ? press() : slide(); }
-      else if (tp.done && !tp.fall && dy > 30 && g.y) { tp.fall = true; slide(); }  // jumped, then down: drop fast
+      if (!tp.done && Math.hypot(dx, dy) > 16) {
+        tp.done = true; clearTimeout(tp.tm); tp.k = Math.abs(dx) > Math.abs(dy) ? dx > 0 ? "kick" : "" : dy < 0 ? "jump" : "slide"; tp.top = dy;
+        if (tp.k === "kick") kick(); else if (tp.k === "jump") press(); else if (tp.k) slide(.3);
+      }
+      if (tp.k === "jump") { g.jsw = Math.max(g.jsw, .26 * Math.min(1, -dy / 140)); tp.top = Math.min(tp.top, dy); }  // a longer swipe: a higher jump
+      if (tp.k === "slide") slide(.3 + .6 * Math.min(1, dy / 150));  // a longer swipe: a longer slide
+      else if (tp.k === "jump" && !tp.fall && dy - tp.top > 30 && g.y) { tp.fall = true; slide(.55); }  // jumped, then down: drop fast
     }, on);
     const lift = e => {
       if (tp && tp.id === e.pointerId) { clearTimeout(tp.tm); if (!tp.done) press(); tp = null; }  // a quick tap: a short hop
@@ -331,7 +368,7 @@ window.Corre = (() => {
     cv.addEventListener("contextmenu", e => e.preventDefault(), on);
     $("#correWrap").querySelectorAll("[data-k]").forEach(b => {
       b.addEventListener("pointerdown", e => { e.preventDefault(); b.classList.add("on"); buzz(); ACT[b.dataset.k](); }, on);
-      for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => { b.classList.remove("on"); if (b.dataset.k === "jump") release(); }, on);
+      for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => { b.classList.remove("on"); if (b.dataset.k === "jump") release(); if (b.dataset.k === "slide") unslide(); }, on);
       b.addEventListener("contextmenu", e => e.preventDefault(), on);
     });
     const KEYS = {Space: "jump", ArrowUp: "jump", KeyW: "jump", ArrowDown: "slide", KeyS: "slide", KeyX: "kick", KeyK: "kick"};
@@ -345,7 +382,7 @@ window.Corre = (() => {
       if (open) { if (k === "jump") go(); return; }
       ACT[k]();
     }, on);
-    addEventListener("keyup", e => KEYS[e.code] === "jump" && release(), on);
+    addEventListener("keyup", e => KEYS[e.code] === "jump" ? release() : KEYS[e.code] === "slide" && unslide(), on);
     document.addEventListener("visibilitychange", () => document.hidden && g.mode === "corre" && pause(), on);
 
     // ---------- the end of a run: points, records, coins; the result opens in the menu
@@ -384,10 +421,10 @@ window.Corre = (() => {
       if (g.mode === "fim") {
         const me = ME || SOMBRAS, i = Object.entries(ST.corre || {}).filter(([, r]) => r.dia?.[0] === dia()).sort(([, a], [, b]) => b.dia[1] - a.dia[1]).findIndex(([n]) => n === me);
         g.pos = ME && i >= 0 ? i + 1 : 0;
-        const head = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo!" : ", atrasado."}` : "Tropeçou demais e cancelaram o jogo.";
+        const head = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo!" : ", atrasado."}` : "Tomou canelada demais: jogo canelado.";
         const line = [`${g.t.toFixed(1).replace(".", ",")} s de corrida`, `máxima de ${Math.round(g.vmax * KMH)} km/h`, `${g.pilas} pila${g.pilas === 1 ? "" : "s"}`,
           g.coins && `+${coin(g.coins)} moeda`, g.pos ? `${g.pos}º hoje` : !ME && i >= 0 && `Sombras em ${i + 1}º hoje`].filter(Boolean).join(" · ");
-        return `<div class="kicker" style="color:${g.won ? "var(--win)" : "var(--acc)"}">${g.won ? "Chegou" : "Jogo cancelado"}</div><h2>${num(g.pts)} pontos</h2>
+        return `<div class="kicker" style="color:${g.won ? "var(--win)" : "var(--acc)"}">${g.won ? "Chegou" : "Jogo canelado"}</div><h2>${num(g.pts)} pontos</h2>
           <p class="lead"><b style="color:var(--ink)">${head}</b><br>${line}</p>
           <div class="row"><button class="btn pri" data-go>Correr de novo</button><button class="btn" data-share>Compartilhar imagem</button></div>${sombras()}${T}`;
       }
@@ -469,8 +506,8 @@ window.Corre = (() => {
       if (shoe) seg(ex - Math.cos(a2), ey + Math.sin(a2), a2 + Math.PI / 2, 6, shoe, w + 1);
     };
     // a runner: pose run | air | slide | kick; P = colors; the King uses it too, mirrored
-    const runner = (x, yb, ph, pose, P) => {
-      const s = Math.sin(ph), air = pose === "air", bob = pose === "run" || pose === "kick" ? Math.abs(Math.cos(ph)) * 2.5 : 0;
+    const runner = (x, yb, ph, pose, P, q = .4) => {
+      const s = Math.sin(ph), air = pose === "air", bob = pose === "run" || pose === "kick" ? Math.abs(Math.cos(ph)) * (1.5 + 2 * q) : 0;
       cx.lineCap = cx.lineJoin = "round";
       if (pose === "slide") {  // leaning back, legs first
         const hy = yb - 9;
@@ -483,12 +520,12 @@ window.Corre = (() => {
       const leg = (k, skin, sock) => {
         const t = s * k;
         if (pose === "kick" && k > 0) return limb(x, hy, 1.7, 14, 1.25, 14, skin, sock, 5, "#111");
-        const a = air ? (k > 0 ? .95 : -.45) : .75 * t;  // the back foot kicks up, the front shin stays near vertical
+        const a = air ? (k > 0 ? .95 : -.45) : (.6 + .35 * q) * t;  // the back foot kicks up, the front shin stays near vertical
         limb(x, hy, a, 14, air ? (k > 0 ? .1 : -1.6) : t > 0 ? .2 * t : a + 1.1 * t, 14, skin, sock, 5, "#111");
       };
-      const arm = (k, c) => { const a = air ? -2.2 * k : pose === "kick" ? -1.2 * k : -.9 * s * k; limb(x + 3, hy - 17, a, 10, a + 1.5, 9, c, c, 4); };
+      const arm = (k, c) => { const a = air ? -2.2 * k : pose === "kick" ? -1.2 * k : -(.7 + .5 * q) * s * k; limb(x + 3, hy - 17, a, 10, a + 1.5, 9, c, c, 4); };
       leg(-1, P.skin2, P.sock2); arm(-1, P.skin2);
-      cx.save(); cx.translate(x, hy); cx.rotate(.16); torso(P); cx.restore();
+      cx.save(); cx.translate(x, hy); cx.rotate(.1 + .16 * q); torso(P); cx.restore();
       leg(1, P.skin, P.sock); arm(1, P.skin);
     };
     const torso = P => {
@@ -573,9 +610,10 @@ window.Corre = (() => {
         cx.restore(); txt("SOMBRA", x + 12, y - 6, "700 9px 'Barlow Condensed',sans-serif", "rgba(220,215,255,.6)");
       } else if (t === "bola" || t === "kbola" || t === "alta") {
         if (t === "alta" && !o.back) { glow(x + 8, y + 8, 18, "rgba(242,194,48,.45)"); txt("!", x + 8, y - 10, "800 16px 'Barlow Condensed',sans-serif", "#f2c230"); }
-        cx.fillStyle = "#f4f4f0"; cx.beginPath(); cx.arc(x + 7, y + 7, 7, 0, 7); cx.fill();
-        cx.fillStyle = "#1c1c1c"; cx.beginPath(); cx.arc(x + 7, y + 7, 2.6, 0, 7); cx.fill();
-        for (let i = 0; i < 5; i++) { const a = now * (o.roll || o.vx ? 14 : 0) + i * 1.257; box(x + 7 + Math.cos(a) * 5 - 1, y + 7 + Math.sin(a) * 5 - 1, 2.2, 2.2, "#1c1c1c"); }
+        const r = o.w / 2, c = x + r, m = y + o.h / 2;  // centred on the hitbox (a street ball is 14, the King's are 16)
+        cx.fillStyle = "#f4f4f0"; cx.beginPath(); cx.arc(c, m, r, 0, 7); cx.fill();
+        cx.fillStyle = "#1c1c1c"; cx.beginPath(); cx.arc(c, m, r * .37, 0, 7); cx.fill();
+        for (let i = 0; i < 5; i++) { const a = now * (o.roll || o.vx ? 14 : 0) + i * 1.257; box(c + Math.cos(a) * r * .7 - 1, m + Math.sin(a) * r * .7 - 1, 2.2, 2.2, "#1c1c1c"); }
       } else if (t === "corneta") {  // the King's corneta: a sound wave at head height
         cx.strokeStyle = "rgba(242,194,48,.85)"; cx.lineWidth = 3;
         for (let i = 0; i < 3; i++) { cx.beginPath(); cx.arc(x + 26 + i * 7, y + o.h / 2, 12 + i * 4, Math.PI * .7, Math.PI * 1.3); cx.stroke(); }
@@ -624,7 +662,32 @@ window.Corre = (() => {
         const b = town[i], top = gnd - 30 - b.h, cols = Math.floor((b.w - 8) / 11);
         box(bx, top, b.w, b.h + 30, "#181430");
         b.lit.forEach((on, j) => on && box(bx + 6 + (j % cols) * 11, top + 8 + Math.floor(j / cols) * 14, 5, 7, "rgba(242,194,48,.55)"));
+        const ad = i % 8 == 2 && ADS[(i - 2) / 8 % ADS.length];
+        if (ad && ad.im.naturalWidth) {
+          const pw = 62, ph = 50, px = bx + (b.w - pw) / 2, py = top - ph - 10 < 84 ? top + 12 : top - ph - 10, im = ad.im, k = Math.min((pw - 6) / im.naturalWidth, (ph - 6) / im.naturalHeight);
+          if (py < top) { box(px + 10, py + ph, 3, 10, "#2c2838"); box(px + pw - 13, py + ph, 3, 10, "#2c2838"); }  // posts on the roof; a tall building gets it on the wall, under the HUD
+          glow(px + pw / 2, py + ph / 2, 52, "rgba(255,236,190,.16)");
+          box(px - 2, py - 2, pw + 4, ph + 4, "#2c2838"); box(px, py, pw, ph, ad.bg);
+          cx.drawImage(im, px + (pw - im.naturalWidth * k) / 2, py + (ph - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k);
+          if (ad.bg !== "#000") box(px, py, pw, ph, "rgba(10,8,30,.12)");  // night tint so a light panel sits in the scene
+        }
         bx += b.w + 6;
+      }
+    };
+    const HINTS = [  // [achievement, icon, progress, goal]: a chip on the street once you start on one
+      ["saulnaro", "", () => g.eles, 3], ["raspando", "😬", () => g.near, 5], ["minhoca", "🪱", () => g.king.minhoca, 3], ["pulinho", "🐇", () => g.c.pulinho, 5],
+      ["canguru", "🦘", () => g.c.canguru, 3], ["carrinho", "🛷", () => g.c.carrinho, 3], ["mergulho", "🤿", () => g.c.mergulho, 5], ["esquizo", "🌙", () => g.lua, 3]];
+    const hints = now => {
+      let x = 12;
+      for (const [id, ic, f, goal] of HINTS) {
+        const n = Math.min(goal, f()); if (!n) continue;
+        if (g.seenC[id] !== n) g.seenC[id] = n, g.seenC[id + "@"] = now;  // just moved: the chip jumps
+        const done = n >= goal, j = Math.max(0, .35 - (now - g.seenC[id + "@"])) * 14, y = H - 31 - j, w = 50;
+        cx.fillStyle = done ? "rgba(242,194,48,.9)" : "rgba(10,8,20,.72)"; cx.beginPath(); cx.roundRect(x, y, w, 22, 11); cx.fill();
+        if (!done) { cx.strokeStyle = "rgba(255,255,255,.18)"; cx.lineWidth = 1; cx.stroke(); }
+        if (ic) txt(ic, x + 13, y + 16, "14px sans-serif", "#fff"); else ele(x + 13, y + 11, .62);
+        txt(done ? "✓" : `${n}/${goal}`, x + 36, y + 16, "800 13px 'Barlow Condensed',sans-serif", done ? "#1a1408" : "#e4e2ec");
+        x += w + 6;
       }
     };
     const scrim = (title, sub, c = "#fff", sub2) => {
@@ -650,7 +713,9 @@ window.Corre = (() => {
       for (const o of g.obs) if (o.type !== "amigo") obstacle(o, o.x - g.x + x0, now);
       if (["intro", "luta", "foge", "caiu"].includes(g.king.st)) king(x0 + g.king.ox, now);
       if (g.shield) glow(x0, G - g.y - 28, 40, "rgba(125,255,176,.22)");
-      if (!(g.inv && Math.floor(now * 12) % 2)) runner(x0, G - g.y, g.x / 19, g.slide ? "slide" : g.kick ? "kick" : g.y > 0 ? "air" : "run", SAUL);
+      if (!(g.inv && Math.floor(now * 12) % 2)) runner(x0, G - g.y, g.ph, g.slide ? "slide" : g.kick ? "kick" : g.y > 0 ? "air" : "run", SAUL, Math.min(1.3, (speed() - 220) / 300));
+      const wind = (speed() - 400) / 300;  // fast: wind lines behind Saul
+      if (wind > 0 && !g.y && !g.slide) { cx.fillStyle = `rgba(230,228,240,${Math.min(.35, wind)})`; for (let i = 0; i < 3; i++) box(x0 - 26 - ((now * 900 + i * 37) % 60), G - 14 - i * 17, 18 + i * 4, 1.5); }
       if (g.boost) { cx.fillStyle = "rgba(140,220,110,.5)"; for (let i = 0; i < 3; i++) box(x0 - 30 - i * 12 - (now * 300 % 12), G - 20 - g.y - i * 12, 14, 2); }
       // HUD: clock and points, the way to the Planet, lives, the colete, L-I-S-T-A, pilas
       const at = K.t0 + g.t * K.k;
@@ -668,17 +733,29 @@ window.Corre = (() => {
       txt(`R$ ${g.pilas}`, W - 14, 68, "700 13px 'Barlow Condensed',sans-serif", "#9be07a", "right");
       if (g.shield) txt("COLETE", W - 60, 68, "800 12px 'Barlow Condensed',sans-serif", "#7dffb0", "right");
       for (const q of g.pops) {
-        const a = Math.max(0, 1 - q.t / (q.big ? 2 : 1.1));
-        cx.globalAlpha = a;
-        if (q.big) { cx.save(); cx.shadowColor = q.c; cx.shadowBlur = 14; txt(q.txt, W / 2, q.y, `800 ${Math.min(34, W / 14)}px 'Barlow Condensed',sans-serif`, q.c); cx.restore(); }
-        else txt(q.txt, x0 + 30, q.y - q.t * 40, "800 15px 'Barlow Condensed',sans-serif", q.c, "left");
-        cx.globalAlpha = 1;
+        const life = q.big ? 3 : 1.8, k = q.t < .12 ? .5 + q.t / .12 * .7 : q.t < .24 ? 1.2 - (q.t - .12) / .12 * .2 : 1;  // pops in a little too big, then settles
+        cx.save(); cx.globalAlpha = Math.max(0, Math.min(1, (life - q.t) / (life * .35)));
+        cx.translate(q.big ? W / 2 : x0 + 30, q.big ? q.y : q.y - q.t * 22); cx.scale(k, k);
+        cx.font = q.big ? `800 ${Math.min(40, W / 12)}px 'Barlow Condensed',sans-serif` : "800 20px 'Barlow Condensed',sans-serif"; cx.textAlign = q.big ? "center" : "left";
+        cx.lineJoin = "round"; cx.lineWidth = q.big ? 6 : 4; cx.strokeStyle = "rgba(8,6,16,.85)"; cx.strokeText(q.txt, 0, 0);
+        if (q.big) { cx.shadowColor = q.c; cx.shadowBlur = 16; }
+        cx.fillStyle = q.c; cx.fillText(q.txt, 0, 0); cx.restore();
       }
+      if (g.badge) {  // a new achievement: a gold tag under the HUD
+        const b = g.badge, k = Math.min(1, b.t * 6), s = `🏅 ${b.txt}`;
+        cx.save(); cx.globalAlpha = Math.min(1, (2.6 - b.t) * 3); cx.font = "800 16px 'Barlow Condensed',sans-serif";
+        const w = cx.measureText(s).width + 28, y = 74 + 10 * k;
+        cx.fillStyle = "rgba(20,16,6,.88)"; cx.beginPath(); cx.roundRect(W / 2 - w / 2, y, w, 26, 13); cx.fill();
+        cx.strokeStyle = "#f2c230"; cx.lineWidth = 1.5; cx.stroke();
+        txt("CONQUISTA", W / 2, y - 3, "800 10px 'Barlow Condensed',sans-serif", "#f2c230"); txt(s, W / 2, y + 18, "800 16px 'Barlow Condensed',sans-serif", "#ffe7a0");
+        cx.restore();
+      }
+      hints(now);
       const br = g.dia.slice(8) + "/" + g.dia.slice(5, 7);
       if (g.mode === "pronto") scrim("CORRE, SAUL!", "Toque para correr até o Planet", "#fff", `A rua de ${br}: a mesma para todo mundo hoje`);
       else if (g.mode === "pausa") scrim("PAUSA", "Toque para continuar");
       else if (g.mode === "fim") g.won ? scrim(`${g.pts.toLocaleString("pt-BR")} PONTOS`, `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo!" : ", atrasado"}`, "#7dffb0", "Toque para correr de novo")
-        : scrim("JOGO CANCELADO", `${g.pts.toLocaleString("pt-BR")} pontos. Toque para tentar de novo`, "#ff4a6e");
+        : scrim("JOGO CANELADO", `${g.pts.toLocaleString("pt-BR")} pontos. Toque para tentar de novo`, "#ff4a6e");
     };
 
     // ---------- the share card: 1080x1350, drawn with the game's own art
@@ -698,7 +775,7 @@ window.Corre = (() => {
         txt("BIOFUT · CORRE, SAUL!", 72, 110, "600 40px 'Barlow',sans-serif", "#bdb9cc", "left");
         txt(g.pts.toLocaleString("pt-BR"), 66, 290, "800 200px 'Barlow Condensed',sans-serif", "#fff", "left");
         txt("PONTOS", 72, 360, "800 56px 'Barlow Condensed',sans-serif", "#ff4a6e", "left");
-        const line = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo" : ", atrasado"}` : "Jogo cancelado: tropeçou demais";
+        const line = g.won ? `Chegou no Planet às ${clk(g.at)}${g.at <= K.gol ? ", a tempo" : ", atrasado"}` : "Jogo canelado: tropeçou demais";
         txt(line, 72, 490, "700 52px 'Barlow Condensed',sans-serif", g.won ? "#7dffb0" : "#ff7a9a", "left");
         const extra = [g.pos && `${g.pos}º na corrida de hoje`, g.ach.has("rei") && "Derrubou o BioFut King", g.coins && `+${coin(g.coins)} moeda`].filter(Boolean);
         extra.forEach((s, i) => txt(s, 72, 556 + i * 52, "600 40px 'Barlow',sans-serif", "#e4e2ec", "left"));
@@ -708,7 +785,7 @@ window.Corre = (() => {
         ["#ff4a6e", "#f06060", "#f2c230", "#480078"].forEach((col, i) => box(i * w / 4, h - 12, w / 4, 12, col));
       } finally { cx = old; }
       const blob = await new Promise(r => c.toBlob(r, "image/png"));
-      const text = `Corre, Saul! ${g.pts.toLocaleString("pt-BR")} pontos${g.won ? `, cheguei no Planet às ${clk(g.at)}` : ", jogo cancelado"}. Tenta bater: https://biofut.h-brain.org/#/corre`;
+      const text = `Corre, Saul! ${g.pts.toLocaleString("pt-BR")} pontos${g.won ? `, cheguei no Planet às ${clk(g.at)}` : ", jogo canelado"}. Tenta bater: https://biofut.h-brain.org/#/corre`;
       const file = new File([blob], "corre-saul.png", {type: "image/png"});
       BF.ev("corre_saul", "share");
       if (navigator.canShare?.({files: [file]})) { try { await navigator.share({files: [file], text}); return; } catch (e) { if (e.name === "AbortError") return; } }
@@ -721,7 +798,11 @@ window.Corre = (() => {
     const loop = ts => {
       if (!cv.isConnected) return ac.abort();  // left the page (render() rebuilt it): stop drawing and listening
       const dt = Math.min(.033, (ts - (last || ts)) / 1000); last = ts; g.seen = performance.now();
-      if (g.mode === "corre") step(dt);
+      if (g.mode === "corre") {
+        const k = g.sm > 0 ? .4 : 1, n = Math.ceil(dt / .012);
+        g.sm = Math.max(0, g.sm - dt);
+        for (let i = 0; i < n && g.mode === "corre"; i++) step(dt * k / n);
+      }
       draw(ts / 1000);
       requestAnimationFrame(loop);
     };

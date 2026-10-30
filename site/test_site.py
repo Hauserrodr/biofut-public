@@ -749,6 +749,7 @@ assert json.loads(call("/api/me", cookie=me)[1])["truco_tour"], "saw the v0.2 po
 assert call("/truco-v03.jpg")[0] == 200, "the popup banner"
 # Corre, Saul! (#/corre): the server holds the clock, the daily cap, the upgrades and the rankings; a visitor runs as Sombras.
 assert call("/corre.js")[0] == 200 and "corre_up" in json.loads(call("/api/state")[1])
+assert all(call(f"/ad-{n}.png")[0] == 200 and f"ad-{n}.png" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8") for n in ("torres", "baita", "duplaface")), "the sponsor billboards in the game"
 assert "recarregue" in json.loads(call("/api/corre", {"op": "go"})[1])["error"], "a visitor needs their browser's id"
 assert "recarregue" in json.loads(call("/api/corre", {"op": "go", "sombra": "a b"})[1])["error"]
 assert json.loads(call("/api/corre", {"op": "go", "sombra": "Visit0rAbc123456"})[1])["dia"], "no login, no PIN: the game is open"
