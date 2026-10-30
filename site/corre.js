@@ -173,7 +173,7 @@ window.Corre = (() => {
     const pop = (txt, c = "#fff", big) => {  // a big pop slows the street for a moment, so the joke lands
       if (big) g.sm = .7;
       if (!big) g.pops = g.pops.filter(q => q.big || q.txt.split(" ")[0] !== txt.split(" ")[0]);  // the new streak count replaces the old one
-      g.pops.push({txt, c, big, t: 0, y: big ? H * .42 + 40 * g.pops.filter(q => q.big).length : Math.max(140, G - g.y - 86 - 24 * g.pops.filter(q => !q.big).length)});  // never up in the HUD
+      g.pops.push({txt, c, big, t: 0, y: big ? H * .42 + 40 * g.pops.filter(q => q.big).length : (sm => (up => up >= 140 ? up : Math.max(140, ...sm.map(v => v + 24)))(Math.min(G - g.y - 86, ...sm.map(v => v - 24))))(g.pops.filter(q => !q.big).map(q => q.y - q.t * 22))});  // above the pops on screen, or below them when that would reach the HUD
     };
     const got = id => { if (g.ach.has(id)) return; g.ach.add(id); g.badge = {txt: ACH.find(a => a[0] === id)[1], t: 0}; };
     const put = (type, x, b = 0, extra) => { const [w, h] = SIZE[type]; g.obs.push({type, x, w, h, b, ...extra}); };
@@ -181,7 +181,7 @@ window.Corre = (() => {
     // the street: everything from the day's seed, in the same order for everyone, so the same day = the same street
     const spawn = () => {
       const R = g.R, x = g.next, p = x / K.len;
-      if (FIX.some(f => f > x - 70 && f < x + 110)) return void (g.next = x + 120);  // a pickup and an obstacle at once is a coin toss
+      if (FIX.some(f => f > x - spd(p) * .7 && f < x + 110)) return void (g.next = x + 120);  // a pickup and an obstacle at once is a coin toss; after it, room to land a full jump and react
       const pool = ["cone", "cone", "lixo", "poca", ...(p > .15 ? ["pipoca"] : []), ...(p > .1 ? ["pombo"] : []), ...(p > .2 ? ["faixa", "faixa"] : []), ...(p > .3 ? ["sombra"] : [])];
       const type = pool[Math.floor(R() * pool.length)], [w] = SIZE[type], low = type === "faixa" || type === "pombo";
       put(type, x, type === "pombo" ? 34 + R() * 8 : type === "faixa" ? 30 : 0, type === "faixa" ? {txt: FAIXAS[Math.floor(R() * FAIXAS.length)]} : type === "sombra" ? {vx: -70} : {});

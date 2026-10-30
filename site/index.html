@@ -1583,8 +1583,11 @@ function insta() {  // once per browser, after the gift (if any)
   store.set("bfInsta", "1"); $("#instaGo").href = IG_REEL; $("#instaGo").onclick = () => $("#instaDlg").close();
   $("#instaDlg").addEventListener("close", trucoNews, {once: true}); $("#instaDlg").showModal();
 }
+function offGame(fn) {  // launch popups wait until the player leaves Corre: a modal mid-run takes the keyboard away
+  return location.hash.startsWith("#/corre") ? addEventListener("hashchange", () => offGame(fn), {once: true}) : fn();
+}
 function gift() {  // launch gift: the server gives it once per member; localStorage only saves the extra call
-  const later = () => setTimeout(insta, 1500);
+  const later = () => setTimeout(() => offGame(insta), 1500);
   if (!ME || store.get("bfGift")) return later();
   fetch("/api/bonus", {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: "{}"})
     .then(r => r.ok ? r.json() : null).then(j => {
@@ -1599,7 +1602,7 @@ Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r 
   D = d; setState(s);
   $("#foot").textContent = `${G.length} jogos registrados`;
   render(); bellInit();
-  BF.me.then(m => (ROLE = m.role, ME = m.user || null, TT = m.truco_tour && (!m.tour || /^#\/truco/.test(location.hash)), m.tour && !/^#\/truco/.test(location.hash) && tour(), gift(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
+  BF.me.then(m => (ROLE = m.role, ME = m.user || null, TT = m.truco_tour && (!m.tour || /^#\/truco/.test(location.hash)), m.tour && !/^#\/truco/.test(location.hash) && offGame(tour), offGame(gift), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
 }).catch(() => $("#app").innerHTML = '<div class="empty">Não consegui carregar os dados. Tente recarregar.</div>');
 </script>
 </body>
