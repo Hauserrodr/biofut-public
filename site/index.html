@@ -1290,6 +1290,216 @@ async function post(action, body) {
   return j;
 }
 
+// ---------- Corre, Saul! (2026-10-30, a member's idea): a runner, Saul to the Planet Ball before someone cancels the game.
+// Original art, all drawn on the canvas. Jump the street, catch a chimarrão for speed, 3 trips = jogo cancelado. Best time: this browser only.
+const CORRE = {len: 12000, t0: 18 * 3600 + 53 * 60, k: 15, gol: 19 * 3600};  // 600 m (20 units per m); clock from 18:53, 1 s = 15 s; game at 19:00 (a clean run lands ~18:59:30)
+const clk = s => [s / 3600, s / 60 % 60, s % 60].map(n => String(Math.floor(n)).padStart(2, "0")).join(":");
+function pageCorre() {
+  const best = +store.get("biofutCorre") || 0;
+  return `<div class="kicker">Jogar · novo</div><h1 style="font-size:52px;margin-top:8px">Corre, Saul!</h1>
+  <p class="muted" style="max-width:640px">O jogo é às 19:00 no Planet Ball e o Saul saiu atrasado. Pule o que aparecer na rua, pegue um chimarrão para acelerar e chegue antes que alguém cancele o jogo. Três tropeços e já era.</p>
+  <canvas id="corre" tabindex="0" aria-label="Corre, Saul: toque, clique ou aperte espaço para pular" style="width:100%;height:clamp(240px,62vw,420px);display:block;margin-top:18px;border-radius:var(--r);border:1px solid var(--line);touch-action:none;cursor:pointer;background:#0b0a1a"></canvas>
+  <p class="dim" style="font-size:13px;margin-top:10px">Toque, clique ou espaço para pular. Segure para pular mais alto.${best ? ` Seu recorde neste navegador: chegou às ${clk(best)}.` : ""}</p>
+  <div class="row" id="correFim" style="margin-top:6px"></div>`;
+}
+function bindCorre() {
+  const cv = $("#corre"), cx = cv.getContext("2d"), K = CORRE, ac = new AbortController(), on = {signal: ac.signal};
+  const R = (a, b) => a + Math.random() * (b - a);
+  // the skyline and its windows once, so they don't flicker
+  const town = ui.correTown ||= Array.from({length: 26}, () => {
+    const w = R(44, 96), h = R(50, 150);  // tops stay under the moon
+    return {w, h, lit: Array.from({length: Math.floor(h / 14) * Math.floor((w - 8) / 11)}, () => Math.random() < .28)};
+  });
+  const townW = town.reduce((s, b) => s + b.w + 6, 0);
+  const fresh = () => ({mode: "pronto", x: 0, y: 0, vy: 0, ht: 0, buf: 0, t: 0, lives: 3, inv: 0, slow: 1, boost: 0, obs: [], next: 760, end: 0});
+  const g = ui.corre ||= fresh();
+  if (g.mode === "corre") g.mode = "pausa";  // came back to the page: wait for a tap
+  let W = 600, H = 300, G = 256, last = 0, down = false;
+  const fit = () => {
+    const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1, sc = Math.min(r.height / 300, r.width / 460);  // at least 460 units of street ahead, more on wide screens
+    W = r.width / sc; H = r.height / sc; G = H - 44;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); cx.setTransform(sc * dpr, 0, 0, sc * dpr, 0, 0);
+  };
+  fit(); addEventListener("resize", fit, on);
+  const speed = () => (320 + 240 * g.x / K.len) * g.slow * (g.boost > 0 ? 1.3 : 1);
+  const SIZE = {cone: [22, 30], lixo: [30, 44], poca: [64, 6], pipoca: [56, 50], pombo: [26, 14], cuia: [18, 22]};
+  const spawn = () => {
+    const p = g.next / K.len, type = p > .15 && Math.random() < .22 ? "pombo" : ["cone", "cone", "lixo", "poca", "pipoca"][Math.floor(R(0, 5))];
+    const [w, h] = SIZE[type], x = g.next + (type === "pombo" ? 90 : 0);
+    g.obs.push({type, x, w, h, b: type === "pombo" ? R(72, 84) : 0});
+    if (Math.random() < .3) g.obs.push({type: "cuia", x: x + w + R(90, 150), w: 18, h: 22, b: R(30, 95)});
+    g.next = x + w + (320 + 240 * p) * R(.62, 1.3);
+  };
+  const finish = won => {
+    g.mode = "fim"; g.won = won; g.end = performance.now();
+    const at = Math.round(K.t0 + g.t * K.k), best = +store.get("biofutCorre") || 0;
+    if (won && (!best || at < best)) store.set("biofutCorre", at);
+    BF.ev("corre_saul", won ? (at <= K.gol ? "a tempo" : "atrasado") : "cancelado");
+    const text = won ? `Corre, Saul! Cheguei no Planet às ${clk(at)}${at <= K.gol ? "" : " (atrasado)"}, ${3 - g.lives ? `${3 - g.lives} tropeço${3 - g.lives > 1 ? "s" : ""}` : "sem tropeçar"}.`
+      : "Corre, Saul! Três tropeços: jogo cancelado.";
+    $("#correFim").innerHTML = `<button class="btn sm pri" data-corre="1">Correr de novo</button><button class="btn sm" data-copy="${esc(text + "\nhttps://biofut.h-brain.org/#/corre")}">Copiar resultado</button>`;
+    $("#correFim [data-corre]").onclick = () => { press(); release(); };
+    $("#correFim [data-copy]").onclick = async e => { try { await navigator.clipboard.writeText(e.target.dataset.copy); toast("Copiado: cole no grupo"); } catch { toast("O navegador bloqueou a cópia", true); } };
+  };
+  const press = () => {
+    down = true;
+    if (g.mode === "fim" && performance.now() - g.end < 700) return;  // a late tap must not restart the run
+    if (g.mode === "pronto" || g.mode === "fim") { Object.assign(g, fresh(), {mode: "corre"}); $("#correFim").innerHTML = ""; BF.ev("corre_saul", "start"); }
+    else if (g.mode === "pausa") g.mode = "corre";
+    else g.buf = .14;  // a jump asked a little before landing still counts
+  };
+  const release = () => { down = false; };
+  cv.addEventListener("pointerdown", e => { e.preventDefault(); press(); }, on);
+  addEventListener("pointerup", release, on); addEventListener("pointercancel", release, on);
+  const JUMP = ["Space", "ArrowUp", "KeyW"];
+  addEventListener("keydown", e => { if (JUMP.includes(e.code) && !/INPUT|TEXTAREA|SELECT|BUTTON/.test(document.activeElement?.tagName)) { e.preventDefault(); if (!e.repeat) press(); } }, on);
+  addEventListener("keyup", e => JUMP.includes(e.code) && release(), on);
+  document.addEventListener("visibilitychange", () => document.hidden && g.mode === "corre" && (g.mode = "pausa"), on);
+
+  const step = dt => {
+    g.t += dt; g.inv = Math.max(0, g.inv - dt); g.boost = Math.max(0, g.boost - dt); g.buf = Math.max(0, g.buf - dt);
+    g.slow = Math.min(1, g.slow + dt * .8);
+    g.x = Math.min(K.len, g.x + speed() * dt);
+    if (g.buf && !g.y) { g.vy = 700; g.y = .01; g.ht = 0; g.buf = 0; }
+    if (g.y) { g.ht += dt; g.vy -= (down && g.vy > 0 && g.ht < .22 ? 1150 : 2500) * dt; g.y = Math.max(0, g.y + g.vy * dt); }
+    while (g.next < g.x + W && g.next < K.len - 600) spawn();
+    for (const o of g.obs) {
+      if (o.hit || o.x + 3 > g.x + 9 || o.x + o.w - 3 < g.x - 9 || o.b + 2 > g.y + 58 || o.b + o.h - 2 < g.y + 2) continue;
+      if (o.type === "cuia") { o.hit = true; g.boost = 2.2; continue; }
+      if (g.inv) continue;
+      o.hit = true; g.lives--; g.inv = 1.3; g.slow = .35;
+      if (!g.lives) return finish(false);
+    }
+    g.obs = g.obs.filter(o => o.x + o.w > g.x - 200);
+    if (g.x >= K.len) finish(true);
+  };
+
+  // ---------- drawing (world units; G = the curb line)
+  const box = (x, y, w, h, c) => { cx.fillStyle = c; cx.fillRect(x, y, w, h); };
+  const glow = (x, y, r, c) => { const q = cx.createRadialGradient(x, y, 0, x, y, r); q.addColorStop(0, c); q.addColorStop(1, "rgba(0,0,0,0)"); cx.fillStyle = q; cx.fillRect(x - r, y - r, r * 2, r * 2); };
+  const seg = (x, y, a, l, c, w) => { cx.strokeStyle = c; cx.lineWidth = w; cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + Math.sin(a) * l, y + Math.cos(a) * l); cx.stroke(); return [x + Math.sin(a) * l, y + Math.cos(a) * l]; };
+  // angles from straight down, + = forward; thigh/upper arm, then shin/forearm, then the shoe across the shin
+  const limb = (x, y, a1, l1, a2, l2, c1, c2, w, shoe) => {
+    const [kx, ky] = seg(x, y, a1, l1, c1, w), [ex, ey] = seg(kx, ky, a2, l2, c2, w);
+    if (shoe) seg(ex - Math.cos(a2), ey + Math.sin(a2), a2 + Math.PI / 2, 6, shoe, w + 1);
+  };
+  const saul = (x, yb, ph, air) => {
+    const s = Math.sin(ph), bob = air ? 0 : Math.abs(Math.cos(ph)) * 2.5, hy = yb - 27 - bob;
+    cx.lineCap = cx.lineJoin = "round";
+    const leg = (k, skin, sock) => {
+      const t = s * k, a = air ? (k > 0 ? .95 : -.45) : .75 * t;  // the back foot kicks up, the front shin stays near vertical
+      limb(x, hy, a, 14, air ? (k > 0 ? .1 : -1.6) : t > 0 ? .2 * t : a + 1.1 * t, 14, skin, sock, 5, "#111");
+    };
+    const arm = (k, c) => { const a = air ? -2.2 * k : -.9 * s * k; limb(x + 3, hy - 17, a, 10, a + 1.5, 9, c, c, 4); };
+    leg(-1, "#b98463", "#bdbdb6"); arm(-1, "#b98463");  // the far side, a shade darker
+    cx.save(); cx.translate(x, hy); cx.rotate(.16);
+    box(-7.5, -2, 15, 9, "#141414");  // shorts
+    cx.fillStyle = "#ff4a6e"; cx.beginPath(); cx.roundRect(-7.5, -23, 15, 23, 4); cx.fill();  // the BioFut shirt
+    box(-7.5, -23, 15, 3, "#d93358");
+    cx.fillStyle = "#fff"; cx.font = "800 10px 'Barlow Condensed',sans-serif"; cx.textAlign = "center"; cx.fillText("10", 0, -8);
+    cx.fillStyle = "#d9a27a"; cx.beginPath(); cx.arc(1.5, -31, 8, 0, 7); cx.fill();  // head
+    cx.fillStyle = "#2b1d14"; cx.beginPath(); cx.arc(1, -33, 8.4, Math.PI * .95, Math.PI * 2.08); cx.fill();  // hair
+    box(5, -32, 2, 2.4, "#1a1310");  // eye
+    cx.restore();
+    leg(1, "#d9a27a", "#f2f2ee"); arm(1, "#d9a27a");
+  };
+  const obstacle = (o, x, now) => {
+    const y = G - o.b - o.h;
+    if (o.hit && o.type === "cuia") return;
+    if (o.type === "cone") {
+      box(x - 2, G - 4, o.w + 4, 4, "#3a2a20");
+      cx.fillStyle = "#ff7a1a"; cx.beginPath(); cx.moveTo(x + 2, G - 4); cx.lineTo(x + o.w / 2 - 3, y); cx.lineTo(x + o.w / 2 + 3, y); cx.lineTo(x + o.w - 2, G - 4); cx.fill();
+      box(x + 6, G - 19, o.w - 12, 5, "#f2f2ee");
+    } else if (o.type === "lixo") {
+      cx.fillStyle = "#2f7d52"; cx.beginPath(); cx.roundRect(x, y + 6, o.w, o.h - 6, 3); cx.fill();
+      box(x - 2, y, o.w + 4, 7, "#256542"); box(x + 6, y + 16, o.w - 12, 3, "#3f9a68");
+    } else if (o.type === "poca") {
+      cx.fillStyle = "#35486e"; cx.beginPath(); cx.ellipse(x + o.w / 2, G + 1, o.w / 2, 5, 0, 0, 7); cx.fill();
+      cx.fillStyle = "rgba(255,226,150,.35)"; cx.beginPath(); cx.ellipse(x + o.w * .62, G, o.w / 6, 1.6, 0, 0, 7); cx.fill();
+    } else if (o.type === "pipoca") {
+      box(x + 4, y, o.w - 8, 4, "#d23a3a"); for (let i = 0; i < 5; i++) box(x + 4 + i * (o.w - 8) / 5, y + 4, (o.w - 8) / 10, 6, "#f2f2ee");
+      box(x + 6, y + 10, o.w - 12, 14, "#f6e7a6"); box(x + 3, y + 24, o.w - 6, 18, "#d23a3a");
+      cx.fillStyle = "#fff"; cx.font = "800 9px 'Barlow Condensed',sans-serif"; cx.textAlign = "center"; cx.fillText("PIPOCA", x + o.w / 2, y + 36);
+      for (const wx of [x + 11, x + o.w - 11]) { cx.fillStyle = "#222"; cx.beginPath(); cx.arc(wx, G - 5, 5, 0, 7); cx.fill(); }
+    } else if (o.type === "pombo") {
+      const f = Math.sin(now * 18) * 6;
+      cx.fillStyle = "#8b909b"; cx.beginPath(); cx.ellipse(x + 12, y + 8, 11, 6, 0, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(x + 2, y + 5, 4.5, 0, 7); cx.fill(); box(x - 4, y + 5, 3, 2, "#e0a040");
+      cx.fillStyle = "#6c717c"; cx.beginPath(); cx.moveTo(x + 8, y + 6); cx.lineTo(x + 20, y + 6 - f); cx.lineTo(x + 18, y + 9); cx.fill();
+    } else {  // the cuia: chimarrão, 2 s faster
+      glow(x + 9, y + 12, 22, "rgba(140,220,110,.28)");
+      cx.fillStyle = "#7a4a24"; cx.beginPath(); cx.ellipse(x + 9, y + 14, 8.5, 9, 0, 0, 7); cx.fill();
+      box(x + 1.5, y + 4, 15, 4, "#5a361a"); box(x + 3, y + 3, 12, 3, "#6aa84f");
+      cx.strokeStyle = "#cfd4da"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x + 10, y + 6); cx.lineTo(x + 15, y - 6); cx.stroke();
+    }
+  };
+  const heart = (x, y, c) => {
+    cx.fillStyle = c; cx.beginPath(); cx.moveTo(x, y + 4); cx.bezierCurveTo(x, y - 2, x - 9, y - 2, x - 9, y + 4); cx.bezierCurveTo(x - 9, y + 9, x - 2, y + 12, x, y + 15);
+    cx.bezierCurveTo(x + 2, y + 12, x + 9, y + 9, x + 9, y + 4); cx.bezierCurveTo(x + 9, y - 2, x, y - 2, x, y + 4); cx.fill();
+  };
+  const planet = px => {  // the Planet Ball: the field's fence, its floodlights and the sign
+    box(px - 30, G - 150, 360, 150, "#10241a");
+    cx.strokeStyle = "rgba(120,200,150,.18)"; cx.lineWidth = 1;
+    for (let i = 0; i < 360; i += 12) { cx.beginPath(); cx.moveTo(px - 30 + i, G - 150); cx.lineTo(px - 30 + i + 40, G); cx.stroke(); cx.beginPath(); cx.moveTo(px - 30 + i + 40, G - 150); cx.lineTo(px - 30 + i, G); cx.stroke(); }
+    for (const lx of [px + 40, px + 300]) { box(lx, G - 196, 5, 196, "#3a3d44"); box(lx - 14, G - 204, 33, 10, "#e9eef5"); glow(lx + 2, G - 199, 90, "rgba(235,245,255,.22)"); }
+    box(px - 2, G - 62, 38, 62, "#ffd98a"); box(px + 2, G - 58, 30, 58, "#ffcc66");
+    cx.save(); cx.shadowColor = "#43d17f"; cx.shadowBlur = 18; cx.fillStyle = "#7dffb0"; cx.font = "800 34px 'Barlow Condensed',sans-serif"; cx.textAlign = "left";
+    cx.fillText("PLANET BALL", px + 70, G - 160); cx.restore();
+  };
+  const scrim = (title, sub, c = "#fff") => {
+    box(0, 0, W, H, "rgba(6,5,14,.62)"); cx.textAlign = "center";
+    cx.fillStyle = c; cx.font = "800 52px 'Barlow Condensed',sans-serif"; cx.fillText(title, W / 2, H / 2 - 4);
+    cx.fillStyle = "#d8d6e0"; cx.font = "600 19px 'Barlow',sans-serif"; cx.fillText(sub, W / 2, H / 2 + 30);
+  };
+  const draw = now => {
+    const sx = Math.min(120, W * .2), v = g.mode === "corre" ? speed() : 0;
+    const sky = cx.createLinearGradient(0, 0, 0, G); sky.addColorStop(0, "#0b0a1a"); sky.addColorStop(1, "#33182f");
+    box(0, 0, W, H, sky);
+    glow(W * .62, 72, 70, "rgba(255,240,210,.12)"); cx.fillStyle = "#f4ecd8"; cx.beginPath(); cx.arc(W * .62, 72, 15, 0, 7); cx.fill();
+    // the skyline, slow
+    for (let bx = -((g.x * .2) % townW), i = 0; bx < W; i = (i + 1) % town.length) {
+      const b = town[i], top = G - 30 - b.h, cols = Math.floor((b.w - 8) / 11);
+      box(bx, top, b.w, b.h + 30, "#181430");
+      b.lit.forEach((on, j) => on && box(bx + 6 + (j % cols) * 11, top + 8 + Math.floor(j / cols) * 14, 5, 7, "rgba(242,194,48,.55)"));
+      bx += b.w + 6;
+    }
+    // street lamps, faster
+    for (let lx = 140 - ((g.x * .6) % 260); lx < W + 40; lx += 260) {
+      box(lx, G - 132, 4, 132, "#2c2838"); box(lx - 2, G - 134, 22, 4, "#2c2838"); glow(lx + 18, G - 126, 60, "rgba(255,190,110,.2)"); box(lx + 13, G - 130, 10, 4, "#ffd7a0");
+    }
+    // sidewalk and street, at Saul's speed
+    box(0, G, W, H - G, "#17151c"); box(0, G, W, 18, "#2b2731"); box(0, G, W, 3, "#4a4552");
+    for (let tx = -(g.x % 48); tx < W; tx += 48) box(tx, G + 3, 2, 15, "#221f27");
+    for (let dx = -(g.x % 90); dx < W; dx += 90) box(dx, G + 29, 40, 3, "rgba(242,194,48,.45)");
+    const toEnd = K.len - g.x;
+    if (toEnd < W + 400) planet(sx + toEnd - 18);  // the door ends up under Saul
+    for (const o of g.obs) obstacle(o, o.x - g.x + sx, now);
+    if (!(g.inv && Math.floor(now * 12) % 2)) saul(sx, G - g.y, g.x / 19, g.y > 0);
+    if (g.boost) { cx.fillStyle = "rgba(140,220,110,.5)"; for (let i = 0; i < 3; i++) box(sx - 30 - i * 12 - (now * 300 % 12), G - 20 - g.y - i * 12, 14, 2); }
+    // HUD: the clock, the way to the Planet, the trips left
+    const at = K.t0 + g.t * K.k;
+    cx.textAlign = "left"; cx.font = "700 24px 'Barlow Condensed',sans-serif"; cx.fillStyle = at > K.gol ? "#ff7a45" : "#f2f2ee"; cx.fillText(clk(at), 16, 32);
+    const bx0 = 112, bw = W - bx0 - 100, p = g.x / K.len;
+    box(bx0, 21, bw, 6, "rgba(255,255,255,.14)"); box(bx0, 21, bw * p, 6, "#ff4a6e");
+    cx.fillStyle = "#ff4a6e"; cx.beginPath(); cx.arc(bx0 + bw * p, 24, 6, 0, 7); cx.fill();
+    cx.fillStyle = "#7dffb0"; cx.font = "800 12px 'Barlow Condensed',sans-serif"; cx.textAlign = "right"; cx.fillText("PLANET", bx0 + bw, 42);
+    for (let i = 0; i < 3; i++) heart(W - 22 - i * 24, 15, i < g.lives ? "#ff4a6e" : "rgba(255,255,255,.18)");
+    if (g.mode === "pronto") scrim("CORRE, SAUL!", "Toque para correr até o Planet");
+    else if (g.mode === "pausa") scrim("PAUSA", "Toque para continuar");
+    else if (g.mode === "fim") g.won ? scrim("CHEGOU NO PLANET!", `às ${clk(Math.round(at))}${at <= K.gol ? ", a tempo" : ", atrasado"}. Toque para correr de novo`, "#7dffb0")
+      : scrim("JOGO CANCELADO", "Três tropeços. Toque para tentar de novo", "#ff4a6e");
+    return v;
+  };
+  const loop = ts => {
+    if (!cv.isConnected) return ac.abort();  // left the page (render() rebuilt it): stop drawing and listening
+    const dt = Math.min(.033, (ts - (last || ts)) / 1000); last = ts;
+    if (g.mode === "corre") step(dt);
+    draw(ts / 1000);
+    requestAnimationFrame(loop);
+  };
+  document.fonts?.ready.then(() => requestAnimationFrame(loop));
+}
+
 // ---------- BioTruco v0.3 (#/truco): Truco Gaúcho with the cards against the machine; the server deals, plays and judges (server.py truco_act) ----------
 // Each move returns the events it caused (ev: your move, the machine's answers, rounds, hand end, next deal), each with the
 // table right after it; the page replays them one step at a time (TK_MS), input locked, a tap on the table skips a step.
@@ -1509,6 +1719,7 @@ function bindPush() {
 
 // ---------- Novidades: 🔔 in the header; newest first, seen-state and visited routes in localStorage ----------
 const NEWS = [  // d = ISO date, h = route (or full URL), t = text
+  {d: "2026-10-30", h: "#/corre", t: "Corre, Saul!: ajude o Saul a chegar no Planet antes das 19:00, pulando o que aparecer na rua."},
   {d: "2026-10-27", h: "#/truco", t: "BioTruco v0.3: desafie alguém do grupo, online ao vivo ou contra a máquina jogando com o deck da pessoa."},
   {d: "2026-10-22", h: "#/truco", t: "BioTruco v0.2: truco gaúcho com as suas cartas, até 13, 25 ou 37. Na primeira semana as vitórias valem x10."},
   {d: "2026-10-15", h: "https://github.com/Hauserrodr/biofut-public", t: "O código do site agora é aberto no GitHub."},
@@ -1546,7 +1757,7 @@ function render() {
     "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
     cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
     jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa, bindCopa],
-    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu], truco: [pageTruco, bindTruco],
+    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu], truco: [pageTruco, bindTruco], corre: [pageCorre, bindCorre],
   };
   const [view, bind] = pages[page ?? ""] || pages[""];
   app.innerHTML = view();
@@ -1554,7 +1765,7 @@ function render() {
   bind && bind();
   bindPush();
   const r = $("#radio"); r.hidden = page !== "radio" && !r.dataset.played; r.classList.toggle("mini", page !== "radio");
-  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
+  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco", corre: "Corre, Saul!"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
   if (same) scrollTo(0, y); else scrollTo(0, 0);
 }
 addEventListener("hashchange", render);
