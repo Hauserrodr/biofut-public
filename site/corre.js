@@ -70,10 +70,18 @@ window.Corre = (() => {
 .corre-pad button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
 .corre-pad button.on{transform:scale(.96);filter:brightness(1.3)}
 .corre-pad kbd{font:600 11px var(--body);opacity:.55;text-transform:none;letter-spacing:0}
-@media (pointer:coarse){.corre-pad{gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom))}.corre-pad button{height:72px;flex-direction:column;gap:3px;font-size:12px;border-radius:16px}.corre-pad button b{font-size:24px}.corre-pad kbd{display:none}}
+@media (pointer:coarse){#corre{height:min(112vw,72vh)}  /* the buttons sit on the road, over the canvas: see-through, thumbs at the bottom corners */
+.corre-pad{position:absolute;left:0;right:0;bottom:0;z-index:1;grid-template-columns:1fr 40px 40px 1fr 1.25fr;align-items:end;gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:none;pointer-events:none}
+.corre-pad button{pointer-events:auto;height:72px;flex-direction:column;gap:2px;font-size:11px;border-radius:18px;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.72)}
+.corre-pad button.pri{background:rgba(255,74,110,.18);border-color:rgba(255,74,110,.5);color:rgba(255,255,255,.9)}
+.corre-pad button.on{filter:none;background:rgba(255,255,255,.3)}.corre-pad button.pri.on{background:rgba(255,74,110,.6)}
+.corre-pad button[data-k=menu],.corre-pad button[data-k=fs]{height:40px;min-width:40px;border-radius:12px;opacity:.7}.corre-pad button[data-k=menu] b,.corre-pad button[data-k=fs] b{font-size:17px}
+.corre-pad [data-k=menu]{order:1}.corre-pad [data-k=fs]{order:2}.corre-pad [data-k=kick]{order:3}.corre-pad [data-k=jump]{order:4}
+.corre-pad button b{font-size:24px}.corre-pad kbd{display:none}}
 .corre-wrap:fullscreen{display:flex;flex-direction:column;border:0;border-radius:0}
 .corre-wrap:fullscreen #corre{flex:1;height:auto;min-height:0}
-@media (max-width:520px){#corre{height:min(84vw,62vh)}.corre-wrap{margin-left:-16px;margin-right:-16px;border-radius:0;border-left:0;border-right:0}}
+@media (max-width:520px) and (pointer:fine){#corre{height:min(84vw,62vh)}}
+@media (max-width:520px){.corre-wrap{margin-left:-16px;margin-right:-16px;border-radius:0;border-left:0;border-right:0}}
 .corre-menu{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;background:rgba(9,8,20,.9);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
   --bg:#0b0a1a;--card:#16142a;--card2:#1d1a33;--line:#2d2a45;--line2:#3d3960;--ink:#f2f2ee;--mut:#b6b3c6;--dim:#807c96;--acc:#ff4a6e;--acc-ink:#16060a;--gold:#f2c230;--win:#43d17f;color:var(--ink);color-scheme:dark}
 .corre-menu[hidden]{display:none}
@@ -163,7 +171,7 @@ window.Corre = (() => {
     const fit = () => {
       const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
       sc = Math.min(r.height / 300, r.width / 400);  // at least 400 units of street on screen, more on wide screens
-      W = r.width / sc; H = r.height / sc; G = H - 44;
+      W = r.width / sc; H = r.height / sc; G = H - (touch ? 104 / sc : 44);  // touch: a wider road for the buttons
       cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); cx.setTransform(sc * dpr, 0, 0, sc * dpr, 0, 0);
     };
     fit(); addEventListener("resize", fit, on); document.addEventListener("fullscreenchange", () => setTimeout(fit, 50), on);
@@ -311,6 +319,7 @@ window.Corre = (() => {
       post("corre", {op: "go"}).then(j => { if (j) g.go = true; });  // a visitor runs as Sombras (index.html post sends their browser's id)
       if (touch && (local().runs || 0) < 3) pop("Deslize: ↑ pula · ↓ desliza · → chuta", "#ffd27a", true);
       cv.focus({preventScroll: true});
+      if (touch) $("#correWrap").scrollIntoView({block: "end", behavior: "smooth"});  // landscape phone: the buttons sit at the canvas bottom, below the fold
     };
     const pause = () => { if (g.mode === "corre") g.mode = "pausa"; menu("jogar"); };
     const resume = () => { menu(false); if (g.mode === "pausa") g.mode = "corre"; cv.focus({preventScroll: true}); };
@@ -733,10 +742,12 @@ window.Corre = (() => {
       txt(`R$ ${g.pilas}`, W - 14, 68, "700 13px 'Barlow Condensed',sans-serif", "#9be07a", "right");
       if (g.shield) txt("COLETE", W - 60, 68, "800 12px 'Barlow Condensed',sans-serif", "#7dffb0", "right");
       for (const q of g.pops) {
-        const life = q.big ? 3 : 1.8, k = q.t < .12 ? .5 + q.t / .12 * .7 : q.t < .24 ? 1.2 - (q.t - .12) / .12 * .2 : 1;  // pops in a little too big, then settles
+        const life = q.big ? 3 : 1.8; let k = q.t < .12 ? .5 + q.t / .12 * .7 : q.t < .24 ? 1.2 - (q.t - .12) / .12 * .2 : 1;  // pops in a little too big, then settles
         cx.save(); cx.globalAlpha = Math.max(0, Math.min(1, (life - q.t) / (life * .35)));
-        cx.translate(q.big ? W / 2 : x0 + 30, q.big ? q.y : q.y - q.t * 22); cx.scale(k, k);
-        cx.font = q.big ? `800 ${Math.min(40, W / 12)}px 'Barlow Condensed',sans-serif` : "800 20px 'Barlow Condensed',sans-serif"; cx.textAlign = q.big ? "center" : "left";
+        cx.translate(q.big ? W / 2 : x0 + 30, q.big ? q.y : q.y - q.t * 22);
+        cx.font = q.big ? `800 ${Math.min(40, W / 12)}px 'Barlow Condensed',sans-serif` : "800 20px 'Barlow Condensed',sans-serif";
+        if (q.big) k *= Math.min(1, (W - 24) / cx.measureText(q.txt).width);  // a long line fits a phone
+        cx.scale(k, k); cx.textAlign = q.big ? "center" : "left";
         cx.lineJoin = "round"; cx.lineWidth = q.big ? 6 : 4; cx.strokeStyle = "rgba(8,6,16,.85)"; cx.strokeText(q.txt, 0, 0);
         if (q.big) { cx.shadowColor = q.c; cx.shadowBlur = 16; }
         cx.fillStyle = q.c; cx.fillText(q.txt, 0, 0); cx.restore();
