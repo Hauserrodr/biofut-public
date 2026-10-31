@@ -98,6 +98,11 @@ srv.stdout.once('data', async () => {
     assert.strictEqual((await post('/login', { ...L, phone: '12' })).status, 400);
     assert.deepStrictEqual(await (await post('/login', L)).json(), { ok: true });
     assert.match(fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8'), /"to":"5551900000003@s.whatsapp.net".*\*0420\*/);
+    assert.strictEqual((await post('/dm', { phone: '12', text: 'oi' })).status, 400, 'dm: a real number');
+    assert.strictEqual((await post('/dm', { phone: '5551900000004', text: ' ' })).status, 400, 'dm: some text');
+    assert.strictEqual((await post('/dm', { phone: '5551900000004', text: 'oi' }, 'wrong')).status, 401);
+    assert.deepStrictEqual(await (await post('/dm', { phone: '5551900000004', text: 'Tá aí o jogo' })).json(), { ok: true });
+    assert.deepStrictEqual(fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).map(({ to, text }) => ({ to, text })).pop(), { to: '5551900000004@s.whatsapp.net', text: '🤖 *ESQUIZOBOT* Tá aí o jogo' });
     console.log('all tests passed');
   } catch (e) { console.error(e); process.exitCode = 1; }
   srv.kill();
