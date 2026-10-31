@@ -158,7 +158,7 @@ function Run-Ssh($cmd) {
 # 1. Files.
 Run-Ssh 'sudo mkdir -p /srv/biofut/data && sudo chown -R ubuntu:ubuntu /srv/biofut'
 $Files = @("$PSScriptRoot\server.py", "$PSScriptRoot\index.html", "$PSScriptRoot\wiki.html", "$PSScriptRoot\transparencia.html", "$PSScriptRoot\entrar.html", "$PSScriptRoot\admin.html", "$PSScriptRoot\sumula.py", "$PSScriptRoot\glm.py", "$PSScriptRoot\costs.py", "$PSScriptRoot\sheet.py", "$PSScriptRoot\conferir.py", "$PSScriptRoot\lista.py", "$PSScriptRoot\backup.sh", "$PSScriptRoot\db.py",
-  "$PSScriptRoot\site.css", "$PSScriptRoot\site.js", "$PSScriptRoot\og.png", "$PSScriptRoot\logo.png", "$PSScriptRoot\robots.txt", "$PSScriptRoot\sitemap.xml", "$PSScriptRoot\push.py", "$PSScriptRoot\sw.js", "$PSScriptRoot\copa_art.jpg", "$PSScriptRoot\truco-v03.jpg")
+  "$PSScriptRoot\site.css", "$PSScriptRoot\site.js", "$PSScriptRoot\og.png", "$PSScriptRoot\logo.png", "$PSScriptRoot\robots.txt", "$PSScriptRoot\sitemap.xml", "$PSScriptRoot\push.py", "$PSScriptRoot\sw.js", "$PSScriptRoot\copa_art.jpg", "$PSScriptRoot\truco-v03.jpg", "$PSScriptRoot\corre.js", "$PSScriptRoot\ad-torres.png", "$PSScriptRoot\ad-baita.png", "$PSScriptRoot\ad-duplaface.png")
 if (Test-Path $Json) { $Files += $Json } else { 'biofut.json not here: keeping the one on the server' }
 & scp -q -i $Key @Files "${Target}:/srv/biofut/"
 if ($LASTEXITCODE) { throw "scp failed ($LASTEXITCODE)" }

@@ -6,7 +6,7 @@
   if (store.get("biofutTheme")) document.documentElement.dataset.theme = store.get("biofutTheme");
   // a [name, [...tabs]] entry is a category: <details> that drops a row of its tabs under the header (Gab, 2026-10-16: too many tabs)
   const tabs = [["/#/", "Início"], ["/#/jogo", "Jogo da semana"], ["/#/copa", "Copa"], ["Futebol", [["/#/tabela", "Tabela"], ["/#/jogos", "Jogos"], ["/wiki", "Wiki"]]],
-    ["Jogar", [["/#/cartas", "Cartas"], ["/#/deck", "Deck"], ["/#/duelo", "Duelo"], ["/#/truco", "BioTruco"], ["/#/biobet", "BioBet"]]],
+    ["Jogar", [["/#/cartas", "Cartas"], ["/#/deck", "Deck"], ["/#/duelo", "Duelo"], ["/#/truco", "BioTruco"], ["/#/corre", "Corre, Saul"], ["/#/biobet", "BioBet"]]],
     ["Grupo", [["/#/resenha", "Resenha"], ["/#/radio", "Rádio"], ["/transparencia", "Transparência"], ["/#/apoie", "Apoie"]]]];
   const tab = ([h, t]) => Array.isArray(t) ? `<details class="grp"><summary>${h}</summary><div class="menu">${t.map(tab).join("")}</div></details>` : `<a href="${h}">${t}</a>`;
   document.body.insertAdjacentHTML("afterbegin", `<header class="top"><div class="bar">

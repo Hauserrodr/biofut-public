@@ -747,6 +747,49 @@ assert "tour_truco" not in json.loads(call("/api/state")[1])
 st0 = server.load_state(); st0["tour_truco"]["Dan"].pop("v"); server.save_state(st0)
 assert json.loads(call("/api/me", cookie=me)[1])["truco_tour"], "saw the v0.2 popup: the v0.3 one shows once"
 assert call("/truco-v03.jpg")[0] == 200, "the popup banner"
+# Corre, Saul! (#/corre): the server holds the clock, the daily cap, the upgrades and the rankings; a visitor runs as Sombras.
+assert call("/corre.js")[0] == 200 and "corre_up" in json.loads(call("/api/state")[1])
+assert all(call(f"/ad-{n}.png")[0] == 200 and f"ad-{n}.png" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8") for n in ("torres", "baita", "duplaface")), "the sponsor billboards in the game"
+page = (server.HERE / "index.html").read_text(encoding="utf-8")
+assert "offGame(tour), offGame(gift)" in page and "offGame(insta)" in page, "launch popups must wait until the player leaves Corre (a modal mid-run takes the keyboard)"
+assert "recarregue" in json.loads(call("/api/corre", {"op": "go"})[1])["error"], "a visitor needs their browser's id"
+assert "recarregue" in json.loads(call("/api/corre", {"op": "go", "sombra": "a b"})[1])["error"]
+assert json.loads(call("/api/corre", {"op": "go", "sombra": "Visit0rAbc123456"})[1])["dia"], "no login, no PIN: the game is open"
+assert json.loads(call("/api/corre", {"op": "go"}, cookie=me)[1])["dia"]
+cs, T0 = {"ledger": []}, 1_800_000_000
+C = lambda body, now: server.corre_act(cs, {}, "Abel", body, now)
+for bad in ({"op": "fim", "t": 30, "pts": 500}, {"op": "voa"}, {"op": "up", "item": "asa"}):  # no "go" first; unknown op; unknown upgrade
+    try: C(bad, T0); raise AssertionError(bad)
+    except ValueError: pass
+C({"op": "go"}, T0)
+try: C({"op": "fim", "t": 30, "pts": 500, "chegou": True}, T0 + 10); raise AssertionError("30 s of game in 10 s of clock")
+except ValueError: pass
+run = {"op": "fim", "t": 26, "pts": 3200, "pilas": 30, "chegou": True, "rei": True, "ach": ["rei", "pontual", "voar"]}
+C({"op": "go"}, T0); got = C(run, T0 + 27)["coins"]
+assert got == round(30 * server.CORRE_PILA + server.CORRE_META + server.CORRE_REI, 4), got
+r = cs["corre"]["Abel"]
+assert r["best"] == 3200 and r["runs"] == 1 and r["ach"] == ["pontual", "rei"] and r["cedo"] == server.CORRE_T0 + 26 * 15 <= server.CORRE_GOL
+for i in range(4): C({"op": "go"}, T0 + 100 * i + 100); C(run, T0 + 100 * i + 130)
+assert sum(x["amount"] for x in cs["ledger"]) == server.CORRE_CAP, "coins stop at the daily cap"
+C({"op": "go"}, T0 + 86400); C({**run, "pts": 900}, T0 + 86430)
+assert r["dia"][1] == 900 and r["best"] == 3200 and C({"op": "go"}, T0 + 86500)["dia"] != C({"op": "go"}, T0)["dia"], "a new day, a new daily ranking"
+b0 = server.balance(cs, {}, "Abel"); C({"op": "up", "item": "chuteira"}, T0)
+assert r["up"] == {"chuteira": 1} and server.balance(cs, {}, "Abel") == round(b0 - server.CORRE_UP["chuteira"][0], 4)
+for c in server.CORRE_UP["folego"]: C({"op": "up", "item": "folego"}, T0)
+try: C({"op": "up", "item": "folego"}, T0); raise AssertionError("past the last level")
+except ValueError: pass
+try: server.corre_act({"ledger": []}, {"Eve": 2}, "Eve", {"op": "up", "item": "folego", }, T0); raise AssertionError("3 coins with 2")
+except ValueError as e: assert "custa 3" in str(e)
+vs = {"ledger": []}; V = lambda body, now, who="~Visit0r1": server.corre_act(vs, {}, who, body, now)
+V({"op": "go"}, T0); V({"op": "go"}, T0, "~Visit0r2")
+got = V({**run, "n": {"pulos": 10**6, "tombos": 2, "metros": 1200, "voos": 9}}, T0 + 27); V({**run, "pts": 4000}, T0 + 28, "~Visit0r2")
+assert got == {"coins": 0} and not vs["ledger"] and list(vs["corre"]) == ["Sombras"], "visitors: one name, no coins"
+r = vs["corre"]["Sombras"]
+assert r["runs"] == 2 and r["best"] == 4000 and r["n"]["pulos"] == 6 * 26, "counts capped per second of run"
+assert r["n"]["tombos"] == 2 and r["n"]["metros"] == 1200 and "voos" not in r["n"] and r["n"]["chegadas"] == 2 and r["n"]["reis"] == 2, r["n"]
+try: V({"op": "up", "item": "chuteira"}, T0); raise AssertionError("a visitor buys nothing")
+except ValueError as e: assert "entre" in str(e)
+assert server.CORRE_T0 + server.CORRE_TMIN * server.CORRE_K < server.CORRE_GOL, "the fastest run arrives before kick-off"
 call("/api/tour", {"which": "truco", "done": False, "step": 0}, cookie=me)
 assert not json.loads(call("/api/me", cookie=me)[1])["truco_tour"] and server.load_state()["tour_truco"]["Dan"]["done"]
 assert call("/api/jogos")[0] == 403 and json.loads(call("/api/jogos", cookie=me)[1]) == {}
@@ -887,6 +930,10 @@ assert len(issued) == 2 and json.loads(call("/api/feedback", cookie=me)[1])[0]["
 dc = server.duel_cards(DATA["games"])  # the real cards (biofut.json): the test games here give nobody 10 jogos
 assert "poucas" in json.loads(call("/api/duelo", {}, cookie=me)[1])["error"]
 server.duel_cards = lambda games: dc
+# a visitor (Sombras) plays the Duelo and the BioTruco without login or PIN; challenges stay for members
+assert json.loads(call("/api/duelo", {"mode": "dia", "sombra": "Visit0rAbc123456"})[1])["duel"]["you"]
+assert "entre para desafiar" in json.loads(call("/api/truco", {"op": "desafiar", "para": "Dan", "alvo": 13, "sombra": "Visit0rAbc123456"})[1])["error"]
+assert json.loads(call("/api/truco", {"op": "novo", "alvo": 13, "sombra": "Visit0rAbc123456"})[1])["jogo_truco"]["h"]
 o = json.loads(call("/api/duelo", {}, cookie=me)[1])
 bal0 = o["balances"]["Dan"]
 assert o["duel"]["cpu"] == [None] * 5 and len(o["duel"]["you"]) == 5 and "duelo_aberto" not in o, o.get("error")
@@ -940,7 +987,7 @@ assert duel(st, [card("y", 50, "bronze")] + [card(f"y{i}", 50) for i in range(4)
 r = st["duelo"]["Eve"]
 assert (r["v"], r["e"], r["d"], r["run"], r["top"], r["best"], r["dia"]) == (3, 0, 1, 1, 2, [5, 0], None) and not st["duelo_aberto"], r
 assert balance(st, {}, "Eve") == WELCOME + 0.0003 and balance(st, {}, "Bob") == WELCOME and type(balance(st, {}, "Bob")) is int
-for body, who in (({"at": "XYZ"}, "Eve"), ({}, None)):
+for body, who in (({"at": "XYZ"}, "Eve"),):  # no user at all: server.jogador refuses before (the /api/corre test above)
     st["duelo_aberto"]["Eve"] = {"mode": "livre", "day": "x", "ace": "ace", "you": [card("y", 50)] * 5, "cpu": [card("c", 50)] * 5, "log": []}
     try:
         server.duel_act(st, who, dc, body, "x")

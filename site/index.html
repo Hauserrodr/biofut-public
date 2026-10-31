@@ -99,9 +99,16 @@ function askPin() {
     d.showModal();
   });
 }
+const SOMBRAS = "Sombras";  // everyone who plays without logging in, as one name in the rankings (server.py SOMBRAS)
+const sombra = () => {
+  let id = store.get("biofutSombra");
+  if (!/^[A-Za-z0-9]{16}$/.test(id || "")) { id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 56]).join(""); store.set("biofutSombra", id); }
+  return id;
+};
+const quem = body => ME ? body : {...body, sombra: sombra()};
 async function api(action, body) {
   for (let tries = 0; tries < 2; tries++) {
-    const r = await fetch("/api/" + action, {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: JSON.stringify(body || {})});
+    const r = await fetch("/api/" + action, {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: JSON.stringify(quem(body || {}))});
     if (r.status === 403) { const p = await askPin(); if (!p) return null; store.set("biofutPin", p); continue; }
     const j = await r.json();
     if (j.error) { toast(j.error, true); return null; }
@@ -179,6 +186,7 @@ function av(n, cls = "") {
   return `<span class="av ${cls}" style="background:hsl(${hue(n)} 55% 68%)">${esc(ini)}</span>`;
 }
 const plink = n => `#/jogador/${encodeURIComponent(n)}`;
+const pname = (n, label = esc(n)) => n === SOMBRAS ? `<span style="font-weight:600">${label}</span>` : `<a href="${plink(n)}" style="font-weight:600">${label}</a>`;  // Sombras has no page
 const nick = n => ST.profiles?.[n]?.nick ? ` <small class="dim">“${esc(ST.profiles[n].nick)}”</small>` : "";
 // Radar of the card attributes (percentiles among regulars, 40-99); rings at 50/75/99.
 function radar(at) {
@@ -942,22 +950,9 @@ async function startRadio() {
 // whole deck is the Super Craque: it beats everyone, except a bronze card (zebra). The daily duel deals the same cards
 // to everybody (seeded by the date), so results can be compared in the group; #/duelo/<name> plays with that player.
 // A member plays on the server (server.py duel_act): it deals, hides the machine's cards and judges, so the duel counts
-// in the ranking and a win pays 0,0001 moeda. A visitor plays the same duel here in the browser, for fun only.
+// in the ranking and a win pays 0,0001 moeda. A visitor plays it too, as Sombras: in the ranking, no coins.
 const ATTRS = ["GOL", "ASS", "VIT", "EXP", "CAP"];
-const rng = seed => () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-function newDuel(mine) {
-  const all = CARDS(), day = localDay(), r = rng(mine ? Date.now() : [...day].reduce((h, c) => h * 31 + c.charCodeAt(0) | 0, 7));
-  let deck = all.map(c => [r(), c]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
-  const pick = mine && all.find(c => c.name === mine);
-  if (pick) deck = [pick, ...deck.filter(c => c !== pick)];
-  return {key: mine || day, daily: !pick, day, ace: all[0].name, you: deck.slice(0, 5), cpu: deck.slice(5, 10), round: 0, score: [0, 0], log: [], shown: null};
-}
-function duelWinner(d, a, x, y) {  // 1 = you, -1 = machine, 0 = draw
-  if (x.name === d.ace) return y.tier === "bronze" ? -1 : 1;
-  if (y.name === d.ace) return x.tier === "bronze" ? 1 : -1;
-  return Math.sign(x.at[a] - y.at[a]);
-}
 function dcard(c, d, {hide, pick, on} = {}) {
   if (hide) return `<div class="fc back"><span>Bio<b>Fut</b></span></div>`;
   const s = slug(c.name), ph = face(s) ? `<img src="${face(s)}" alt="" loading="lazy">` : esc(c.name.slice(0, 2).toUpperCase());
@@ -982,7 +977,7 @@ function duelRank() {  // ST.duelo: each member's record, kept by the server
   const R = Object.entries(ST.duelo || {}).filter(([, r]) => r.best);
   if (!R.length) return `<section class="sec"><div class="kicker">Ranking do Duelo</div><p class="muted" style="margin-top:8px">Ninguém terminou um duelo valendo ainda: o primeiro a terminar abre o ranking.</p></section>`;
   const top = (title, sort, big, small) => `<div class="card pad"><h3>${title}</h3><ul class="list" style="margin-top:8px">${rankList([...R].sort(([, a], [, b]) => sort(a, b)), ([n, r], i) =>
-    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`)}</ul></div>`;
+    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}${pname(n)}<span class="r"><b class="num">${big(r)}</b><small>${small(r)}</small></span></li>`)}</ul></div>`;
   return `<section class="sec"><div class="sec-h"><div><div class="kicker">Ranking do Duelo</div><h2>Quem manda no Duelo</h2></div></div><div class="grid g3">
     ${top("Mais vitórias seguidas", (a, b) => b.top - a.top || b.run - a.run, r => r.top, r => `agora ${r.run}`)}
     ${top("Mais pontos num duelo", (a, b) => b.best[0] - a.best[0] || a.best[1] - b.best[1], r => r.best.join("×"), r => `${r.v + r.e + r.d} duelo${r.v + r.e + r.d > 1 ? "s" : ""}`)}
@@ -990,7 +985,7 @@ function duelRank() {  // ST.duelo: each member's record, kept by the server
 }
 function pageDuelo(name) {
   if (CARDS().length < 10) return '<div class="empty">Poucas cartas para um duelo.</div>';
-  if (ME === undefined) return '<div class="skel"></div>';  // member (server duel) or visitor (local): wait to know
+  if (ME === undefined) return '<div class="skel"></div>';  // a member or a visitor (Sombras): wait to know
   name = name === "dia" ? "" : name || (myCards().length >= 5 ? "deck" : "");  // #/duelo: your deck once you have one
   const free = CARDS()[Math.floor(Math.random() * Math.min(40, CARDS().length))].name;
   const tabs = on => `<div class="seg" style="margin-bottom:18px">${[["deck", "Meu deck"], ["dia", "Do dia"], [encodeURIComponent(free), "Livre"]].map(([h, l], i) =>
@@ -1000,13 +995,13 @@ function pageDuelo(name) {
     <p class="muted" style="margin:8px 0 0">${ME ? "Compre as que faltam com as suas moedas: as 5 primeiras formam o deck." : "Entre para ganhar 25 moedas, comprar cartas e montar o seu deck."}</p>
     <div class="row" style="justify-content:center;margin-top:16px"><a class="btn pri" href="${ME ? "#/deck" : "/entrar?next=%2F%23%2Fdeck"}">${ME ? "Montar o deck" : "Entrar"}</a></div></div>` + duelRank();
   const key = name || localDay();
-  if (ui.duel?.key !== key) ui.duel = ME ? {key, wait: true, mode: name === "deck" ? "deck" : name ? "livre" : "dia", name} : newDuel(name);  // a new day or another player deals again
+  if (ui.duel?.key !== key) ui.duel = {key, wait: true, mode: name === "deck" ? "deck" : name ? "livre" : "dia", name};  // a new day or another player deals again
   const d = ui.duel, i = d.round, yours = i % 2 === 0, x = d.you?.[i], y = d.cpu?.[i], sh = d.shown, over = i >= 5;
   const marks = (d.log || []).map(w => w > 0 ? "🟩" : w < 0 ? "🟥" : "⬜").join(""), rank = duelRank();
   const again = d.deck ? '<button class="btn" id="again">Outro com o deck</button>' : `<a class="btn" href="#/duelo/${encodeURIComponent(free)}" id="again">Duelo livre</a>`;
-  const head = tabs(d.deck || d.mode === "deck" ? 0 : d.daily || d.mode === "dia" ? 1 : 2) + `<div class="sec-h"><div><div class="kicker">${d.daily ? `Duelo do dia · ${dt(d.day)}` : d.deck ? "Seu deck" : d.srv || !ME ? "Duelo livre" : "Duelo"} · melhor de 5</div><h1 style="font-size:52px;margin-top:8px">Duelo</h1>
+  const head = tabs(d.deck || d.mode === "deck" ? 0 : d.daily || d.mode === "dia" ? 1 : 2) + `<div class="sec-h"><div><div class="kicker">${d.daily ? `Duelo do dia · ${dt(d.day)}` : d.deck ? "Seu deck" : d.srv ? "Duelo livre" : "Duelo"} · melhor de 5</div><h1 style="font-size:52px;margin-top:8px">Duelo</h1>
     <p>Super Trunfo com as cartas de verdade. Maior atributo leva a rodada. O <b>Super Craque</b> (${esc(CARDS()[0].name)}) ganha de todo mundo, menos de carta bronze: zebra.
-    ${ME ? "Cada vitória vale 0,0001 moeda e conta no ranking." : 'Este é um treino: <a class="link" href="/entrar?next=%2F%23%2Fduelo">entre</a> para valer moedas e ranking.'}</p>
+    ${ME ? "Cada vitória vale 0,0001 moeda e conta no ranking." : 'Sem entrar, você joga como <b>Sombras</b>: conta no ranking como Sombras, sem moedas. <a class="link" href="/entrar?next=%2F%23%2Fduelo">Entre</a> para ter o seu nome.'}</p>
     ${d.note ? `<p class="muted">${d.note}</p>` : ""}</div>
     ${d.score ? `<div class="score num" style="font-size:34px">${d.score[0]}<i>×</i>${d.score[1]}</div>` : ""}</div>`;
   if (d.wait) return head + '<div class="empty">Embaralhando…</div>' + rank;
@@ -1016,7 +1011,7 @@ function pageDuelo(name) {
     const share = `BioFut Duelo${d.daily ? " " + d.day.split("-").reverse().join("/") : ""}: ${["perdi", "empatei", "venci"][res + 1]} ${d.score[0]}×${d.score[1]} ${marks}\nhttps://biofut.h-brain.org/#/duelo${d.daily ? "/dia" : ""}`;
     return head + `<div class="card pad fade" style="text-align:center;max-width:560px;margin:0 auto">
       <h2 style="font-size:44px">${["Derrota", "Empate", "Vitória"][res + 1]}</h2><p style="font-size:30px;margin:12px 0">${marks}</p>
-      <p class="muted">${d.srv && r ? `${res > 0 ? "+0,0001 moeda · " : ""}${r.run ? `${r.run} vitória${r.run > 1 ? "s" : ""} seguida${r.run > 1 ? "s" : ""}` : "sequência zerada"} (a maior: ${r.top}) · ${r.v}V ${r.e}E ${r.d}D`
+      <p class="muted">${d.srv && ME && r ? `${res > 0 ? "+0,0001 moeda · " : ""}${r.run ? `${r.run} vitória${r.run > 1 ? "s" : ""} seguida${r.run > 1 ? "s" : ""}` : "sequência zerada"} (a maior: ${r.top}) · ${r.v}V ${r.e}E ${r.d}D`
         : `Seu histórico neste navegador: ${rec[0]}V ${rec[1]}E ${rec[2]}D`}</p>
       <div class="row" style="justify-content:center;margin-top:16px"><button class="btn pri" data-copy="${esc(share)}">Copiar resultado</button>${again}</div></div>` + rank;
   }
@@ -1039,22 +1034,19 @@ async function bindDuelo() {
       render();
     });
   }
-  const play = async a => {
-    if (d.srv) {  // the server plays the round (and the machine's pick in its rounds)
-      if (d.busy) return;
-      d.busy = true; const j = await api("duelo", {at: a}); d.busy = false;
-      if (j) ui.duel = srvDuel(d.key, j.duel, true);
-      return render();
-    }
-    const w = duelWinner(d, a, d.you[d.round], d.cpu[d.round]); d.shown = {a, w}; d.log.push(w); if (w) d.score[w > 0 ? 0 : 1]++; render();
+  const play = async a => {  // the server plays the round (and the machine's pick in its rounds)
+    if (d.busy) return;
+    d.busy = true; const j = await api("duelo", {at: a}); d.busy = false;
+    if (j) ui.duel = srvDuel(d.key, j.duel, true);
+    render();
   };
   document.querySelectorAll(".duel [data-at]:not([disabled])").forEach(b => b.onclick = () => play(b.dataset.at));
-  const cpu = $("#cpu"); if (cpu) cpu.onclick = () => { const c = d.cpu[d.round]; play(d.srv ? "" : ATTRS.reduce((m, a) => c.at[a] > c.at[m] ? a : m)); };
+  const cpu = $("#cpu"); if (cpu) cpu.onclick = () => play("");
   const nx = $("#next"); if (nx) nx.onclick = () => {
     d.round++; d.shown = null;
     if (d.round === 5) {
       const res = Math.sign(d.score[0] - d.score[1]), rec = JSON.parse(store.get("biofutDuelo") || "[0,0,0]");
-      if (!d.srv) { rec[1 - res]++; store.set("biofutDuelo", JSON.stringify(rec)); }
+      if (!ME) { rec[1 - res]++; store.set("biofutDuelo", JSON.stringify(rec)); }
       BF.ev("duelo", `${d.daily ? "dia" : d.deck ? "deck" : "livre"} ${d.score[0]}x${d.score[1]}`);
     }
     render();
@@ -1285,9 +1277,19 @@ function tour(i = 0) {
 }
 // member-only POSTs: the cookie is the proof, not the PIN, and the reply is not the match state
 async function post(action, body) {
-  const j = await fetch("/api/" + action, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({error: "sem conexão"}));
+  const j = await fetch("/api/" + action, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(quem(body))}).then(r => r.json()).catch(() => ({error: "sem conexão"}));
   if (j.error) { toast(j.error, true); return null; }
   return j;
+}
+
+// ---------- Corre, Saul! (#/corre): the game lives in corre.js, loaded on the first visit so the other pages stay light
+function pageCorre() { return `<div id="correPg"></div>`; }
+function bindCorre() {
+  if (window.Corre) return Corre();
+  const s = document.createElement("script"); s.src = "/corre.js?v=20261030f";
+  s.onload = () => location.hash.startsWith("#/corre") && Corre();
+  s.onerror = () => toast("Não deu para carregar o jogo. Recarregue a página.", true);
+  document.head.append(s);
 }
 
 // ---------- BioTruco v0.3 (#/truco): Truco Gaúcho with the cards against the machine; the server deals, plays and judges (server.py truco_act) ----------
@@ -1307,7 +1309,7 @@ function trucoRank() {
   const R = Object.entries(ST.truco || {}).filter(([, r]) => r.v + r.d);
   if (!R.length) return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><p class="muted" style="margin-top:8px">Ninguém terminou uma partida ainda: a primeira abre o ranking.</p></section>`;
   return `<section class="sec"><div class="kicker">Ranking do BioTruco</div><ul class="list card pad" style="margin-top:8px">${rankList(R.sort(([, a], [, b]) => b.v - a.v || b.top - a.top), ([n, r], i) =>
-    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}<a href="${plink(n)}" style="font-weight:600">${esc(n)}</a><span class="r"><b class="num">${r.v}V ${r.d}D</b><small>maior sequência ${r.top}</small></span></li>`)}</ul></section>`;
+    `<li><span class="dim num" style="width:20px;font:700 14px var(--cond)">${i + 1}</span>${av(n, "s")}${pname(n)}<span class="r"><b class="num">${r.v}V ${r.d}D</b><small>maior sequência ${r.top}</small></span></li>`)}</ul></section>`;
 }
 function trucoWhy(ace, y, m, w) {  // why a round went this way: your card y, the machine's m (server.py truco_round)
   if (y.name === ace || m.name === ace) return (w === 0) === (y.name === ace) ? "Super Craque" : "bronze vence o Super Craque";
@@ -1344,14 +1346,13 @@ function trucoPlay(ev) {  // replay the events, one per TK_MS step; tap = next s
   R.next();
 }
 function pageTruco() {
-  if (ME === undefined || ME && ui.truco === undefined) return '<div class="skel"></div>';
+  if (ME === undefined || ui.truco === undefined) return '<div class="skel"></div>';
   const R = ui.trucoRep, e = R?.ev[R.i], t = e ? e.v : ui.truco, h = t?.h, x10 = t ? t.x10 : X10(), prize = coin(0.001 * (x10 ? 10 : 1));
   const rules = `Três das suas cartas contra três da máquina, melhor de 3 rodadas por mão. Maior OVR leva a rodada; o <b>Super Craque</b> (${trucoAce()}) só perde para bronze.
     Truco vale 2, retruco 3, vale quatro 4. Novo: <b>aposto que perco</b>, antes da sua primeira carta da mão. Se a máquina aceitar, perder a mão não dá ponto a ninguém e ganhar vale o dobro.
     Cada partida vencida vale ${prize} moeda. Novo na v0.3: <b>desafie alguém do grupo</b>, online ao vivo ou contra a máquina jogando com o deck da pessoa.`;
   const head = `<div class="sec-h truco-h"><div><div class="kicker">BioTruco v0.3 · Truco Gaúcho${x10 ? ' · <span class="pill g">moedas x10 nesta semana</span>' : ""}</div><h1>BioTruco</h1></div><button class="btn sm" id="trucoTut">Ver tutorial</button></div>`;
   const feed = ui.trucoFeed?.length ? `<ol class="feed" aria-live="polite" aria-label="O que aconteceu">${ui.trucoFeed.map((f, i) => `<li class="${f.s === 1 ? "m" : f.s === 0 ? "y" : "n"}${i ? "" : " new"}">${f.txt}</li>`).join("")}</ol>` : "";
-  if (!ME) return head + `<p class="truco-p">${rules}</p>` + '<div class="empty"><a class="link" href="/entrar?next=%2F%23%2Ftruco">Entre</a> para jogar o BioTruco.</div>' + trucoRank();
   const D = (ui.trucoDes || []).map(d => d.para === ME ? `<li><span style="flex:1">⚔️ <b>${esc(d.de)}</b> te desafiou, até ${d.alvo}</span><button class="btn pri sm" data-aceitar="${esc(d.de)}">Aceitar</button><button class="btn sm" data-recusar="${esc(d.de)}">Recusar</button></li>`
     : `<li><span style="flex:1">Esperando <b>${esc(d.para)}</b> aceitar, até ${d.alvo}</span><button class="btn sm" data-op="cancelar">Cancelar</button></li>`).join("");
   const des = D && !(t?.online && !t.fim) ? `<ul class="list card pad" style="max-width:560px;margin:0 auto 14px">${D}</ul>` : "";
@@ -1359,7 +1360,8 @@ function pageTruco() {
   if (!h) return head + `<p class="truco-p">${rules}</p>${des}<div class="card pad fade" style="text-align:center;max-width:560px;margin:0 auto">
     ${t?.fim ? `<h2 style="font-size:44px">${t.fim.won ? "Vitória" : "Derrota"} ${t.pts[0]}×${t.pts[1]}</h2><p class="muted">${t.rival ? `contra ${RIV(t)} · ` : ""}${t.fim.coins ? `+${coin(t.fim.coins)} moeda` : "Sem moedas desta vez"}</p><h3 style="margin-top:16px">${t.online ? "Agora contra a máquina?" : "Outra partida?"}</h3>`
       : "<h3>Contra a máquina: até quantos pontos?</h3>"}${R ? "" : `<div class="row" style="justify-content:center;margin-top:16px">${[13, 25, 37].map(a => `<button class="btn pri" data-alvo="${a}">Até ${a}</button>`).join("")}</div>`}</div>
-    ${R ? "" : `<div class="card pad" style="text-align:center;max-width:560px;margin:14px auto 0"><h3>⚔️ Desafiar alguém</h3>
+    ${R ? "" : !ME ? `<p class="muted" style="text-align:center;max-width:560px;margin:14px auto 0">Sem entrar, você joga como <b>Sombras</b>: conta no ranking como Sombras, sem moedas e sem desafios. <a class="link" href="/entrar?next=%2F%23%2Ftruco">Entre</a> para ter o seu nome.</p>`
+      : `<div class="card pad" style="text-align:center;max-width:560px;margin:14px auto 0"><h3>⚔️ Desafiar alguém</h3>
       <div class="row" style="justify-content:center;margin-top:12px"><select id="tdQuem" aria-label="Quem">${quem.map(n => `<option${n === ui.trucoQuem ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>
         <select id="tdModo" aria-label="Como"><option value="on">Online, ao vivo</option><option value="cpu"${ui.trucoModo === "cpu" ? " selected" : ""}>Contra a máquina com o deck da pessoa</option></select></div>
       <div class="row" style="justify-content:center;margin-top:12px">${[13, 25, 37].map(a => `<button class="btn" data-desafio="${a}">Até ${a}</button>`).join("")}</div>
@@ -1438,7 +1440,6 @@ function trucoTour(i = 0, again = false) {  // the steps; analytics: completo / 
 async function bindTruco() {
   const tb = $("#trucoTut"); if (tb) tb.onclick = () => { BF.ev("truco_tutorial", "rever"); trucoTour(0, true); };
   if (ME === undefined) { ME = (await BF.me).user || null; return render(); }
-  if (!ME) return;
   const go = async body => {
     if (ui.trucoBusy || ui.trucoRep) return;
     ui.trucoBusy = true;
@@ -1465,7 +1466,7 @@ async function bindTruco() {
   });
   document.querySelectorAll("[data-aceitar]").forEach(b => b.onclick = () => go({op: "aceitar", de: b.dataset.aceitar}));
   document.querySelectorAll("[data-recusar]").forEach(b => b.onclick = () => go({op: "recusar", de: b.dataset.recusar}));
-  ui.trucoPoll = setTimeout(trucoPoll, ui.truco?.online ? 3000 : 5000);  // the other's moves, challenges to and from you
+  if (ME) ui.trucoPoll = setTimeout(trucoPoll, ui.truco?.online ? 3000 : 5000);  // the other's moves, challenges to and from you
 }
 async function trucoPoll() {  // a direct fetch: api() would redraw the whole page every few seconds
   if (!location.hash.startsWith("#/truco") || ui.trucoBusy || ui.trucoRep) return;
@@ -1509,6 +1510,7 @@ function bindPush() {
 
 // ---------- Novidades: 🔔 in the header; newest first, seen-state and visited routes in localStorage ----------
 const NEWS = [  // d = ISO date, h = route (or full URL), t = text
+  {d: "2026-10-30", h: "#/corre", t: "Corre, Saul!: leve o Saul até o Planet antes das 18:30. Pule, deslize, chute, encare o BioFut King, ganhe moedas e suba no ranking do dia."},
   {d: "2026-10-27", h: "#/truco", t: "BioTruco v0.3: desafie alguém do grupo, online ao vivo ou contra a máquina jogando com o deck da pessoa."},
   {d: "2026-10-22", h: "#/truco", t: "BioTruco v0.2: truco gaúcho com as suas cartas, até 13, 25 ou 37. Na primeira semana as vitórias valem x10."},
   {d: "2026-10-15", h: "https://github.com/Hauserrodr/biofut-public", t: "O código do site agora é aberto no GitHub."},
@@ -1546,7 +1548,7 @@ function render() {
     "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
     cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
     jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa, bindCopa],
-    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu], truco: [pageTruco, bindTruco],
+    planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu], truco: [pageTruco, bindTruco], corre: [pageCorre, bindCorre],
   };
   const [view, bind] = pages[page ?? ""] || pages[""];
   app.innerHTML = view();
@@ -1554,7 +1556,7 @@ function render() {
   bind && bind();
   bindPush();
   const r = $("#radio"); r.hidden = page !== "radio" && !r.dataset.played; r.classList.toggle("mini", page !== "radio");
-  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
+  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco", corre: "Corre, Saul!"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
   if (same) scrollTo(0, y); else scrollTo(0, 0);
 }
 addEventListener("hashchange", render);
@@ -1581,8 +1583,11 @@ function insta() {  // once per browser, after the gift (if any)
   store.set("bfInsta", "1"); $("#instaGo").href = IG_REEL; $("#instaGo").onclick = () => $("#instaDlg").close();
   $("#instaDlg").addEventListener("close", trucoNews, {once: true}); $("#instaDlg").showModal();
 }
+function offGame(fn) {  // launch popups wait until the player leaves Corre: a modal mid-run takes the keyboard away
+  return location.hash.startsWith("#/corre") ? addEventListener("hashchange", () => offGame(fn), {once: true}) : fn();
+}
 function gift() {  // launch gift: the server gives it once per member; localStorage only saves the extra call
-  const later = () => setTimeout(insta, 1500);
+  const later = () => setTimeout(() => offGame(insta), 1500);
   if (!ME || store.get("bfGift")) return later();
   fetch("/api/bonus", {method: "POST", headers: {"Content-Type": "application/json", "X-BioFut-Pin": store.get("biofutPin") || ""}, body: "{}"})
     .then(r => r.ok ? r.json() : null).then(j => {
@@ -1597,7 +1602,7 @@ Promise.all([fetch("/api/data").then(r => r.json()), fetch("/api/state").then(r 
   D = d; setState(s);
   $("#foot").textContent = `${G.length} jogos registrados`;
   render(); bellInit();
-  BF.me.then(m => (ROLE = m.role, ME = m.user || null, TT = m.truco_tour && (!m.tour || /^#\/truco/.test(location.hash)), m.tour && !/^#\/truco/.test(location.hash) && tour(), gift(), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
+  BF.me.then(m => (ROLE = m.role, ME = m.user || null, TT = m.truco_tour && (!m.tour || /^#\/truco/.test(location.hash)), m.tour && !/^#\/truco/.test(location.hash) && offGame(tour), offGame(gift), ME) && Promise.all(["/api/avatars", "/api/jogos"].map(u => fetch(u).then(r => r.json()))).then(([a, j]) => { AV = new Set(a); JF = j; render(); })).catch(() => {});
 }).catch(() => $("#app").innerHTML = '<div class="empty">Não consegui carregar os dados. Tente recarregar.</div>');
 </script>
 </body>
