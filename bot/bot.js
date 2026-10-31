@@ -356,6 +356,14 @@ function serve(cfg, transport) {
           await transport.send(jids[0], loginAsk(code));
           return done(200, { ok: true });
         }
+        if (req.url === '/dm') {  // one tagged message to one member, sent by the admin by hand (2026-10-31)
+          const { phone, text } = JSON.parse(body || '{}'), t = String(text || '').trim().slice(0, 2000);
+          if (!/^\d{10,15}$/.test(phone || '') || !t) return done(400, { ok: false, error: 'phone, text' });
+          const jids = await transport.lookup(phone);
+          if (!jids) return done(404, { ok: false, error: 'esse número não está no grupo do BioFut' });
+          await transport.send(jids[0], t);
+          return done(200, { ok: true });
+        }
         if (req.url !== '/draft/join' && req.url !== '/draft/pick') return done(404, { ok: false });
         const b = JSON.parse(body || '{}');
         const dir = (b.captains?.length || b.teams) && transport.directory ? await transport.directory() : [];
