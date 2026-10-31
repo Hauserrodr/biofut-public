@@ -1286,7 +1286,7 @@ async function post(action, body) {
 function pageCorre() { return `<div id="correPg"></div>`; }
 function bindCorre() {
   if (window.Corre) return Corre();
-  const s = document.createElement("script"); s.src = "/corre.js?v=20261030f";
+  const s = document.createElement("script"); s.src = "/corre.js?v=20261030g";
   s.onload = () => location.hash.startsWith("#/corre") && Corre();
   s.onerror = () => toast("Não deu para carregar o jogo. Recarregue a página.", true);
   document.head.append(s);
