@@ -1228,6 +1228,17 @@ server.anuncio_tick(k("2026-11-12", "13:01")); server.anuncio_tick(k("2026-11-13
 assert sent[n:] == [("/group", {"text": server.ANUNCIO[1], "image": f"{server.SITE}/truco-v03.jpg"})] and server.load_state()["anuncio"] == "truco-v03", sent
 assert (server.HERE / "truco-v03.jpg").exists() and "truco-v03.jpg" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8")
 del sent[n:]
+# The bot's health (2026-10-30, it sat logged out for 3 days): checked every 10 min, down 20 min -> one push to Gab, back -> one more
+pushed, health, saved = [], {"ok": True, "up": False}, (server.push_to, server.bot_post, server.BOT_URL)
+server.push_to, server.BOT_URL = lambda u, m: pushed.append(m["title"]), "http://127.0.0.1:1/notify"
+server.bot_post = lambda route, obj: asked.append(route) or health
+asked = []
+for t in range(0, 3000, 60):
+    server.bot_tick(1e6 + t)
+assert pushed == ["🤖 Bot fora do WhatsApp"] and len(asked) == 5, (pushed, asked)
+health["up"] = True; server.bot_tick(1e6 + 3600); server.bot_tick(1e6 + 4200)
+assert pushed == ["🤖 Bot fora do WhatsApp", "🤖 Bot voltou"] and not server.BOT_DOWN["told"]
+server.push_to, server.bot_post, server.BOT_URL = saved
 cst = server.load_state(); cst["copa_post"] = ""; server.save_state(cst)
 server.copa_tick(k("2026-11-13", "12:00")); server.copa_tick(k("2026-11-14", "12:00"))
 assert len(sent) == 5 and "Tu tem 8 dias" in sent[-1][1]["text"], "13/11 (8 left) posts, 14/11 (7 left) does not"

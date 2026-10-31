@@ -201,7 +201,11 @@ async function liveTransport(cfg, onText) {
         process.exit(1);
       }
       console.log(`connection closed (${code})`);
-      if (code !== b.DisconnectReason.loggedOut) connect();
+      if (code !== b.DisconnectReason.loggedOut) return connect();
+      // Logged out (the linked device was removed, 2026-10-26): it never comes back by itself. Keep the dead session
+      // aside and exit; Docker's restart policy starts in pairing mode (a new PAIRING CODE in the log).
+      fs.renameSync(session, `${session}.dead-${Date.now()}`);
+      process.exit(1);
     });
     sock.ev.on('messages.upsert', ({ messages, type }) => {
       if (type !== 'notify') return;
@@ -226,6 +230,7 @@ async function liveTransport(cfg, onText) {
   const t = {
     // image: a URL on the site (the SuperCopa countdown, 2026-10-26), Baileys fetches it, or the bytes (the tabela check);
     // the text becomes its caption
+    up: () => Boolean(sock?.user && sock.ws?.isOpen),  // /health: linked and the socket open
     send: (to, text, image) => sock.sendMessage(to, image ? { image: Buffer.isBuffer(image) ? image : { url: image }, caption: text } : { text }),
     poll: (to, name, values) => sock.sendMessage(to, { poll: { name, values, selectableCount: 0 } }),  // 0: any number of choices
     // the group's members as [{name, phone}]: their numbers, named by the site. ponytail: memory only, rebuilt every 6 h
@@ -316,6 +321,7 @@ function serve(cfg, transport) {
     req.on('data', (c) => { body += c; if (body.length > 20e6) req.destroy(); });  // 20 MB: /group images, a few photos in base64
     req.on('end', async () => {
       try {
+        if (req.url === '/health') return done(200, { ok: true, up: transport.up ? transport.up() : true });  // the site asks every 10 min
         if (req.url === '/group') {
           const o = JSON.parse(body || '{}'), text = String(o.text || '').trim().slice(0, 4000);
           if (!text) return done(400, { ok: false, error: 'text required' });
