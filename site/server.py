@@ -2151,13 +2151,15 @@ def held(item):
     """A súmula without a single goal is a lineup photo or tallies the OCR missed (a 0 x 0 went in alone on 9 Oct 2026):
     it never ships on its own, someone has to approve, edit or reject it. Same for a new photo of someone (kind foto) and a report
     that a game is wrong (kind jogo: it carries a copy of the game to edit when the game is the site's own, else approving
-    only marks it checked and the fix goes into the sheet)."""
-    return item["kind"] in ("foto", "jogo") or item["kind"] == "sumula" and not any(g.get("score_a") or g.get("score_b") for g in item["payload"].get("games", []))
+    only marks it checked and the fix goes into the sheet). And a súmula whose day already has a game or another súmula (dup)."""
+    return item["kind"] in ("foto", "jogo") or item.get("dup") or item["kind"] == "sumula" and not any(g.get("score_a") or g.get("score_b") for g in item["payload"].get("games", []))
 
 
 def new_note(item):
     if held(item):
-        return f"🆕 #{item['id']} {item['title']}. {'Sem nenhum gol: f' if item['kind'] == 'sumula' else 'F'}ica parada até alguém aprovar, editar ou rejeitar: https://biofut.h-brain.org/admin"
+        why = [w for w, on in (("Sem nenhum gol", item["kind"] == "sumula" and not any(g.get("score_a") or g.get("score_b") for g in item["payload"].get("games", []))),
+                               ("Já tem jogo ou súmula desse dia", item.get("dup"))) if on]
+        return f"🆕 #{item['id']} {item['title']}. {' e '.join(why) + ': f' if why else 'F'}ica parada até alguém aprovar, editar ou rejeitar: https://biofut.h-brain.org/admin"
     at = time.strftime('%H:%M', time.localtime(item["created"] + COOLDOWN))
     return (f"🆕 #{item['id']} {item['title']}. Sai sozinho às {at} se ninguém aprovar, editar ou rejeitar: "
             "https://biofut.h-brain.org/admin")
@@ -2374,6 +2376,15 @@ def review_tick(now=None):
                 else:
                     item = {"id": max([x["id"] for x in items] + [0]) + 1, "kind": new["kind"], "title": str(new.get("title", ""))[:200],
                             "created": now, "status": "pending", "payload": new["payload"]}
+                    if item["kind"] == "sumula":  # 3 photos of the 5 Nov sheet went in alone as 3 games: a second sheet for a day waits for a person
+                        d = item["payload"].get("date")
+                        same = [x for x in items if x["kind"] == "sumula" and x["status"] == "pending" and x["payload"].get("date") == d]
+                        if d and (same or any(g.get("date") == d for g in DATA["games"] + load_state()["played"])):
+                            item["dup"] = True
+                            for x in same:
+                                if not held(x):
+                                    notes.append(f"✋ #{x['id']} {x['title']}: chegou outra súmula do mesmo dia, agora só sai com alguém aprovando")
+                                x["dup"] = True
                     items.append(item)
                     notes.append(new_note(item))
             except Exception as e:

@@ -543,6 +543,25 @@ server.review_tick(now=9e9)
 it = next(x for x in server.load_review() if x["title"] == "Escalação")
 assert it["status"] == "pending" and server.fila([it], now=2000)[0]["release"] is None and server.held(it)
 assert not server.held(item), "2 x 1: the 6 h clock as before"
+# 3 photos of one sheet (5 Nov 2026) went in alone as 3 games: the second photo of a day holds both, and a day already on the site holds too.
+st0 = server.load_state(); n0 = len(st0["played"])
+for i, gf in enumerate((6, 7)):
+    (server.INBOX / f"s{i}.json").write_text(json.dumps({"kind": "sumula", "title": f"Foto {i}", "payload": {"date": "2031-11-05", "games": [
+        {"team_a": "Preto", "score_a": gf, "team_b": "Verde", "score_b": 3, "players_a": [{"name": "Victor", "goals": gf}], "players_b": [{"name": "Dan", "goals": 3}]}]}}))
+    notes = server.review_tick(now=1000 + i)
+assert any("#" in n and "outra súmula do mesmo dia" in n for n in notes) and any("Já tem jogo ou súmula desse dia" in n for n in notes), notes
+server.review_tick(now=9e9)
+two = [x for x in server.load_review() if x["title"] in ("Foto 0", "Foto 1")]
+assert [x["status"] for x in two] == ["pending", "pending"] and all(server.held(x) for x in two) and len(server.load_state()["played"]) == n0, two
+server.review_act(two[0]["id"], "approve")
+server.review_act(two[1]["id"], "reject")
+assert len(server.load_state()["played"]) == n0 + 1, "one game for the day"
+(server.INBOX / "s2.json").write_text(json.dumps({"kind": "sumula", "title": "Foto 2", "payload": {"date": "2031-11-05", "games": [
+    {"team_a": "Preto", "score_a": 6, "team_b": "Verde", "score_b": 3, "players_a": [], "players_b": []}]}}))
+server.review_tick(now=1000)
+server.review_tick(now=9e9)
+assert next(x for x in server.load_review() if x["title"] == "Foto 2")["status"] == "pending", "the day is on the site: a late photo waits"
+server.save_state(st0)  # later checks read played[-1]
 # The Conselho decides data (súmulas, tabela, listas), not the wiki.
 (server.INBOX / "c.json").write_text(json.dumps(wiki_item))
 server.review_tick(now=9e9)
