@@ -2341,6 +2341,22 @@ def listed_on(date):
     return snap(st, date).get("confirmed") or snap(st, before).get("confirmed") or []
 
 
+def name_teams(payload, st):
+    """The sheet rarely names its teams ('Time 1', a captain): the day's draft knows each captain's uniform (Time cor de 🩷),
+    so each side becomes the animal of the draft team it shares most players with. 3 súmulas failed the sheet on 5 Nov 2026."""
+    dr = snap(st, payload.get("date") or "").get("draft") or {}
+    teams, anim = dr.get("teams") or {}, dr.get("animal") or {}
+    for g in payload.get("games", []):
+        for x in "ab":
+            if lista.animal(str(g.get(f"team_{x}") or "")):
+                continue
+            mine = {clean_name(q.get("name", "")).lower() for q in g.get(f"players_{x}", [])}
+            hits = {c: len(mine & {p.lower() for p in ps}) for c, ps in teams.items() if anim.get(c)}
+            if hits and max(hits.values()) * 2 > len(mine):  # most of the side: a stray Sombra or nickname doesn't decide it
+                g[f"team_{x}"] = anim[max(hits, key=hits.get)]
+    return payload
+
+
 def ocr_photo(image, date, sender):
     """Bot -> here, in a thread: read the photo, queue it if it is a súmula. Every outcome goes to the log."""
     try:
@@ -2352,6 +2368,8 @@ def ocr_photo(image, date, sender):
         return
     if not payload:
         return  # a meme, a selfie: nothing to review
+    with LOCK:
+        name_teams(payload, load_state())
     name = hashlib.sha256(image).hexdigest()[:16] + ".jpg"
     REVIEW_MEDIA.mkdir(parents=True, exist_ok=True)
     (REVIEW_MEDIA / name).write_bytes(image)

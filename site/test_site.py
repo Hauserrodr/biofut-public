@@ -562,6 +562,15 @@ server.review_tick(now=1000)
 server.review_tick(now=9e9)
 assert next(x for x in server.load_review() if x["title"] == "Foto 2")["status"] == "pending", "the day is on the site: a late photo waits"
 server.save_state(st0)  # later checks read played[-1]
+assert server.re.findall(r"'([^']+)'", server.re.search(r"const TIMES = \[(.*?)\]", (server.HERE / "admin.html").read_text(encoding="utf-8"))[1]) == server.lista.TIMES, "the admin form offers the sheet's teams"
+# The sheet names no team; the day's draft knows each captain's uniform: Time 1 -> AXOLOTES, Time 2 -> BABUÍNOS (one Sombra off-list).
+dr = {"match": {"date": "2031-11-05", "draft": {"teams": {"Weslley": ["Weslley", "Dan", "Hanauer"], "Victor B": ["Victor B", "Will", "K9"]},
+                                               "animal": {"Weslley": "AXOLOTES", "Victor B": "BABUÍNOS"}}}}
+pl = server.name_teams({"date": "2031-11-05", "games": [{"team_a": "Time 1", "team_b": "Preto", "players_a": [{"name": "Dan"}, {"name": "Hanauer"}, {"name": "Weslley"}],
+                         "players_b": [{"name": "Will"}, {"name": "Victor B"}, {"name": "Canova"}]}]}, dr)
+assert (pl["games"][0]["team_a"], pl["games"][0]["team_b"]) == ("AXOLOTES", "Preto"), pl  # Preto is already a color: BABUÍNOS on release
+pl = server.name_teams({"date": "2031-11-05", "games": [{"team_a": "Time 2", "players_a": [{"name": "Will"}, {"name": "Zé"}, {"name": "Tito"}]}]}, dr)
+assert pl["games"][0]["team_a"] == "Time 2", "1 of 3 players is no match: leave it for a person"
 # The Conselho decides data (súmulas, tabela, listas), not the wiki.
 (server.INBOX / "c.json").write_text(json.dumps(wiki_item))
 server.review_tick(now=9e9)
