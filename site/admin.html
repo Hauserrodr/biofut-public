@@ -27,6 +27,24 @@ details summary { cursor: pointer; color: var(--mut); font-size: 14px; }
 .hb div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .hb i { display: block; height: 12px; border-radius: 4px; background: var(--acc); min-width: 2px; }
 .hb span { color: var(--mut); font-variant-numeric: tabular-nums; }
+.warn { color: var(--loss); font-size: 14px; }
+@media (min-width: 900px) { .sx { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .sx > div:first-child { position: sticky; top: 84px; } .sx img.sumula { max-height: calc(100vh - 160px); } }  /* the photo stays in view while you fix the rows */
+.ed .score { font: 800 28px var(--cond); margin: 12px 0 4px; }
+.ed .side { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 10px 0; }
+.ed select, .ed input { height: 38px; background: var(--bg2); color: var(--ink); border: 1px solid var(--line2); border-radius: 8px; padding: 0 8px; font: 500 15px var(--body); }
+.ed select { font: 700 17px var(--cond); letter-spacing: .04em; margin-bottom: 4px; }
+.pl { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, max-content) 38px 38px; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.pl .nm { min-width: 0; width: 100%; }
+.st { display: inline-flex; align-items: center; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; height: 38px; }
+.st small { color: var(--mut); font-size: 11px; padding: 0 2px 0 7px; } .st b { min-width: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.st.z b { color: var(--mut); font-weight: 400; }
+.st button, .pl .cap, .pl .rm { width: 34px; height: 38px; border: 0; background: var(--card2); color: var(--ink); font-size: 19px; cursor: pointer; }
+.pl .cap, .pl .rm { width: 38px; border: 1px solid var(--line2); border-radius: 8px; font: 700 15px var(--cond); color: var(--mut); }
+.pl .cap.on { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+@media (max-width: 560px) { .pl { grid-template-columns: repeat(6, minmax(0, 1fr)); } .pl .nm { grid-column: 1 / 5; }  /* name, C, × / G, A, GC across the row */
+  .pl .cap, .pl .rm { grid-row: 1; width: 100%; } .pl .cap { grid-column: 5; } .pl .rm { grid-column: 6; }
+  .st { grid-column: span 2; } .st small { padding: 0 0 0 6px; } .st button { flex: 1; width: auto; min-width: 26px; } }
 .feed { font-size: 14px; } .feed td { white-space: normal; text-align: left; vertical-align: top; } .feed tr.bad td { color: var(--loss); }
 </style>
 </head>
@@ -49,9 +67,10 @@ function wikiView(p) {
   return (p.ops || []).map(o => `<div class="op"><b>${esc(o.title || o.page)}</b>` +
     (o.add || []).map(i => `<div class="add">+ ${t(i)}</div>`).join('') + (o.drop || []).map(i => `<div class="drop">− ${esc(o.drop_titles?.[i] || i)}</div>`).join('') + '</div>').join('');
 }
+const sumulaHead = p => (p.image ? `<img class="sumula" src="/api/review_media/${esc(p.image)}" alt="foto da súmula">` : '') +
+  (p.notes ? `<p class="meta">Nota da leitura: ${esc(p.notes)}</p>` : '');
 function sumulaView(p) {
-  return (p.image ? `<img class="sumula" src="/api/review_media/${esc(p.image)}" alt="foto da súmula">` : '') +
-    `<p>Data: <b>${esc(p.date)}</b>${p.notes ? ` · ${esc(p.notes)}` : ''}</p>` + (p.games || []).map(g =>
+  return sumulaHead(p) + `<p>Data: <b>${esc(p.date)}</b></p>` + (p.games || []).map(g =>
     `<p><b>${esc(g.team_a)} ${g.score_a} × ${g.score_b} ${esc(g.team_b)}</b></p><table><tr><th>Time</th><th>Jogador</th><th>G</th><th>A</th><th>GC</th></tr>` +
     ['a', 'b'].flatMap(s => (g['players_' + s] || []).map(x => `<tr><td>${esc(g['team_' + s])}</td><td>${esc(x.name)}${x.captain ? ' (C)' : ''}${x.written ? ` <i class="meta">escrito “${esc(x.written)}”</i>` : ''}</td><td>${x.goals || 0}</td><td>${x.assists || 0}</td><td>${x.own_goals || 0}</td></tr>`)).join('') +
     '</table>').join('');
@@ -67,21 +86,84 @@ function listasView(p) {
 }
 const fotoView = p => `<img class="sumula" src="/wiki/media/${esc(p.file)}" alt="foto sugerida"><p>Verbete <a href="/wiki#/p/${esc(p.page)}">${esc(p.page)}</a>` +
   (p.player ? ` · vira também a foto do jogador <b>${esc(p.player)}</b> no site` : '') + '</p>';
-const jogoView = p => `<p><b>${esc(p.placar)}</b> · ${esc(p.date)} · jogo ${esc(p.n)}</p><p>${esc(p.user)}: ${esc(p.text || 'sem comentário')}</p>` +
+const jogoView = (p, ed) => `<p><b>${esc(p.placar)}</b> · ${esc(p.date)} · jogo ${esc(p.n)}</p><p>${esc(p.user)}: ${esc(p.text || 'sem comentário')}</p>` +
   (p.fotos || []).map(f => `<img class="sumula" src="/wiki/media/${esc(f)}" alt="súmula da noite">`).join('') +
-  (p.games ? '<p class="meta">Corrija o jogo em “Editar JSON” (games: placar, gols, assistências) e libere: ele substitui o jogo ' + esc(p.n) + ' no site. Aprovar sem editar = conferido, nada muda.</p>' + sumulaView(p)
+  (p.games ? '<p class="meta">Corrija o jogo nos campos e libere: ele substitui o jogo ' + esc(p.n) + ' no site. Liberar sem mudar nada = conferido.</p>' + (ed ? '' : sumulaView(p))
     : '<p class="meta">Aprovar = conferido: a correção vai na planilha, e a tabela do site atualiza sozinha.</p>');
 const VIEWS = { wiki: wikiView, sumula: sumulaView, tabela: tabelaView, listas: listasView, foto: fotoView, jogo: jogoView };
 
+// Súmula editor: the fields are the payload, the score is the goals (plus the other side's own goals), Liberar ships it.
+const TIMES = ['AXOLOTES', 'BABUÍNOS', 'BAGRES', 'PAVÕES'];  // lista.TIMES: the sheet's team names, one per uniform color
+const ED = {};  // item id -> the payload being edited
+const editable = x => x.status === 'pending' && (x.kind === 'sumula' || x.kind === 'jogo' && !!x.payload.games);
+const goals = (g, s) => (g['players_' + s] || []).reduce((n, q) => n + (+q.goals || 0), 0) + (g['players_' + (s === 'a' ? 'b' : 'a')] || []).reduce((n, q) => n + (+q.own_goals || 0), 0);
+function editor(x) {
+  const p = ED[x.id] ||= JSON.parse(JSON.stringify(x.payload)), o = x.payload.games || [];
+  const step = (at, k, v) => `<span class="st${v ? '' : ' z'}"><small>${{ goals: 'G', assists: 'A', own_goals: 'GC' }[k]}</small>` +
+    `<button data-st="-1" data-at="${at},${k}" aria-label="${k} menos">−</button><b>${+v || 0}</b><button data-st="1" data-at="${at},${k}" aria-label="${k} mais">+</button></span>`;
+  return `<div class="ed" id="ed${x.id}" data-id="${x.id}"><label class="meta">Data <input type="date" data-date value="${esc(p.date)}"></label>` + (p.games || []).map((g, gi) => {
+    const ga = goals(g, 'a'), gb = goals(g, 'b'), w = o[gi] && o[gi].score_a != null && (o[gi].score_a !== ga || o[gi].score_b !== gb);
+    return `<div class="score">${esc(g.team_a)} ${ga} × ${gb} ${esc(g.team_b)}</div>` +
+      (w ? `<div class="warn">A leitura dizia ${o[gi].score_a} × ${o[gi].score_b}; os gols somam ${ga} × ${gb}. O placar sai dos gols.</div>` : '') +
+      ['a', 'b'].map(s => `<div class="side"><select data-team="${gi},${s}" aria-label="time">` +
+        [...new Set([...TIMES, g['team_' + s]])].map(t => `<option${t === g['team_' + s] ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>' +
+        (TIMES.includes(g['team_' + s]) ? '' : ' <span class="warn">escolha pela cor do uniforme</span>') +
+        (g['players_' + s] || []).map((q, i) => `<div class="pl"><input class="nm" list="names" data-name="${gi},${s},${i}" value="${esc(q.name)}" aria-label="jogador">` +
+          ['goals', 'assists', 'own_goals'].map(k => step(`${gi},${s},${i}`, k, q[k])).join('') +
+          `<button class="cap${q.captain ? ' on' : ''}" data-cap="${gi},${s},${i}" title="capitão" aria-label="capitão">C</button>` +
+          `<button class="rm" data-rm="${gi},${s},${i}" title="tirar" aria-label="tirar ${esc(q.name)}">×</button></div>`).join('') +
+        `<button class="btn sm" data-add="${gi},${s}">+ jogador</button></div>`).join('');
+  }).join('') + '</div>';
+}
+const redraw = id => { $('ed' + id).outerHTML = editor(ITEMS.find(x => x.id === id)); };
+document.addEventListener('click', e => {
+  const b = e.target.closest('.ed [data-st],.ed [data-cap],.ed [data-rm],.ed [data-add]');
+  if (!b) return;
+  const id = +b.closest('.ed').dataset.id, d = b.dataset, [gi, s, i, k] = (d.at || d.cap || d.rm || d.add).split(','), ps = ED[id].games[gi]['players_' + s];
+  if (d.st) ps[i][k] = Math.max(0, (+ps[i][k] || 0) + +d.st);
+  else if (d.cap) ps.forEach((q, j) => q.captain = j === +i ? !q.captain : false);  // one captain a side
+  else if (d.rm) ps.splice(i, 1);
+  else ps.push({ name: '', goals: 0, assists: 0, own_goals: 0, captain: false });
+  redraw(id);
+  if (d.add) $('ed' + id).querySelector(`[data-name="${gi},${s},${ps.length - 1}"]`).focus();
+});
+document.addEventListener('input', e => {  // typing a name keeps the focus: no redraw
+  const t = e.target, ed = t.closest('.ed');
+  if (!ed) return;
+  const id = +ed.dataset.id, p = ED[id];
+  if ('date' in t.dataset) p.date = t.value;
+  else if (t.dataset.name) { const [gi, s, i] = t.dataset.name.split(','); p.games[gi]['players_' + s][i].name = t.value; }
+  else if (t.dataset.team) { const [gi, s] = t.dataset.team.split(','); p.games[gi]['team_' + s] = t.value; redraw(id); }
+});
+function ready(id) {  // the edited payload, or the error to show
+  const p = JSON.parse(JSON.stringify(ED[id]));
+  for (const g of p.games || []) {
+    if (!TIMES.includes(g.team_a) || !TIMES.includes(g.team_b) || g.team_a === g.team_b) return 'Escolha os dois times pela cor do uniforme.';
+    for (const s of ['a', 'b']) g['players_' + s] = (g['players_' + s] || []).filter(q => String(q.name || '').trim());
+    g.score_a = goals(g, 'a'); g.score_b = goals(g, 'b');
+  }
+  return p;
+}
+async function names() {  // the name field suggests everyone who ever played
+  const d = await fetch('/api/data').then(r => r.json()).catch(() => null);
+  const all = new Set((d?.games || []).flatMap(g => (g.teams || []).flatMap(t => (t.players || []).map(q => q[0]))));
+  document.body.insertAdjacentHTML('beforeend', `<datalist id="names">${[...all].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist>`);
+}
+
 function render() {
   const pend = ITEMS.filter(x => x.status === 'pending');
-  $('view').innerHTML = `<p class="meta">${pend.length} esperando. Sem decisão em 6 h, o item entra sozinho. Editar = mudar o JSON e liberar já.</p>` +
+  const twins = x => pend.filter(y => y.id !== x.id && y.kind === 'sumula' && y.payload.date === x.payload.date).map(y => '#' + y.id);
+  $('view').innerHTML = `<p class="meta">${pend.length} esperando. Sem decisão em 6 h, o item entra sozinho. Súmula: corrija nos campos e toque em Liberar.</p>` +
     ITEMS.map(x => `<div class="card pad rev"><h3>#${x.id} ${esc(x.title)}</h3><div class="meta">${x.kind} · chegou ${when(x.created)} · ` +
-      (x.status === 'pending' ? (x.held ? ({ foto: 'foto', jogo: 'relato' }[x.kind] || 'sem nenhum gol') + ': só sai com alguém aprovando' : `entra sozinho às ${when(x.created + 6 * 3600)}`) : `${x.status}${x.decided ? ' em ' + esc(x.decided.replace('T', ' ').slice(0, 16)) : ''}`) + '</div>' +
+      (x.status === 'pending' ? (x.held ? (x.dup ? 'já tem jogo ou súmula desse dia' : { foto: 'foto', jogo: 'relato' }[x.kind] || 'sem nenhum gol') + ': só sai com alguém aprovando' : `entra sozinho às ${when(x.created + 6 * 3600)}`) : `${x.status}${x.decided ? ' em ' + esc(x.decided.replace('T', ' ').slice(0, 16)) : ''}`) + '</div>' +
+      (x.dup && x.status === 'pending' && twins(x).length ? `<p class="warn">Outras súmulas do mesmo dia na fila: ${twins(x).join(', ')}. Libere a foto mais completa e rejeite as outras.</p>` : '') +
+      (editable(x) ? `<div class="sx"><div>${x.kind === 'sumula' ? sumulaHead(x.payload) : jogoView(x.payload, true)}</div>${editor(x)}</div>` +
+        `<div class="row" style="margin-top:10px"><button class="btn pri sm" data-act="go" data-id="${x.id}">Liberar</button>` +
+        `<button class="btn sm no" data-act="reject" data-id="${x.id}">Rejeitar</button></div><div class="err" id="e${x.id}"></div>` :
       (VIEWS[x.kind] ? VIEWS[x.kind](x.payload) : '') +
       (x.status === 'pending' ? `<details><summary>Editar JSON</summary><textarea id="j${x.id}">${esc(JSON.stringify(x.payload, null, 1))}</textarea></details>` +
         `<div class="row" style="margin-top:10px"><button class="btn pri sm" data-act="approve" data-id="${x.id}">Aprovar</button><button class="btn sm" data-act="edit" data-id="${x.id}">Salvar edição e liberar</button>` +
-        `<button class="btn sm no" data-act="reject" data-id="${x.id}">Rejeitar</button></div><div class="err" id="e${x.id}"></div>` : '') +
+        `<button class="btn sm no" data-act="reject" data-id="${x.id}">Rejeitar</button></div><div class="err" id="e${x.id}"></div>` : '')) +
       (x.note ? `<div class="meta">${esc(x.note)}</div>` : '') + (x.sheet ? `<div class="meta">planilha: ${esc(x.sheet)}</div>` : '') + '</div>').join('');
 }
 
@@ -211,6 +293,7 @@ async function load() {  // no key: the WhatsApp login cookie says who it is (se
   const [r, e] = await Promise.all([fetch('/api/review'), ROLE === 'admin' ? fetch('/api/admin/events') : null]);
   if (!r.ok) { $('view').innerHTML = '<p class="err">Não consegui ler a fila.</p>'; return; }
   ITEMS = await r.json();
+  if (!$('names')) names();
   EV = e?.ok ? await e.json() : [];
   show();
 }
@@ -224,14 +307,21 @@ document.addEventListener('click', e => {
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]');
   if (!b) return;
-  const id = +b.dataset.id, action = b.dataset.act, body = { id, action };
-  if (action === 'edit') {
+  const id = +b.dataset.id, body = { id, action: b.dataset.act };
+  if (body.action === 'go') {  // the form: unchanged = approve as it came, changed = edit
+    const p = ready(id);
+    if (typeof p === 'string') { $('e' + id).textContent = p; return; }
+    const same = JSON.stringify(p) === JSON.stringify(ITEMS.find(x => x.id === id).payload);
+    Object.assign(body, same ? { action: 'approve' } : { action: 'edit', payload: p });
+  }
+  const action = body.action;
+  if (b.dataset.act === 'edit') {
     try { body.payload = JSON.parse($('j' + id).value); } catch (err) { $('e' + id).textContent = 'JSON inválido: ' + err.message; return; }
   }
   if (action === 'reject' && !confirm('Rejeitar #' + id + '?')) return;
   const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (r.ok) load(); else $('e' + id).textContent = j.error || 'não deu';
+  if (r.ok) { delete ED[id]; load(); } else $('e' + id).textContent = j.error || 'não deu';
 });
 load();
 </script>
