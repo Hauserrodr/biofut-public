@@ -889,6 +889,12 @@ assert "error" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": [["X",
 assert "error" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": rows, "times": ["MK", "BAGRES"]}, cookie=andrei)[1]), "a team is an animal"
 assert len(log) == 1 and json.loads(call("/api/planilha", {"n": g9["n"]}, cookie=andrei)[1]) == {"sheet": "ok: jogo 302"}, "as is: no log line"
 assert g9["nomes"] == [], "no sheet configured: no list, no marks"
+(server.REVIEW_MEDIA / "00000000000000aa.jpg").write_bytes(b"other"); (server.REVIEW_MEDIA / "00000000000000bb.jpg").write_bytes(b"foto")  # #/planilha shows a played game's súmula photo to anyone, never other review media
+with server.LOCK:
+    st = server.load_state(); st["played"][-1]["sumula"] = "00000000000000bb.jpg"; server.save_state(st)
+assert call("/api/sumula/00000000000000bb.jpg") == (200, b"foto"), "no cookie: the photo"
+assert call("/api/sumula/00000000000000aa.jpg")[0] == 404 and call("/api/sumula/../server.py")[0] == 404
+assert next(g for g in json.loads(call("/api/planilha")[1]) if "2099-10-15" in g["line"])["sumula"] == "00000000000000bb.jpg"
 real_names, server.sheet.names = server.sheet.names, lambda: ["Andrei", "SOMBRA"]
 assert json.loads(call("/api/planilha")[1])[0]["nomes"] == ["Andrei", "SOMBRA"], "the sheet's Nome list reaches #/planilha"
 nomes = ["Andrei", "Bruno", "Bruno M", "Dan", "Matte", "Sombra"]

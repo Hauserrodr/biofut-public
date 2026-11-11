@@ -402,3 +402,5 @@ button.tk:hover,button.tk:focus-visible{transform:translateY(-6px)}
   .fc .at button{min-height:40px;align-items:center}
   label.meta input[type=checkbox]{width:22px;height:22px;vertical-align:middle}
 }
+.plfoto.com>a{display:block;margin-top:12px;text-decoration:none}.plfoto.com img{display:block;width:100%;max-height:80vh;object-fit:contain;border-radius:var(--r);border:1px solid var(--line);background:#000}.plfoto.com .dim{font-size:13px}
+@media(min-width:900px){.plfoto.com{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}.plfoto.com>a{position:sticky;top:76px}}
