@@ -68,7 +68,8 @@ function wikiView(p) {
     (o.add || []).map(i => `<div class="add">+ ${t(i)}</div>`).join('') + (o.drop || []).map(i => `<div class="drop">− ${esc(o.drop_titles?.[i] || i)}</div>`).join('') + '</div>').join('');
 }
 const sumulaHead = p => (p.image ? `<img class="sumula" src="/api/review_media/${esc(p.image)}" alt="foto da súmula">` : '') +
-  (p.notes ? `<p class="meta">Nota da leitura: ${esc(p.notes)}</p>` : '');
+  (p.notes ? `<p class="meta">Nota da leitura: ${esc(p.notes)}</p>` : '') +
+  (p.warnings || []).map(w => `<p style="color: var(--loss)">⚠️ ${esc(w)}</p>`).join('');
 function sumulaView(p) {
   return sumulaHead(p) + `<p>Data: <b>${esc(p.date)}</b></p>` + (p.games || []).map(g =>
     `<p><b>${esc(g.team_a)} ${g.score_a} × ${g.score_b} ${esc(g.team_b)}</b></p><table><tr><th>Time</th><th>Jogador</th><th>G</th><th>A</th><th>GC</th></tr>` +
