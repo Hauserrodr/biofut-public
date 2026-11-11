@@ -372,7 +372,7 @@ assert it["kind"] == "sumula" and p["date"] == "2026-10-09" and (server.REVIEW_M
 assert p["games"][0]["score_a"] == 4 and p["games"][0]["players_a"][0]["written"] == "VICTOR" and p["games"][0]["players_a"][0]["name"] == "Victor", p  # name mapped to the sheet's spelling
 got = []
 real_push, server.sheet.ID = server.sheet.push, "fake-id"
-server.sheet.push = lambda games: got.append(games) or [300]
+server.sheet.push = lambda games, who="": got.append(games) or [300]
 server.review_act(it["id"], "approve")
 it = server.load_review()[-1]
 assert it["sheet"] == "ok: jogo 300" and got[0][0]["teams"][0]["players"][0][4] == 1, (it, got)  # captain flag reaches the sheet
@@ -390,7 +390,7 @@ assert all(base64.b64decode(i["data"])[:3] == b"\xff\xd8\xff" for i in o["images
 server.conferir_grupo(server.load_state()["played"][-1], 300)
 assert [i["caption"] for i in sent[-1][1]["images"]] == ["📷 Súmula", "🌐 No site", "📊 Na planilha (jogo 300)"]
 server.BOT_URL, server.bot_post, server.sheet.rows_of = "", BOT_POST0, real_rows
-server.sheet.push = lambda games: (_ for _ in ()).throw(ValueError("Sheets API 400"))  # the game stays on the site, the failure is reported
+server.sheet.push = lambda games, who="": (_ for _ in ()).throw(ValueError("Sheets API 400"))  # the game stays on the site, the failure is reported
 assert server.push_sheet([]).startswith("falhou") and "planilha não foi atualizada" in server.AVISOS.read_text(encoding="utf-8")
 server.ocr_photo(b"sheet", "2026-10-09", "Fulano")  # same photo again: refused by the budget, no queue item
 assert not list(server.INBOX.glob("*.json"))
@@ -889,7 +889,7 @@ assert s3["match"]["bets"][-1]["bettor"] == "Dan", "the logged-in member bets, n
 assert "error" in json.loads(call("/api/bet", {"bettor": "Victor", "pick": "A", "stake": 1})[1])
 # The jogo da semana closed on the site goes into the group's sheet too, not only a released súmula.
 got, server.sheet.ID = [], "fake-id"
-real_push, server.sheet.push = server.sheet.push, lambda games: got.append(games) or [301]
+real_push, server.sheet.push = server.sheet.push, lambda games, who="": got.append(games) or [301]
 for ts in (["Time Dan", "BAGRES"], ["BAGRES", "BAGRES"]):  # a captain's name, or both teams the same color: never on the sheet
     assert "time fora da lista" in server.push_sheet([{"teams": [{"name": t} for t in ts]}]) and not got, ts
 with server.LOCK:
@@ -907,7 +907,7 @@ rows = [list(r) for r in g9["rows"]]
 rows[0][2] += 1
 assert "Conselho" in json.loads(call("/api/planilha", {"n": g9["n"], "rows": rows}, cookie=ana)[1])["error"]
 got, server.sheet.ID = [], "fake-id"
-server.sheet.push = lambda games: got.append(games) or [302]
+server.sheet.push = lambda games, who="": got.append(games) or [302]
 r = json.loads(call("/api/planilha", {"n": g9["n"], "rows": rows}, cookie=andrei)[1])
 assert r == {"sheet": "ok: jogo 302"} and got[0][0]["teams"][0]["players"][0][1] == rows[0][2], (r, got)
 log = [json.loads(x) for x in server.CORRECOES.read_text(encoding="utf-8").splitlines()]
@@ -1356,4 +1356,67 @@ mn = server.match_news(game, k("2026-11-19", "22:00"))
 assert mn.startswith("Fim de jogo: Pavões 2 × 1 Bagres.") and mn.endswith("Guarda energia: faltam 2 dias pra SuperCopa."), mn
 assert "SuperCopa" not in server.match_news(game, k("2026-11-21", "22:00"))
 server.bot_post = BOT_POST0
+# Sheet writer guards (sheet.py) on a fake DATABASE tab: no Google call. The 5-year sheet is only ever appended to.
+import re as _re, urllib.parse as _up
+S, real_sheet = server.sheet, {k: getattr(server.sheet, k) for k in ("ID", "tab", "values", "api", "rules", "BACKUPS", "KEEP")}
+def fake_tab(tweak=None, after_put=None, names=("Dan", "P0", "P1", "Ana")):
+    grid = [["", "", "Jogo Total"] + [""] * 8 + list(S.HEAD), ["", "", "299"] + [""] * 8 + ["1/10/26", "PRETO", "Dan", "", "", "", ""]]
+    grid += [["", "", str(j)] + [""] * 15 for j in (300, 300, 300, 301, 301, 301)]  # empty blocks for the next games
+    (tweak or (lambda g: None))(grid)
+    puts = []
+    def box(rng):
+        m = _re.match(r".*!([A-Z])(\d+):([A-Z])(\d*)$", rng)
+        return ord(m[1]) - 65, ord(m[3]) - 65, int(m[2]) - 1, int(m[4]) if m[4] else len(grid)
+    def values(rng, render=None):
+        c0, c1, r0, r1 = box(rng)
+        return [list(r[c0:c1 + 1]) for r in grid[r0:r1]]
+    def api(path, body=None, method=None):
+        rng = _up.unquote(path.split("/values/")[1].split("?")[0])
+        c0, _, r0, _ = box(rng)
+        puts.append(rng)
+        for i, row in enumerate(body["values"]):
+            grid[r0 + i][c0:c0 + len(row)] = row
+        (after_put or (lambda g: None))(grid)
+        return {}
+    S.ID, S.tab, S.values, S.api, S.rules = "fake-id", lambda: "DATABASE", values, api, lambda rng: {2: list(names)} if names else {}
+    S.BACKUPS, S.KEEP = str(tmp / "sheet-backups"), 2
+    return grid, puts
+def refused(games, why, **kw):
+    grid, puts = fake_tab(**kw)
+    before = [list(r) for r in grid]
+    try:
+        S.push(games, "test"); raise AssertionError(why)
+    except ValueError as e:
+        assert why in str(e), e
+        return grid, puts, before, str(e)
+day = lambda date, *names: {"date": date, "teams": [{"name": "PRETO", "players": [[names[0], 1, 0, 0, 1]]},
+                                                     {"name": "VERDE", "players": [[n, 0, 1, 0, 0] for n in names[1:]]}]}
+grid, puts = fake_tab()
+assert S.push([day("2030-01-08", "Dan", "P0")], "Andrei") == [300] and grid[2][11:18] == ["2030-01-08", "PRETO", "Dan", 1, "", "", 1], grid[2]
+w = [_js.loads(l) for l in (tmp / "sheet-writes.jsonl").read_text(encoding="utf-8").splitlines()]
+assert w[-1]["who"] == "Andrei" and w[-1]["range"] == "'DATABASE'!L3:R4" and w[-1]["ok"] and Path(w[-1]["snapshot"]).exists(), w[-1]  # audit line + snapshot
+assert grid[4][11:18] == [""] * 7 and grid[1][13] == "Dan", "nothing outside the new range changes"
+try:
+    S.push([day("2030-01-08", "Dan", "P0")]); raise AssertionError("double press")
+except ValueError as e:
+    assert "já tem jogo" in str(e) and puts == ["'DATABASE'!L3:R4"], (e, puts)  # a retry after a timeout writes nothing
+grid, puts = fake_tab()
+assert S.push([day("2030-02-01", "Dan", "P0"), day("2030-02-01", "Ana", "P1")]) == [300, 301], "two games on one date: both, not half"
+assert len(list((tmp / "sheet-backups").glob("sheet-*.json"))) == 2, "only the last KEEP snapshots"
+g2 = [day("2030-02-01", "Dan", "P0"), day("2030-02-01", "Ana", "Bruney")]
+_, puts, *_ = refused(g2, "fora da lista")
+assert puts == [], "all or nothing: the 2nd game's refusal keeps the 1st out too"
+_, puts, *_ = refused([day("2030-01-08", "Dan")], "já tem jogo", tweak=lambda g: g[1].__setitem__(11, "08/01/2030"))
+_, puts, *_ = refused([day("2030-01-08", "Dan")], "não estão vazias", tweak=lambda g: g[2].__setitem__(12, "AZUL"))  # typed by hand, no Nome
+assert puts == [], "non-empty target refused"
+_, puts, *_ = refused([day("2030-01-08", "Dan")], "mudou de colunas", tweak=lambda g: g[0].insert(12, "Nova"))
+assert puts == [], "a column a human inserted: refused"
+_, puts, *_ = refused([day("2030-01-08", "Dan", "P0")], "não são mais do jogo", tweak=lambda g: g[3].__setitem__(2, "999"))  # a sorted block: its rows apart
+_, puts, *_ = refused([day("2030-01-08", "Dan")], "lista de nomes", names=())
+assert puts == [], "no dropdown on the target rows: refused"
+grid, puts, before, err = refused([day("2030-01-08", "Dan", "P0")], "não confere", after_put=lambda g: g[3].__setitem__(13, "Outro") if g[2][13] == "Dan" else None)
+assert "sheet-backups" in err and "desfeito: 'DATABASE'!L3:R4" in err and grid == before, (err, grid[2:4])  # read-back mismatch: reported, range put back
+assert not _js.loads((tmp / "sheet-writes.jsonl").read_text(encoding="utf-8").splitlines()[-2])["ok"]
+for k, v in real_sheet.items():
+    setattr(S, k, v)
 print("ok")
