@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/site.css?v=20261023b">
+<link rel="stylesheet" href="/site.css?v=20261111">
 <style>#bell{position:relative;font-size:16px;line-height:1}#bell i{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:var(--acc);border:2px solid var(--bg)}#newsDlg ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}#newsDlg li small{color:var(--mut)}</style>
 <style>/* launch gift: 3D BioFut coins raining (CSS only) */
 .rain{position:fixed;inset:0;pointer-events:none;z-index:90;overflow:hidden;perspective:700px}
@@ -1127,8 +1127,9 @@ async function bindPlanilha() {
       <div class="row">${edit ? `<button class="btn sm" data-add>+ jogador</button><button class="btn pri sm" data-push data-ev="atualizar jogo ${g.n}">Atualizar tabela</button>` : '<span class="dim" style="font-size:13px">Só o Conselho atualiza: entre se for do Conselho.</span>'}
       <button class="btn sm" data-tsv="${esc(g.tsv)}">ou copiar</button></div></div>
       ${edit ? `<div class="row" style="margin-top:10px;gap:12px;flex-wrap:wrap">${teams(g).map((t, i) => timeIn(g, t, i)).join("")}<span class="dim" style="font-size:13px">o animal da cor do uniforme</span></div>` : ""}
-      <div class="tw" style="margin-top:12px"><table><thead><tr>${heads.map(h => `<th class="l">${h}</th>`).join("")}</tr></thead>
-      <tbody>${g.rows.map((r, i) => row(g, r, g.era?.[i])).join("")}</tbody></table></div></div>`).join("") + `<datalist id="plnames">${nomes.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`
+      <div class="plfoto${g.sumula ? " com" : ""}"><div class="tw" style="margin-top:12px"><table><thead><tr>${heads.map(h => `<th class="l">${h}</th>`).join("")}</tr></thead>
+      <tbody>${g.rows.map((r, i) => row(g, r, g.era?.[i])).join("")}</tbody></table></div>
+      ${g.sumula ? `<a href="/api/sumula/${esc(g.sumula)}" target="_blank" rel="noopener" title="Abrir a foto da súmula"><img src="/api/sumula/${esc(g.sumula)}" alt="Foto da súmula" loading="lazy"><span class="dim">Foto da súmula: toque para ampliar</span></a>` : ""}</div></div>`).join("") + `<datalist id="plnames">${nomes.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`
     + `<datalist id="pltimes">${times.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`;
   document.querySelectorAll("[data-tsv]").forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(b.dataset.tsv); toast("Copiado. Cole na coluna L da planilha"); } catch { toast("O navegador bloqueou a cópia: selecione a tabela", true); }

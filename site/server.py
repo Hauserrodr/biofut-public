@@ -2910,6 +2910,14 @@ class Handler(SimpleHTTPRequestHandler):
             if self.role() not in ("admin", "conselho") or not f.exists():
                 return self.send_error(404)
             return self.send_private(f.read_bytes(), "image/jpeg")
+        m = re.fullmatch(r"/api/sumula/([0-9a-f]{16}\.jpg)", path)
+        if m:  # #/planilha: the photo of a played game's súmula is public, so players can check the rows; other review media stay staff only
+            with LOCK:
+                ok = any(g.get("sumula") == m[1] for g in load_state()["played"])
+            f = REVIEW_MEDIA / m[1]
+            if not ok or not f.exists():
+                return self.send_error(404)
+            return self.send_private(f.read_bytes(), "image/jpeg")
         if path == "/api/transparencia":
             f = LISTAS
             listas = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
@@ -2942,7 +2950,7 @@ class Handler(SimpleHTTPRequestHandler):
                 fixed = sheet_names([r[1] for r in rows], nomes)
                 out.append({"n": g["n"], "line": game_line(g), "tsv": "\n".join("\t".join(r) for r in sheet_rows(g)),
                             "rows": [[r[0], f, *r[2:]] for r, f in zip(rows, fixed)],
-                            "era": [r[1] if r[1] != f else "" for r, f in zip(rows, fixed)], "times": lista.TIMES, "nomes": nomes})
+                            "era": [r[1] if r[1] != f else "" for r, f in zip(rows, fixed)], "times": lista.TIMES, "nomes": nomes, "sumula": g.get("sumula")})
             return self.send_json(out)
         if path == "/api/data":
             with LOCK:
