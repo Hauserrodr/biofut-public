@@ -72,7 +72,9 @@ const isCancel = (text) => /\bcancelad[ao]\b/i.test(String(text || '')) && Strin
 const toJid = (phone) => phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
 
 // ---------------------------------------------------------------- pure logic
-const draftUrl = (cfg) => `${cfg.siteUrl.replace(/\/$/, '')}/#/jogo`;
+const page = (cfg, route) => `${cfg.siteUrl.replace(/\/$/, '')}/#/${route}`;
+const draftUrl = (cfg) => page(cfg, 'jogo');
+const coin = () => require('crypto').randomInt(2) ? 'Cara' : 'Coroa';
 
 // m = site match state (null if the site is down)
 function reply(text, cfg, m) {
@@ -94,7 +96,10 @@ function reply(text, cfg, m) {
     case '!capitaes':
       if (!m) return off;
       return m.draft ? `Capitães: ${m.draft.captains.join(' x ')}` : `Capitães ainda não escolhidos. ${url}`;
-    case '!ajuda': return '!draft link do draft\n!entrar como confirmar presença\n!lista quem já confirmou\n!capitaes capitães da semana\n!times times do draft';
+    case '!tabela': return `📊 Tabela da temporada: ${page(cfg, 'tabela')}`;
+    case '!copa': return `🏆 Copa: ${page(cfg, 'copa')}`;
+    case '!moeda': case '!jogue': case '!cara': case '!coroa': return `🪙 ${coin()}!`;
+    case '!ajuda': return '!draft link do draft\n!entrar como confirmar presença\n!lista quem já confirmou\n!capitaes capitães da semana\n!times times do draft\n!tabela tabela da temporada\n!copa página da Copa\n!moeda cara ou coroa';
     default: return null; // ponytail: not a command, stay silent in the group
   }
 }
