@@ -2282,7 +2282,7 @@ def planilha_push(n, rows, who, times=None):
                 for t in g["teams"]:
                     t["players"] = [r[1:] for r in new if r[0] == t["name"]]
                 save_state(st)
-        return {"sheet": push_sheet([g]) if sheet.ID else "falhou: a planilha não está configurada no servidor"}
+        return {"sheet": push_sheet([g], who) if sheet.ID else "falhou: a planilha não está configurada no servidor"}
 
 
 CONFERE = ("A tabela tá correta (bate com a foto da súmula)?", ["Sim", "Ou", "Não"])
@@ -2311,7 +2311,7 @@ def conferir_grupo(g, jogo):
                         "images": images, "poll": {"name": CONFERE[0], "values": CONFERE[1]}}, timeout=120)
 
 
-def push_sheet(games):
+def push_sheet(games, who="revisão"):
     """Append released games to the group's sheet (sheet.py fills the next empty game rows), then the group checks
     each one (conferir_grupo, in a thread). Never raises: the game is already on the site, so a failure is reported, not lost."""
     try:
@@ -2320,7 +2320,7 @@ def push_sheet(games):
         if bad:  # the sheet names teams by the uniform's animal (lista.ANIMAL); a captain's name there is a mistake
             raise ValueError(f"time fora da lista ({', '.join(bad)}): os times são {', '.join(lista.TIMES)}, pela cor do uniforme;"
                              " corrija em https://biofut.h-brain.org/#/planilha")
-        done = sheet.push(games)
+        done = sheet.push(games, who)
         for g, jogo in zip(games, done):
             threading.Thread(target=conferir_grupo, args=(g, jogo), daemon=True).start()
         return f"ok: jogo {', '.join(map(str, done))}"
@@ -3337,7 +3337,7 @@ class Handler(SimpleHTTPRequestHandler):
                     news = match_news(st["played"][-1]) if action == "close_match" else draft_news(st, action, d0) if st["match"]["draft"] else None
                     save_state(st)
                     if action == "close_match" and sheet.ID:  # like a released súmula: the game goes into the group's sheet
-                        push_sheet([st["played"][-1]])  # never raises: a failure reaches the avisos group
+                        push_sheet([st["played"][-1]], user or "jogo ao vivo")  # never raises: a failure reaches the avisos group
                     if news:
                         group_post(news)
                     if action == "signup":

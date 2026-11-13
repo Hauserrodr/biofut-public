@@ -7,15 +7,25 @@ For each game it fills the next block of empty game rows (the lowest "Jogo Total
 last filled game) with Data, Time, Nome, Gol, Assistência, Gol Contra, Capitão (columns L-R). Formula columns (A-K) are
 never touched. It refuses a date that already has players, cells holding a formula, and values the sheet's own
 dropdowns reject (a nickname, a typo, a new name: the API would write them anyway).
+Safety (the sheet is years of hand-kept history): one push at a time; the header (C1 + L1:R1) must be the expected
+layout; the whole batch is planned and checked before the first write (all games or none); each target block is
+re-read right before and must still be that game's empty rows; the whole A:R (formulas too) is saved to
+data/sheet-backups/ first (last KEEP kept); every write is read back and compared, and logged in
+data/sheet-writes.jsonl (who, when, range, rows, snapshot). Nothing is cleared, deleted or resized; a write that fails
+half-way puts the snapshot's own cells back in the ranges this call wrote, and nowhere else.
 Self-check: python sheet.py [data/sheet.csv]
 """
-import base64, json, os, sys, time, urllib.parse, urllib.request
+import base64, json, os, re, sys, threading, time, urllib.parse, urllib.request
 
 KEY = os.environ.get("BIOFUT_SHEET_KEY", "/etc/biofut-sheet.json")
 ID = os.environ.get("BIOFUT_SHEET_ID", "")
 API = "https://sheets.googleapis.com/v4/spreadsheets/"
 JOGO, DATA, NOME = 2, 11, 13  # 0-based: C, L, N; writes L..R (7 columns)
 _token = {"exp": 0}
+HEAD = ["Data", "Time", "Nome", "Gol", "Assistência", "Gol Contra", "Capitão"]  # L1:R1, with C1 = Jogo Total
+BACKUPS = os.environ.get("BIOFUT_SHEET_BACKUPS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sheet-backups"))
+KEEP = int(os.environ.get("BIOFUT_SHEET_KEEP", "30"))
+_write = threading.Lock()  # two presses (or a press and a released súmula) never interleave their read and write
 
 
 def b64(b):
@@ -64,8 +74,16 @@ def short_date(iso):  # as the sheet shows it: 1/10/26
     return f"{int(d)}/{int(m)}/{y[2:]}"
 
 
-def plan(vals, g):
-    """Pure part. vals: display values of A..N from row 2. Returns (jogo, row 0-based in vals, rows L..R)."""
+def same_day(cell, iso):
+    """Does a Data cell ('8/10/26', '08/10/2026', '8/10') show the day iso (2026-10-08)?"""
+    y, mo, d = map(int, iso.split("-"))
+    m = re.match(r"\s*(\d+)/(\d+)(?:/(\d+))?\s*$", str(cell))
+    return bool(m) and (int(m[1]), int(m[2])) == (d, mo) and (not m[3] or int(m[3]) % 100 == y % 100) or str(cell).strip() == iso
+
+
+def plan(vals, g, mine=()):
+    """Pure part. vals: display values of A..N from row 2; mine: rows of vals this same call fills (two games on one
+    date: the second must not see the first as a duplicate). Returns (jogo, row 0-based in vals, rows L..R)."""
     day, last, blocks = short_date(g["date"]), -1, {}
     for i, r in enumerate(vals):
         r = list(r) + [""] * (NOME + 1 - len(r))  # the API drops trailing empty cells
@@ -75,7 +93,7 @@ def plan(vals, g):
         named = str(r[NOME]).strip() != ""
         if named:
             last = max(last, j)
-            if r[DATA] == day:
+            if i not in mine and same_day(r[DATA], g["date"]):  # idempotent: a double press or a retry finds its rows
                 raise ValueError("a planilha já tem jogo em " + day)
         b = blocks.setdefault(j, {"start": i, "n": 0, "named": False})
         b["n"] += 1
@@ -144,34 +162,112 @@ def names():
     return _names["v"]
 
 
-def push(games):
-    """Writes each game into the sheet; returns the "Jogo Total" numbers used. Raises on any refusal."""
+def snapshot(t):
+    """The whole A:R as typed (formulas, not their results) -> a timestamped JSON in BACKUPS; keeps the last KEEP.
+    Undo by hand = paste a range's old cells back from it (sheet-writes.jsonl names the range)."""
+    os.makedirs(BACKUPS, exist_ok=True)
+    path = os.path.join(BACKUPS, time.strftime("sheet-%Y%m%d-%H%M%S-") + f"{time.time() % 1:.6f}"[2:] + ".json")
+    vals = values(f"{t}!A1:R", "FORMULA")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "tab": t, "range": "A1:R", "values": vals}, f, ensure_ascii=False)
+    for old in sorted(x for x in os.listdir(BACKUPS) if x.startswith("sheet-") and x.endswith(".json"))[:-KEEP]:
+        os.remove(os.path.join(BACKUPS, old))
+    return path, vals
+
+
+def audit(**line):
+    """One line per write in sheet-writes.jsonl, next to the backups folder."""
+    with open(os.path.join(os.path.dirname(BACKUPS), "sheet-writes.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **line}, ensure_ascii=False) + "\n")
+
+
+def mismatch(back, rows, iso, first):
+    """Cells of a written L..R range whose read-back differs from what was sent, as "N4901 'Bruno' != 'Bruney'"."""
+    def norm(v):
+        v = {"TRUE": "1", "FALSE": ""}.get(str(v).strip().upper(), str(v).strip())
+        try:
+            return str(float(v)) if v else ""
+        except ValueError:
+            return v
+    out = []
+    for i, r in enumerate(rows):
+        b = (list(back[i]) if i < len(back) else []) + [""] * 7
+        if not same_day(b[0], iso):
+            out.append(f"L{first + i} {b[0]!r} != {iso}")
+        out += [f"{'LMNOPQR'[j]}{first + i} {b[j]!r} != {r[j]!r}" for j in range(1, 7) if norm(b[j]) != norm(r[j])]
+    return out
+
+
+def check(t, jogo, row, rows):
+    """Right before writing game jogo's rows (row 0-based from row 2): fresh read of its block. Refuses rows that are
+    no longer this game's (a sort, a filter, an inserted row) or that hold anything, and names off the dropdown."""
+    first, last = row + 2, row + 1 + len(rows)
+    cur = values(f"{t}!A{first}:R{last}")
+    cur = [(list(cur[i]) if i < len(cur) else []) + [""] * 18 for i in range(len(rows))]
+    moved = [first + i for i, r in enumerate(cur) if str(r[JOGO]).strip() != str(jogo)]
+    if moved:
+        raise ValueError(f"as linhas {moved[0]}..{moved[-1]} não são mais do jogo {jogo} (planilha ordenada ou editada?)")
+    busy = [f"{'LMNOPQR'[j]}{first + i}" for i, r in enumerate(cur) for j in range(7) if str(r[DATA + j]).strip()]
+    if busy:
+        raise ValueError(f"as linhas do jogo {jogo} não estão vazias em {', '.join(busy[:3])}")
+    rng = f"{t}!L{first}:R{last}"
+    allowed = rules(rng)
+    if 2 not in allowed:  # no dropdown to check against: refuse rather than write unchecked names
+        raise ValueError(f"as linhas do jogo {jogo} não têm a lista de nomes (validação da coluna Nome); confira a planilha")
+    bad = off_list(rows, allowed, first)
+    if bad:
+        raise ValueError(f"fora da lista da planilha: {', '.join(bad[:6])}. Use o nome da lista; quem não está nela vira SOMBRA")
+    return rng
+
+
+def put(rng, rows):
+    # USER_ENTERED: the ISO date becomes a real date cell, numbers stay numbers
+    api(f"/values/{urllib.parse.quote(rng, safe='')}?valueInputOption=USER_ENTERED", {"values": rows}, "PUT")
+
+
+def push(games, who="site"):
+    """Writes the games into the sheet, all or none; returns the "Jogo Total" numbers used. Raises on any refusal,
+    before writing anything."""
     if not ID:
         raise ValueError("BIOFUT_SHEET_ID não configurado")
-    t = "'" + tab().replace("'", "''") + "'"
-    head = values(f"{t}!N1:N1")
-    if head != [["Nome"]]:
-        raise ValueError("a aba gid=0 não parece a DATABASE (N1 não é Nome)")
-    vals, done = values(f"{t}!A2:N"), []
-    for g in games:
-        jogo, row, rows = plan(vals, g)
-        rng = f"{t}!L{row + 2}:R{row + 1 + len(rows)}"
-        busy = filled_formulas(values(rng, "FORMULA"), values(rng), row + 2)
-        if busy:
-            raise ValueError(f"as linhas do jogo {jogo} têm fórmula com valor em {', '.join(busy[:3])}")
-        allowed = rules(rng)
-        if 2 not in allowed:  # no dropdown to check against: refuse rather than write unchecked names
-            raise ValueError(f"as linhas do jogo {jogo} não têm a lista de nomes (validação da coluna Nome); confira a planilha")
-        bad = off_list(rows, allowed, row + 2)
-        if bad:
-            raise ValueError(f"fora da lista da planilha: {', '.join(bad[:6])}. Use o nome da lista; quem não está nela vira SOMBRA")
-        # USER_ENTERED: the ISO date becomes a real date cell, numbers stay numbers
-        api(f"/values/{urllib.parse.quote(rng, safe='')}?valueInputOption=USER_ENTERED", {"values": rows}, "PUT")
-        for i, r in enumerate(rows):  # the next game in this call sees these rows as filled
-            vals[row + i] = (list(vals[row + i]) + [""] * 14)[:14]
-            vals[row + i][NOME], vals[row + i][DATA] = r[2], short_date(g["date"])
-        done.append(jogo)
-    return done
+    with _write:
+        t = "'" + tab().replace("'", "''") + "'"
+        shown = values(f"{t}!A1:R")
+        head = [str(x).strip() for x in (list(shown[0]) if shown else []) + [""] * 18]
+        if head[JOGO] != "Jogo Total" or head[DATA:DATA + 7] != HEAD:  # a column a human inserted or moved
+            raise ValueError(f"a aba gid=0 mudou de colunas (C1 {head[JOGO]!r}, L1:R1 {head[DATA:DATA + 7]}); "
+                             f"esperado Jogo Total e {', '.join(HEAD)}; nada foi escrito")
+        vals, mine, todo = [list(r) for r in shown[1:]], set(), []
+        for g in games:  # plan and check the whole batch first: a refusal writes nothing
+            jogo, row, rows = plan(vals, g, mine)
+            todo.append((g, jogo, row, rows, check(t, jogo, row, rows)))
+            for i, r in enumerate(rows):  # the next game in this call sees these rows as filled
+                vals[row + i] = list(vals[row + i]) + [""] * 18
+                vals[row + i][NOME], vals[row + i][DATA] = r[2], short_date(g["date"])
+                mine.add(row + i)
+        snap, before = snapshot(t)
+        written = []
+        try:
+            for g, jogo, row, rows, rng in todo:
+                put(rng, rows)
+                written.append((row, rows, rng))
+                bad = mismatch(values(rng), rows, g["date"], row + 2)
+                audit(who=who, range=rng, jogo=jogo, date=g["date"], rows=rows, snapshot=snap, ok=not bad, mismatch=bad[:20])
+                if bad:
+                    print(f"SHEET WRITE MISMATCH {rng}: {bad[:6]} snapshot {snap}", file=sys.stderr, flush=True)
+                    raise ValueError(f"a planilha não confere depois da escrita em {rng} ({', '.join(bad[:3])})")
+        except Exception as e:
+            undo = []
+            for row, rows, rng in written:  # only the ranges this call wrote get their old cells (formulas) back
+                old = [((list(before[row + 1 + i]) if row + 1 + i < len(before) else []) + [""] * 18)[DATA:DATA + 7] for i in range(len(rows))]
+                try:
+                    put(rng, old)
+                    undo.append(rng)
+                except Exception as e2:
+                    print(f"SHEET UNDO FAILED {rng}: {e2}", file=sys.stderr, flush=True)
+            audit(who=who, error=str(e), undone=undo, snapshot=snap)
+            raise ValueError(f"{e}; desfeito: {', '.join(undo) or 'nada'}; cópia de antes: {snap}") from None
+    return [jogo for _, jogo, *_ in todo]
 
 
 def rows_of(jogo):
