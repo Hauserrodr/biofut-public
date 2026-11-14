@@ -3,7 +3,7 @@
 #   then on the phone: WhatsApp > Linked devices > Link a device > Link with phone number, type the PAIRING CODE it prints.
 # Later runs (code update): same command without -Phone; the session in /srv/biofut-bot/session is kept.
 # Check: ... deploy-bot.ps1 -Check   (prints the server-side script, changes nothing)
-# Logs:  ... deploy-bot.ps1 -Logs    (follows the live log; an unlinked bot prints a new PAIRING CODE every few minutes, type the newest)
+# Logs:  ... deploy-bot.ps1 -Logs    (follows the pairing and connection lines only; an unlinked bot prints a new PAIRING CODE every few minutes, type the newest)
 param([string]$Phone = '', [switch]$Check, [switch]$Logs)
 $ErrorActionPreference = 'Stop'
 
@@ -31,12 +31,13 @@ sudo docker rm -f biofut-bot >/dev/null 2>&1 || true
 sudo docker run -d --name biofut-bot --restart unless-stopped --network host \
   --env-file /etc/biofut-bot.env -v /srv/biofut-bot/session:/session biofut-bot >/dev/null
 sleep 25
-sudo docker logs biofut-bot 2>&1 | tail -20
+# never print the raw log: Baileys dumps Signal session keys on "Closing session"
+sudo docker logs biofut-bot 2>&1 | grep -E 'PAIRING CODE|bot connected|not linked|connection closed|webhook|error|fail' | grep -viE 'key|token|secret' | tail -20 || true
 echo "container: $(sudo docker inspect -f '{{.State.Status}}' biofut-bot)"
 '@ -replace "`r", '' -replace '__PHONE__', $Digits
 
 if ($Check) { $Remote; return }
-if ($Logs) { & ssh -t -i $Key $Target 'sudo docker logs -f --tail 20 biofut-bot'; return }
+if ($Logs) { & ssh -t -i $Key $Target 'sudo docker logs -f --since 3m biofut-bot 2>&1 | grep --line-buffered -E PAIRING.CODE\|bot.connected\|not.linked\|connection.closed'; return }
 
 function Run-Ssh($cmd) {
     & ssh -o BatchMode=yes -i $Key $Target $cmd
