@@ -1417,6 +1417,13 @@ assert puts == [], "no dropdown on the target rows: refused"
 grid, puts, before, err = refused([day("2030-01-08", "Dan", "P0")], "não confere", after_put=lambda g: g[3].__setitem__(13, "Outro") if g[2][13] == "Dan" else None)
 assert "sheet-backups" in err and "desfeito: 'DATABASE'!L3:R4" in err and grid == before, (err, grid[2:4])  # read-back mismatch: reported, range put back
 assert not _js.loads((tmp / "sheet-writes.jsonl").read_text(encoding="utf-8").splitlines()[-2])["ok"]
+# !canon: canon.json lies over member.json, for members only
+server.CANON_PAGES = server.WIKI / "canon.json"
+(server.WIKI / "member.json").write_text(json.dumps({"pages": [{"slug": "p", "title": "P", "md": "old"}]}))
+server.CANON_PAGES.write_text(json.dumps({"p": {"md": "lore"}, "o-bk": {"slug": "o-bk", "title": "O BK", "md": "x"}}))
+mem = json.loads(server.wiki_bytes(server.WIKI / "member.json", True)[0])
+assert [x["md"] for x in mem["pages"]] == ["lore", "x"] and mem["pages"][1]["photos"] == [], mem
+assert "o-bk" not in server.wiki_bytes(server.WIKI / "public.json", False)[0].decode(), "canon pages are members only"
 for k, v in real_sheet.items():
     setattr(S, k, v)
 print("ok")

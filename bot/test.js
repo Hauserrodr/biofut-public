@@ -4,7 +4,14 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { reply, join, toJid, tag, findAvisos, loginAsk, isList } = require('./bot');
+const { canonOf, reply, join, toJid, tag, findAvisos, loginAsk, isList } = require('./bot');
+
+// !canon: the answered message's text (or caption), the note after the command, the author
+const quoted = (q) => ({ message: { extendedTextMessage: { text: '!canon é o juiz', contextInfo: { participant: '5551900000009@s.whatsapp.net', quotedMessage: q } } } });
+assert.deepStrictEqual(canonOf(quoted({ conversation: 'Eu conheci o BK!' }), '!canon é o juiz'), { quote: 'Eu conheci o BK!', note: 'é o juiz', jid: '5551900000009@s.whatsapp.net' });
+assert.strictEqual(canonOf(quoted({ imageMessage: { caption: 'o BK' } }), '!CANON').quote, 'o BK');
+assert.strictEqual(canonOf({ message: { conversation: '!canon' } }, '!canon'), null);
+assert.strictEqual(reply('!canon', { siteUrl: 'x' }, null), null, 'never a group reply: only the admin, handled in the transport');
 
 const cfg = { siteUrl: 'https://biofut.example/', captains: [{ name: 'Victor', phone: '+55 51 90000-0001' }, { name: 'Canova', phone: '5551900000002' }] };
 const url = 'https://biofut.example/#/jogo';
