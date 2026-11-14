@@ -4,7 +4,14 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { reply, join, toJid, tag, findAvisos, loginAsk, isList } = require('./bot');
+const { canonOf, reply, join, toJid, tag, findAvisos, loginAsk, isList } = require('./bot');
+
+// !canon: the answered message's text (or caption), the note after the command, the author
+const quoted = (q) => ({ message: { extendedTextMessage: { text: '!canon é o juiz', contextInfo: { participant: '5551900000009@s.whatsapp.net', quotedMessage: q } } } });
+assert.deepStrictEqual(canonOf(quoted({ conversation: 'Eu conheci o BK!' }), '!canon é o juiz'), { quote: 'Eu conheci o BK!', note: 'é o juiz', jid: '5551900000009@s.whatsapp.net' });
+assert.strictEqual(canonOf(quoted({ imageMessage: { caption: 'o BK' } }), '!CANON').quote, 'o BK');
+assert.strictEqual(canonOf({ message: { conversation: '!canon' } }, '!canon'), null);
+assert.strictEqual(reply('!canon', { siteUrl: 'x' }, null), null, 'never a group reply: only the admin, handled in the transport');
 
 const cfg = { siteUrl: 'https://biofut.example/', captains: [{ name: 'Victor', phone: '+55 51 90000-0001' }, { name: 'Canova', phone: '5551900000002' }] };
 const url = 'https://biofut.example/#/jogo';
@@ -20,6 +27,11 @@ assert.match(reply('!capitaes', cfg, m0), /ainda não/);
 assert.match(reply('!times', cfg, m1), /^Time Victor: Victor, Zé\nTime Canova: Canova\n/);
 assert.match(reply('!lista', cfg, null), /fora do ar/);
 assert.strictEqual(reply('bora jogar', cfg, null), null);
+assert.strictEqual(reply('!tabela', cfg, null), '📊 Tabela da temporada: https://biofut.example/#/tabela');
+assert.match(reply('!copa', cfg, null), /#\/copa$/);
+assert.match(reply('!jogue uma moeda', cfg, null), /^🪙 (Cara|Coroa)!$/);
+assert.match(reply('!moeda', cfg, null), /^🪙 (Cara|Coroa)!$/);
+assert.match(reply('!ajuda', cfg, null), /!moeda/);
 assert.strictEqual(tag('oi'), '🤖 *ESQUIZOBOT* oi');
 assert.strictEqual(tag('🤖 Zé disse no site'), '🤖 *ESQUIZOBOT* Zé disse no site', "the site's 🤖 folds into the tag");
 assert.strictEqual(toJid('+55 51 90000-0001'), '5551900000001@s.whatsapp.net');

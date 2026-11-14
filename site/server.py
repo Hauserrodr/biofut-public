@@ -37,7 +37,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
 from pathlib import Path
 
-import conferir, costs, glm, lista, sheet, sumula
+import canon, conferir, costs, glm, lista, sheet, sumula
 try:
     import push  # Web Push needs the cryptography package; without it the site runs and push is off
 except ImportError:
@@ -129,6 +129,7 @@ PROFILES = HERE / "data" / "profiles.json"  # name -> {nick, status, hide}: each
 PUSH_SUBS, VAPID = HERE / "data" / "push.json", HERE / "data" / "vapid.pem"  # the phones that said yes; the server's push key
 PIX_BONUS = 10  # coins for paying the Pix on the game's night (Gab, 2026-10-20), staff marks who paid in /admin Avisos
 VOTES = WIKI / "votes.json"  # "f:<feedback id>" -> {user: 1 | -1} (concordo / discordo), "b:<bit id>" -> {user: 1..5} (graça)
+CANON_PAGES, CANON_FACTS = WIKI / "canon.json", WIKI / "canon.jsonl"  # !canon in the group: pages (members only) and the facts
 LEADS = WIKI / "leads.json"  # slug -> media file: the main photo a member proposed and staff approved (kind "foto")
 HIDDEN = "esta pessoa escolheu não aparecer, respeitamos a privacidade de cada um"
 MSGS = HERE / "data" / "mensagens.json"  # phones.py: each member's own group messages, served only to them (#/eu)
@@ -2025,11 +2026,27 @@ def public_media():
 def wiki_bytes(f, member, _cache={}):
     """/api/wiki: (json, gzipped json) of that file with the leads in, rebuilt when either file changes. member.json is
     1.5 MB: parsing it per request and sending it raw was what made the wiki slow on a phone."""
-    key = (f.name, f.stat().st_mtime, LEADS.stat().st_mtime if LEADS.exists() else 0)
+    mt = lambda x: x.stat().st_mtime if x.exists() else 0
+    key = (f.name, f.stat().st_mtime, mt(LEADS), member and mt(CANON_PAGES))
     if _cache.get("key") != key:
-        raw = json.dumps(with_leads(json.loads(f.read_bytes()), member), ensure_ascii=False).encode() if LEADS.exists() else f.read_bytes()
+        lore = member and CANON_PAGES.exists() and json.loads(CANON_PAGES.read_text(encoding="utf-8"))
+        d = json.loads(f.read_bytes()) if LEADS.exists() or lore else None
+        raw = json.dumps(with_leads(canon.overlay(d, lore), member) if LEADS.exists() else canon.overlay(d, lore), ensure_ascii=False).encode() if d else f.read_bytes()
         _cache.update(key=key, val=(raw, gzip.compress(raw, 6)))
     return _cache["val"]
+
+
+def canonize(fact):
+    """!canon in a thread: memory + page, then the group gets the link. A failure goes to Avisos (staff), not the group."""
+    try:
+        with CANON_LOCK:  # two !canon at once must not lose a page
+            s, title, new = canon.run(fact, WIKI / "member.json", CANON_PAGES, CANON_FACTS, os.environ["DEEPSEEK_API_KEY"])
+        bot_post("/group", {"text": f"🤖 📜 Agora é cânone: {title} ({'página nova' if new else 'página atualizada'}). https://biofut.h-brain.org/wiki#/p/{s}"})
+    except Exception as e:
+        notify(f"⚠️ !canon falhou ({fact['author']}: {fact['quote'][:80]}): {e}")
+
+
+CANON_LOCK = threading.Lock()
 
 
 def with_leads(d, member):
@@ -3002,7 +3019,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.body = {}
         if not user and too_many_fails(self.ip()):
             return self.send_json({"error": "muitas tentativas, tente de novo em uma hora"}, 429)
-        if action in ("sumula_image", "lista", "avatar", "nomes") and not (
+        if action in ("sumula_image", "lista", "avatar", "nomes", "canon") and not (
                 BOT_TOKEN and hmac.compare_digest(self.headers.get("X-BioFut-Token", "").encode(), BOT_TOKEN.encode())):
             return self.send_json({"error": "token errado"}, 401)
         if action == "lista":  # the bot: a group text that looks like the sign-up list. The number only finds the name.
@@ -3017,6 +3034,18 @@ class Handler(SimpleHTTPRequestHandler):
                 out = sync_list(st, text, ts, poster, phone_pk(body.get("phone")), str(body.get("sender") or "").strip()[:30])
                 save_state(st)  # last_list too, when nothing changed
             return self.send_json(out or {"ok": False})
+        if action == "canon":  # the bot: the admin answered {quote, phone, sender, note} with !canon -> memory + a wiki page
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 20000)))
+                quote = str(body["quote"]).strip()[:2000]
+            except (ValueError, KeyError, TypeError) as e:
+                return self.send_json({"error": f"corpo inválido: {e}"}, 400)
+            if not quote:
+                return self.send_json({"error": "mensagem vazia"}, 400)
+            who = member_of(body.get("phone")) or str(body.get("sender") or "").strip()[:30] or "Alguém"
+            fact = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "author": who, "quote": quote, "note": str(body.get("note") or "").strip()[:500]}
+            threading.Thread(target=canonize, args=(fact,), daemon=True).start()  # ~30 s of DeepSeek: the bot doesn't wait
+            return self.send_json({"ok": True})
         if action == "cancelado":  # the bot: a member wrote "cancelado" in the group on the game's day or the one before
             body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 2000)) or b"{}")
             who = member_of(body.get("phone") if isinstance(body, dict) else None)

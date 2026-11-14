@@ -69,10 +69,20 @@ const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (
 // "cancelado" / "jogo cancelado hoje" in the group on the game's day -> the site gives the bets back. A question is not a call.
 const isCancel = (text) => /\bcancelad[ao]\b/i.test(String(text || '')) && String(text).length < 120 && !/\?/.test(text);
 
+// !canon (2026-11-13): The admin answers a group message with "!canon [nota]" -> {quote, note, jid} of the answered message, or null.
+// The site keeps the fact and writes its BioWiki page (site/canon.py), then posts the link in the group.
+function canonOf(m, text) {
+  const ctx = m.message?.extendedTextMessage?.contextInfo, q = ctx?.quotedMessage;
+  const quote = q?.conversation || q?.extendedTextMessage?.text || q?.imageMessage?.caption || q?.videoMessage?.caption;
+  return quote ? { quote, note: text.replace(/^!canon\s*/i, '').trim(), jid: ctx.participant || '' } : null;
+}
+
 const toJid = (phone) => phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
 
 // ---------------------------------------------------------------- pure logic
-const draftUrl = (cfg) => `${cfg.siteUrl.replace(/\/$/, '')}/#/jogo`;
+const page = (cfg, route) => `${cfg.siteUrl.replace(/\/$/, '')}/#/${route}`;
+const draftUrl = (cfg) => page(cfg, 'jogo');
+const coin = () => require('crypto').randomInt(2) ? 'Cara' : 'Coroa';
 
 // m = site match state (null if the site is down)
 function reply(text, cfg, m) {
@@ -94,7 +104,10 @@ function reply(text, cfg, m) {
     case '!capitaes':
       if (!m) return off;
       return m.draft ? `Capitães: ${m.draft.captains.join(' x ')}` : `Capitães ainda não escolhidos. ${url}`;
-    case '!ajuda': return '!draft link do draft\n!entrar como confirmar presença\n!lista quem já confirmou\n!capitaes capitães da semana\n!times times do draft';
+    case '!tabela': return `📊 Tabela da temporada: ${page(cfg, 'tabela')}`;
+    case '!copa': return `🏆 Copa: ${page(cfg, 'copa')}`;
+    case '!moeda': case '!jogue': case '!cara': case '!coroa': return `🪙 ${coin()}!`;
+    case '!ajuda': return '!draft link do draft\n!entrar como confirmar presença\n!lista quem já confirmou\n!capitaes capitães da semana\n!times times do draft\n!tabela tabela da temporada\n!copa página da Copa\n!moeda cara ou coroa';
     default: return null; // ponytail: not a command, stay silent in the group
   }
 }
@@ -217,6 +230,7 @@ async function liveTransport(cfg, onText) {
         // fromMe is allowed: the bot is Gab's number, so Gab's own !commands count. Its tagged replies are skipped (no loop).
         if (!text || text.startsWith(PREFIX)) continue;
         if (chat !== cfg.groupJid) continue; // only the BioFut group, never Gab's private chats
+        if (/^!canon\b/i.test(text)) { if (m.key.fromMe) canonize(sock, m, text, cfg); continue; }  // the admin only
         onText(chat, text);
         // the poster's phone JID (Baileys 7: participant may be a LID, its phone JID is then participantAlt)
         const who = m.key.fromMe ? sock.user?.id : [m.key.participant, m.key.participantAlt].find((j) => String(j).endsWith('@s.whatsapp.net'));
@@ -294,6 +308,14 @@ async function syncAvatars(sock, cfg) {
     }
   } catch (e) { console.warn('avatars failed:', e.message); }
   console.log(`avatars: ${n} sent to the site`);
+}
+
+async function canonize(sock, m, text, cfg) {
+  const c = canonOf(m, text);
+  if (!c) return sock.sendMessage(m.key.remoteJid, { text: tag('Responde a mensagem que vira cânone com !canon.') });
+  // Baileys 7: the quoted author may be a LID; the site names people by phone
+  const jid = c.jid.endsWith('@lid') ? await sock.signalRepository.lidMapping.getPNForLID(c.jid).catch(() => '') || '' : c.jid;
+  toSite('/api/canon', { quote: c.quote, note: c.note, phone: jid.endsWith('@s.whatsapp.net') ? bare(jid).split('@')[0] : '' }, cfg);
 }
 
 // Group sign-up list -> the site's Jogo da semana, same way. The number only finds the poster's name; the site keeps the name.
@@ -392,4 +414,4 @@ if (require.main === module) {
   })().catch((e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { PREFIX, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
+module.exports = { PREFIX, canonOf, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
