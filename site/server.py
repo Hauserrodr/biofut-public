@@ -3036,7 +3036,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if retry_list(st):
                     save_state(st)
                 return self.send_json(public_state(st))
-        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg", "/corre.js", "/ad-torres.png", "/ad-baita.png", "/ad-duplaface.png") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
+        if not (path in ("/", "/index.html", "/site.css", "/site.js", "/og.png", "/logo.png", "/robots.txt", "/sitemap.xml", "/sw.js", "/copa_art.jpg", "/truco-v03.jpg", "/corre.js", "/ad-torres.png", "/ad-baita.png", "/ad-duplaface.png", "/copa_logo.webp", "/copa_rib_teal.webp", "/copa_rib_magenta.webp", "/copa_rib_green.webp", "/copa_rib_indigo.webp", "/copa_rib_gold.webp", "/copa_rib_magenta2.webp", "/copa_rib_teal2.webp", "/copa_rib_swoosh.webp") or re.fullmatch(r"/og/(copa|story)-\d{1,3}\.jpg", path) or path.startswith("/data/photos/") and ".." not in path):
             return self.send_error(404)
         self.path = path
         return super().do_GET()
