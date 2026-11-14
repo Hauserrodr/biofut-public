@@ -361,7 +361,7 @@ import http.server, threading, sumula
 server.REVIEW_MEDIA, server.OCR_BUDGET = tmp / "media", tmp / "ocr.json"
 fake = {"is_sumula": True, "date": None, "games": [{"team_a": "Preto", "team_b": "Verde", "score_a": None, "score_b": None,
         "players_a": [{"name": "VICTOR", "goals": 4, "captain": True}], "players_b": [{"name": "Hanauer", "goals": 1}]}]}
-sumula.ask = lambda img, roster: fake if img == b"sheet" else {"is_sumula": False}
+sumula.ask = lambda img, roster, *t: fake if img == b"sheet" else {"is_sumula": False}
 server.ocr_photo(b"meme", "2026-10-09", "Fulano")
 assert not list(server.INBOX.glob("*.json"))
 server.ocr_photo(b"sheet", "2026-10-09", "Fulano")
@@ -402,13 +402,52 @@ st = server.load_state(); st["match"] = {**server.new_match("2026-10-22"), "conf
 fake = {"is_sumula": True, "date": None, "games": [{"team_a": "A", "team_b": "B", "score_a": None, "score_b": None,
         "players_a": [{"name": "RAFA", "goals": 1}], "players_b": [{"name": "TAVA", "goals": 1}]}]}
 import copy as _copy
-sumula.ask = lambda img, roster: _copy.deepcopy(fake)  # read() writes the names back into it
+sumula.ask = lambda img, roster, *t: _copy.deepcopy(fake)  # read() writes the names back into it
 for img, day, rafa in ((b"listed", "2026-10-22", "Rafo"), (b"after midnight", "2026-10-23", "Rafo"), (b"other week", "2026-10-30", "Rafael M")):
     server.ocr_photo(img, day, "Fulano")
     server.review_tick(now=6000)
     g = server.load_review()[-1]["payload"]["games"][0]
     assert (g["players_a"][0]["name"], g["players_b"][0]["name"]) == (rafa, "Tavares"), (day, g)  # TAVA: not listed, full roster as before
 server.DATA["games"] = real_games
+server.save_state(st_before)
+# Súmula guards: a failed read is retried, then queued as "não lida" (held, photo kept); checks and a 2nd read become warnings.
+server.OCR_BUDGET, tries = tmp / "ocr2.json", []
+def flaky(img, roster, *t):
+    tries.append(t)
+    if len(tries) == 1:
+        raise TimeoutError("timed out")
+    return _copy.deepcopy(fake)
+sumula.ask = flaky
+server.ocr_photo(b"flaky", "2026-10-09", "Fulano"); server.review_tick(now=6000)
+assert len(tries) == 3 and tries[2] == (0.5,) and server.load_review()[-1]["payload"]["games"], tries  # retry, then the 2nd read
+sumula.ask = lambda img, roster, *t: "not json"
+server.ocr_photo(b"unreadable", "2026-10-09", "Fulano"); server.review_tick(now=6000)
+it = server.load_review()[-1]
+assert "não lida" in it["title"] and it["payload"]["games"] == [] and "Não consegui ler" in it["payload"]["warnings"][0], it
+assert (server.REVIEW_MEDIA / it["payload"]["image"]).exists() and server.held(it), "never dropped, never auto-released"
+try:
+    server.review_act(it["id"], "approve"); raise AssertionError("approved an empty súmula")
+except ValueError as e:
+    assert "sem jogos" in str(e)
+reads = iter([{**_copy.deepcopy(fake), "games": [{**fake["games"][0], "players_a": [{"name": "RAFA", "goals": 2}]}]}, _copy.deepcopy(fake)])
+sumula.ask = lambda img, roster, *t: next(reads)  # 2nd read sees 1 goal where the 1st saw 2: a digit to check on the photo
+server.ocr_photo(b"two reads", "2026-10-09", "Fulano"); server.review_tick(now=6000)
+w = server.load_review()[-1]["payload"]["warnings"]
+assert any("Leituras diferentes" in x and "gols: 2 ou 1" in x for x in w), w
+mis = {"kind": "sumula", "status": "pending", "payload": {"date": "2026-10-08", "games": [{"score_a": 3, "score_b": 1}],
+       "warnings": ["Placar escrito de A (3) ≠ soma dos gols (2)"]}}
+assert server.held(mis) and not server.held({**mis, "payload": {**mis["payload"], "warnings": []}}), "score ≠ tally: staff only"
+sq = lambda n, c=False, **k: {"name": n, "goals": 0, "assists": 0, "own_goals": 0, "captain": c, **k}
+d = sumula.checks({"date": "2026-10-20", "games": [{"team_a": "", "team_b": "Verde",
+    "players_a": [sq("Bruno M", True, written="BRUNO"), sq("Bruno M", written="BRUNO M."), sq("Dan", assists=1)],
+    "players_b": [sq("Dan", True), sq("Dam", True), *[sq("Sombra")] * 3]}]}, ["Bruno M", "Dan", "Leo Saul"], "2026-10-09")
+w = " | ".join(d["warnings"])
+for want in ("time sem nome", "com 3 jogadores", "Verde com 2 capitães", "1 assistências para 0 gols",
+             "BRUNO e BRUNO M. viraram o mesmo jogador: Bruno M", "nos dois times: Dan", "Dam (seria Dan?)", "longe do dia da foto"):
+    assert want in w, (want, w)
+st = server.load_state(); st["match"] = {**server.new_match("2026-11-05"), "confirmed": ["Rafo"]}; server.save_state(st)
+assert server.match_day("2026-11-06") == "2026-11-05" and server.match_day("2026-11-05") == "2026-11-05"  # posted after midnight
+assert server.match_day("2026-11-12") == "2026-11-12"
 server.save_state(st_before)
 # Public photos: only what public.json lists; the cache follows the file.
 assert server.public_media() == set()

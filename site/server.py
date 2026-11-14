@@ -2136,6 +2136,8 @@ def sumula_games(payload, n0):
     """OCR'd match sheet {date, games: [{team_a, score_a, players_a: [{name, goals, assists, own_goals}], ...}]} -> site games."""
     if not re.fullmatch(r"\d{4}-\d\d-\d\d", str(payload.get("date"))):
         raise ValueError("súmula sem data")
+    if not payload.get("games"):
+        raise ValueError("súmula sem jogos: edite com o jogo da foto ou rejeite")
     out = []
     for i, g in enumerate(payload["games"]):
         sa, sb = int(g["score_a"]), int(g["score_b"])
@@ -2169,13 +2171,22 @@ def held(item):
     it never ships on its own, someone has to approve, edit or reject it. Same for a new photo of someone (kind foto) and a report
     that a game is wrong (kind jogo: it carries a copy of the game to edit when the game is the site's own, else approving
     only marks it checked and the fix goes into the sheet). And a súmula whose day already has a game or another súmula (dup)."""
-    return item["kind"] in ("foto", "jogo") or item.get("dup") or item["kind"] == "sumula" and not any(g.get("score_a") or g.get("score_b") for g in item["payload"].get("games", []))
+    return item["kind"] in ("foto", "jogo") or item.get("dup") or item["kind"] == "sumula" and bool(held_why(item["payload"]))
+
+
+def held_why(p):
+    """Why a súmula waits for staff: no goal at all (a lineup photo, an unread one), or a written score that is not the
+    goal tally (a misread digit: never auto-released). "" when the 6 h clock applies."""
+    if not any(g.get("score_a") or g.get("score_b") for g in p.get("games", [])):
+        return "Sem nenhum gol"
+    if any("≠ soma" in str(x) for x in [p.get("notes"), *p.get("warnings", [])]):
+        return "Placar não bate com os gols"
+    return ""
 
 
 def new_note(item):
     if held(item):
-        why = [w for w, on in (("Sem nenhum gol", item["kind"] == "sumula" and not any(g.get("score_a") or g.get("score_b") for g in item["payload"].get("games", []))),
-                               ("Já tem jogo ou súmula desse dia", item.get("dup"))) if on]
+        why = [w for w in (held_why(item["payload"]) if item["kind"] == "sumula" else "", "Já tem jogo ou súmula desse dia" if item.get("dup") else "") if w]
         return f"🆕 #{item['id']} {item['title']}. {' e '.join(why) + ': f' if why else 'F'}ica parada até alguém aprovar, editar ou rejeitar: https://biofut.h-brain.org/admin"
     at = time.strftime('%H:%M', time.localtime(item["created"] + COOLDOWN))
     return (f"🆕 #{item['id']} {item['title']}. Sai sozinho às {at} se ninguém aprovar, editar ou rejeitar: "
@@ -2374,10 +2385,27 @@ def name_teams(payload, st):
     return payload
 
 
-def ocr_photo(image, date, sender):
-    """Bot -> here, in a thread: read the photo, queue it if it is a súmula. Every outcome goes to the log."""
+def match_day(date):
+    """The game a photo of `date` belongs to: that day, or the day before when only the day before had a match (a
+    súmula posted after midnight). The reader uses it when the sheet has no readable date."""
+    with LOCK:
+        st = load_state()
     try:
-        payload = sumula.read(image, sumula.roster_of(DATA["games"]), date, OCR_BUDGET, listed=listed_on(date))
+        before = time.strftime("%Y-%m-%d", time.gmtime(calendar.timegm(time.strptime(date, "%Y-%m-%d")) - 86400))
+    except ValueError:
+        return date
+    return before if snap(st, before).get("confirmed") and not snap(st, date).get("confirmed") else date
+
+
+def ocr_photo(image, date, sender):
+    """Bot -> here, in a thread: read the photo, queue it if it is a súmula. Every outcome goes to the log. When every
+    read failed (timeout, garbled reply), the photo still joins the queue as "não lida", held, for staff to type in."""
+    try:
+        payload = sumula.read(image, sumula.roster_of(DATA["games"]), match_day(date), OCR_BUDGET, listed=listed_on(date))
+    except sumula.ReadError as e:
+        print("ocr failed:", e, flush=True)
+        payload = {"date": match_day(date), "games": [], "warnings": [f"Não consegui ler a foto: {e}. Edite com o jogo ou rejeite."]}
+        sender += ", não lida"
     except Exception as e:
         print("ocr failed:", e, flush=True)
         if "repetida" not in str(e):
