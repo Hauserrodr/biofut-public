@@ -1462,6 +1462,7 @@ server.CANON_PAGES = server.WIKI / "canon.json"
 server.CANON_PAGES.write_text(json.dumps({"p": {"md": "lore"}, "o-bk": {"slug": "o-bk", "title": "O BK", "md": "x"}}))
 mem = json.loads(server.wiki_bytes(server.WIKI / "member.json", True)[0])
 assert [x["md"] for x in mem["pages"]] == ["lore", "x"] and mem["pages"][1]["photos"] == [], mem
+(server.WIKI / "public.json").write_text(json.dumps({"pages": [{"slug": "p", "title": "P", "md": "old"}]}))
 assert "o-bk" not in server.wiki_bytes(server.WIKI / "public.json", False)[0].decode(), "canon pages are members only"
 for k, v in real_sheet.items():
     setattr(S, k, v)
