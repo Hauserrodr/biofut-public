@@ -3,7 +3,9 @@ post in the group) and og/story-<days>.jpg (1080x1920 Instagram story).
 
     python og_copa.py      # deploy.ps1 runs it; needs Pillow on this PC, not on the server
 
-Near-black, Bahnschrift condensed, white + BioFut pink, the 4-colour stripe at the bottom, the four team captains in their shirt colours (copa_art.jpg).
+The event's own look, same as the #/copa page (.sc26 in index.html): white ground, Matte's ribbons and logo
+(copa_rib_*.webp, copa_logo.webp; the story frame copa_story_ribbons.webp is cut 1:1 from his vertical poster),
+Holtwood One SC for the small spaced labels, Saira Semi Condensed for the countdown, dates and team names (fonts/, OFL).
 Up to 05/11 the sign-up deadline, after it the four teams in their shirt colours.
 ponytail: pre-rendered per day because the server has no Pillow; a day after the last image /copa falls back to og.png.
 """
@@ -12,34 +14,48 @@ import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 COPA = datetime(2026, 11, 21, 8, 30, tzinfo=timezone(timedelta(hours=-3)))  # same as COPA_DAY in index.html and server.py
 CLOSE_N = 16  # days left on 05/11, the form's last day (server.py COPA_CLOSE)
 HERE = Path(__file__).parent
 OUT = HERE / "og"
+FONTS = HERE / "fonts"
 S = 2  # drawn at 2x, then scaled down: smooth edges
-BG, PANEL, LINE = (12, 13, 12), (20, 22, 20), (44, 47, 44)
-INK, MUT, PINK, YEL = (242, 242, 238), (163, 166, 159), (255, 74, 110), (242, 194, 48)
-STRIPE = [(255, 74, 110), (240, 96, 96), (242, 194, 48), (72, 0, 120)]  # og.png's
-TEAMS = [("Pavões", (176, 120, 255)), ("Bagres", (80, 200, 120)), ("Babuínos", INK), ("Axolotes", (255, 130, 190))]  # shirt colours (preta -> white on black)
+BG, INK, DIM, LINE = (255, 255, 255), (10, 10, 10), (118, 113, 113), (214, 210, 210)  # .sc26 --bg --ink --dim --line2
+INDIGO = (32, 32, 112)
+TEAMS = [("Pavões", (34, 38, 118)), ("Bagres", (0, 155, 60)), ("Babuínos", (5, 44, 65)), ("Axolotes", (221, 2, 140))]  # .sc-team gradients' mid stop
+WHEN, HOURS = "SÁBADO, 21.11.2026", "8:30 ÀS 14:30"
 
 
 @functools.cache
-def font(size, style="Bold Condensed"):
-    f = ImageFont.truetype("C:/Windows/Fonts/bahnschrift.ttf", size * S)
-    f.set_variation_by_name(style)
-    return f
+def font(size, kind="sai800"):
+    """sai600 / sai700 / sai800 = Saira Semi Condensed, eng = Holtwood One SC; Bahnschrift if fonts/ lacks the file."""
+    name = {"sai600": "SairaSemiCondensed-SemiBold", "sai700": "SairaSemiCondensed-Bold",
+            "sai800": "SairaSemiCondensed-ExtraBold", "eng": "HoltwoodOneSC-Regular"}[kind]
+    try:
+        return ImageFont.truetype(str(FONTS / f"{name}.ttf"), size * S)
+    except OSError:
+        f = ImageFont.truetype("C:/Windows/Fonts/bahnschrift.ttf", size * S)
+        f.set_variation_by_name("Bold Condensed" if kind != "sai600" else "SemiBold Condensed")
+        return f
 
 
 def days_left(now=None):
     return max(0, math.ceil(((COPA - (now or datetime.now(timezone.utc))).total_seconds()) / 86400))
 
 
-def spaced(d, xy, text, f, fill, track, anchor="l"):
-    """Letter-spaced caps (track in px); anchor l / m / r on x, baseline on y."""
-    w = sum(d.textlength(c, font=f) for c in text) + track * S * (len(text) - 1)
+def width(d, text, f, track=0):
+    return sum(d.textlength(c, font=f) for c in text) + track * S * (len(text) - 1) if track else d.textlength(text, font=f)
+
+
+def spaced(d, xy, text, f, fill, track=0, anchor="l"):
+    """Text on a baseline (track = letter spacing in px); anchor l / m / r on x."""
+    w = width(d, text, f, track)
     x = xy[0] * S - {"l": 0, "m": w / 2, "r": w}[anchor]
+    if not track:
+        d.text((x, xy[1] * S), text, font=f, fill=fill, anchor="ls")
+        return
     for c in text:
         d.text((x, xy[1] * S), c, font=f, fill=fill, anchor="ls")
         x += d.textlength(c, font=f) + track * S
@@ -55,86 +71,84 @@ def row(d, xy, parts, anchor="l"):
 
 
 def teams(d, xy, size, anchor="l"):
-    dot = font(size, "SemiBold Condensed")
+    f, dot = font(size, "sai800"), font(size, "sai600")
     parts = []
     for i, (t, c) in enumerate(TEAMS):
-        parts += [(t, font(size), c)] + ([("  ·  ", dot, MUT)] if i < 3 else [])
+        parts += [(t.upper(), f, c)] + ([("  ·  ", dot, LINE)] if i < 3 else [])
     row(d, xy, parts, anchor)
 
 
-def canvas(w, h, glow_box):
-    img = Image.new("RGB", (w * S, h * S), BG)
-    glow = Image.new("L", img.size)
-    ImageDraw.Draw(glow).ellipse([v * S for v in glow_box], fill=255)
-    img = Image.composite(Image.new("RGB", img.size, (70, 14, 32)), img, glow.filter(ImageFilter.GaussianBlur(110 * S)))
-    d = ImageDraw.Draw(img)
-    for i, c in enumerate(STRIPE):
-        d.rectangle([i * w // 4 * S, (h - 14) * S, (i + 1) * w // 4 * S, h * S], fill=c)
-    return img, d
+def paste(img, name, x, y, h=None, w=None, flip=False):
+    """One of Matte's cuts at height h (or width w), top-left at (x, y); only ever scaled down."""
+    a = Image.open(HERE / name).convert("RGBA")
+    k = (h / a.height) if h else (w / a.width)
+    assert k <= 1.001, f"{name} would be upscaled"
+    a = a.resize((round(a.width * k * S), round(a.height * k * S)), Image.LANCZOS)
+    if flip:
+        a = a.transpose(Image.FLIP_LEFT_RIGHT)
+    img.paste(a, (round(x * S), round(y * S)), a)
+    return a.width / S, a.height / S
 
 
-def art(img, d, x, y, size):
-    a = Image.open(HERE / "copa_art.jpg").convert("RGB").resize((size * S, size * S), Image.LANCZOS)
-    mask = Image.new("L", a.size)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, a.width - 1, a.height - 1], 26 * S, fill=255)
-    img.paste(a, (x * S, y * S), mask)
-    d.rounded_rectangle([x * S, y * S, (x + size) * S, (y + size) * S], 26 * S, outline=LINE, width=2 * S)
-
-
-def logo(img, d, x, y, h, anchor="l"):
-    lg = Image.open(HERE / "logo.png").convert("RGBA")
-    lg = lg.resize((round(lg.width * h * S / lg.height), h * S), Image.LANCZOS)
-    f = font(round(h * 0.6))
-    w = lg.width + 12 * S + d.textlength("BIOFUT", font=f)
-    x0 = x * S - (w / 2 if anchor == "m" else 0)
-    img.paste(lg, (round(x0), y * S), lg)
-    tx, ty = x0 + lg.width + 12 * S, y * S + h * S * 0.76
-    d.text((tx, ty), "BIO", font=f, fill=INK, anchor="ls")
-    d.text((tx + d.textlength("BIO", font=f), ty), "FUT", font=f, fill=PINK, anchor="ls")
+def countdown(d, x, base, n, big, unit, label, anchor="l"):
+    """FALTAM (engraved) over the day number and DIAS; HOJE on the day. Returns the block's width."""
+    if n:
+        num, word = str(n), "DIA" if n == 1 else "DIAS"
+        fb, fu = font(round(big * (0.86 if n > 9 else 1))), font(unit)  # two digits a bit smaller: the row keeps its width
+        gap = big * 0.06 * S
+        w = d.textlength(num, font=fb) + gap + d.textlength(word, font=fu)
+        x0 = x * S - (w / 2 if anchor == "m" else 0)
+        d.text((x0, base * S), num, font=fb, fill=INK, anchor="ls")
+        ux = x0 + d.textlength(num, font=fb) + gap
+        d.text((ux, base * S), word, font=fu, fill=INK, anchor="ls")
+        spaced(d, (ux / S + 2, base - unit * 0.98), "FALTA" if n == 1 else "FALTAM", font(label, "eng"), DIM, label * 0.22)
+    else:
+        f = font(round(big * 0.62))
+        w = d.textlength("HOJE", font=f)
+        x0 = x * S - (w / 2 if anchor == "m" else 0)
+        spaced(d, (x if anchor == "m" else x0 / S + 4, base - big * 0.62 * 0.74 - label * 0.9), "A COPA É", font(label, "eng"), DIM,
+               label * 0.22, anchor)
+        d.text((x0, base * S), "HOJE", font=f, fill=INK, anchor="ls")
+    return w / S
 
 
 def render(n):
-    """1200x630: the art on the left, the countdown on the right."""
-    img, d = canvas(1200, 630, [640, -40, 1190, 660])
-    art(img, d, 36, 36, 544)
-    x = 628
-    logo(img, d, x, 44, 52)
-    spaced(d, (x, 146), "5ª COPA BIOFUT", font(26, "SemiBold Condensed"), YEL, 5)
-    row(d, (x - 3, 236), [("SUPERCOPA ", font(84), INK), ("2026", font(84), PINK)])
-    if n:
-        big = font(200)
-        d.text((x * S - 6 * S, 452 * S), str(n), font=big, fill=PINK, anchor="ls")
-        nx = (x * S + d.textlength(str(n), font=big)) / S + 14
-        spaced(d, (nx, 360), "FALTA" if n == 1 else "FALTAM", font(30, "SemiBold Condensed"), MUT, 8)
-        d.text((nx * S, 446 * S), "DIA" if n == 1 else "DIAS", font=font(84), fill=INK, anchor="ls")
-    else:
-        spaced(d, (x, 320), "A COPA É", font(30, "SemiBold Condensed"), MUT, 8)
-        d.text((x * S - 6 * S, 452 * S), "HOJE", font=font(150), fill=PINK, anchor="ls")
-    d.text((x * S, 508 * S), "Sábado, 21/11 · 8:30 às 14:30", font=font(32, "SemiBold Condensed"), fill=INK, anchor="ls")
+    """1200x630: Matte's logo on the left, the countdown on the right, his ribbons in the corners."""
+    img = Image.new("RGB", (1200 * S, 630 * S), BG)
+    d = ImageDraw.Draw(img)
+    paste(img, "copa_rib_teal.webp", 0, 0, h=200)
+    paste(img, "copa_rib_indigo.webp", 0, 630 - 96, h=96)
+    paste(img, "copa_rib_magenta.webp", 1200 - 132, -40, h=300)
+    paste(img, "copa_rib_green.webp", 1200 - 175, 630 - 146, h=146)
+    paste(img, "copa_logo.webp", 150, 104, h=440)
+    x = 588
+    d.line([(x - 40) * S, 150 * S, (x - 40) * S, 500 * S], fill=LINE, width=2 * S)
+    countdown(d, x, 392, n, 300, 120, 24)
+    spaced(d, (x + 2, 452), WHEN, font(40, "sai800"), INK, 0.5)
+    spaced(d, (x + 2, 492), HOURS, font(30, "sai700"), DIM, 1.2)
     if n >= CLOSE_N:
-        d.text((x * S, 556 * S), f"Inscrição até 05/11{' · último dia!' if n == CLOSE_N else ''}", font=font(32), fill=YEL, anchor="ls")
+        spaced(d, (x + 2, 552), f"INSCRIÇÃO ATÉ 05/11{' · ÚLTIMO DIA!' if n == CLOSE_N else ''}", font(30, "sai800"), INDIGO, 0.6)
     else:
-        teams(d, (x, 556), 27)
+        teams(d, (x + 2, 552), 27)
     return img.resize((1200, 630), Image.LANCZOS)
 
 
 def story(n):
-    """1080x1920: title, art, countdown; the text kept out of the top and bottom 250 px Instagram covers."""
-    img, d = canvas(1080, 1920, [-200, 1100, 1280, 2100])
-    logo(img, d, 540, 236, 64, "m")
-    spaced(d, (540, 380), "5ª COPA BIOFUT", font(38, "SemiBold Condensed"), YEL, 8, "m")
-    row(d, (540, 520), [("SUPERCOPA ", font(132), INK), ("2026", font(132), PINK)], "m")
-    art(img, d, 150, 580, 780)
-    if n:
-        row(d, (540, 1590), [("FALTA  " if n == 1 else "FALTAM  ", font(56, "SemiBold Condensed"), MUT), (str(n), font(230), PINK),
-                             (" DIA" if n == 1 else " DIAS", font(96), INK)], "m")
-    else:
-        row(d, (540, 1590), [("A COPA É ", font(70, "SemiBold Condensed"), MUT), ("HOJE", font(200), PINK)], "m")
-    d.text((540 * S, 1662 * S), "Sábado, 21/11 · 8:30 às 14:30", font=font(48, "SemiBold Condensed"), fill=INK, anchor="ms")
+    """1080x1920 after Matte's vertical poster: countdown on top, the logo, then the teams; text kept out of the top and
+    bottom 250 px Instagram covers."""
+    img = Image.new("RGB", (1080 * S, 1920 * S), BG)
+    img.paste(Image.open(HERE / "copa_story_ribbons.webp").convert("RGB").resize(img.size, Image.LANCZOS))
+    d = ImageDraw.Draw(img)
+    countdown(d, 540, 640, n, 400, 150, 34, "m")
+    spaced(d, (540, 742), WHEN, font(64, "sai800"), INK, 1, "m")
+    spaced(d, (540, 800), HOURS, font(44, "sai700"), DIM, 2, "m")
+    paste(img, "copa_logo.webp", 540 - 210, 880, h=500)
     if n >= CLOSE_N:
-        d.text((540 * S, 1730 * S), f"Inscrição até 05/11{' · último dia' if n == CLOSE_N else ''} · link na bio", font=font(46), fill=YEL, anchor="ms")
+        spaced(d, (540, 1560), "INSCRIÇÃO ATÉ 05/11", font(66, "sai800"), INK, 1, "m")
+        spaced(d, (540, 1622), "ÚLTIMO DIA · LINK NA BIO" if n == CLOSE_N else "LINK NA BIO", font(44, "sai700"), DIM, 2, "m")
     else:
-        teams(d, (540, 1730), 44, "m")
+        for i, (t, c) in enumerate(TEAMS):
+            spaced(d, (510 + 60 * (i % 2), 1540 + 96 * (i // 2)), t.upper(), font(70, "sai800"), c, 1, "rl"[i % 2])
     return img.resize((1080, 1920), Image.LANCZOS)
 
 
