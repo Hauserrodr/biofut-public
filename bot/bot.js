@@ -347,9 +347,13 @@ async function toSite(path, body, cfg) {
   } catch (e) { console.warn(path, 'failed:', e.message); }
 }
 
-// AI chat (2026-11-17): the site answers from the wiki (DeepSeek, daily cap there); the bot quotes the question
+// AI chat (2026-11-17): the site answers (DeepSeek, daily cap and memory there); the bot quotes the question.
+// A reply to one of the bot's messages sends that message too: the topic the member continues.
 async function askBot(sock, m, q, phone, cfg) {
-  const r = await toSite('/api/chat', { text: q, sender: m.pushName || '', phone }, cfg);
+  const qm = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  const said = qm?.conversation || qm?.extendedTextMessage?.text || '';
+  const quoted = said.startsWith(PREFIX) ? said.slice(PREFIX.length).trim() : '';
+  const r = await toSite('/api/chat', { text: q, sender: m.pushName || '', phone, quoted }, cfg);
   if (r?.text) sock.sendMessage(m.key.remoteJid, { text: tag(r.text) }, { quoted: m });
 }
 

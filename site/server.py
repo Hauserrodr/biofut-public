@@ -3072,7 +3072,8 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 wiki = json.loads(wiki_bytes(WIKI / "member.json", True)[0])
                 return self.send_json({"text": chat.answer(text, who, wiki, os.environ["DEEPSEEK_API_KEY"],
-                                                           float(os.environ.get("BIOFUT_CHAT_DAILY_USD", chat.CAP)))})
+                                                           float(os.environ.get("BIOFUT_CHAT_DAILY_USD", chat.CAP)),
+                                                           quoted=str(body.get("quoted") or "")[:1500])})
             except Exception as e:  # the group sees silence, staff sees why
                 notify(f"⚠️ chat falhou ({who}: {text[:80]}): {e}")
                 return self.send_json({"error": "falhou"}, 500)
