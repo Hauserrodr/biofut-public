@@ -48,6 +48,10 @@ assert.ok(join({ player: 'Bia', count: 3, captains: ['Victor', 'Canova'], pendin
 assert.strictEqual(join({ player: 'Canova', captains: [] }, cfg).length, 1);
 assert.throws(() => join({ player: '  ' }, cfg));
 // list captains ('Ana (C)') found in the group directory get the DM; an empty captain list never reaches the whole group
+{ const { isAdmin } = require('./bot.js'), adm = { admins: ['5551000000000', '123456789'] };  // !canon: the admin may not be the bot's number
+  assert.ok(isAdmin({ key: { fromMe: true } }, {}) && isAdmin({ key: { participant: '123456789@lid' } }, adm));
+  assert.ok(isAdmin({ key: { participant: '9@lid', participantAlt: '5551000000000@s.whatsapp.net' } }, adm));
+  assert.ok(!isAdmin({ key: { participant: '5551999999999@s.whatsapp.net' } }, adm) && !isAdmin({ key: { participant: '123456789@lid' } }, {})); }
 { const { withCaptains, pick } = require('./bot.js'), dirx = [{ name: 'Ana', phone: '5551988887777' }, { name: 'Rui', phone: '5551966665555' }];
   assert.deepStrictEqual(join({ player: 'Zé', captains: ['ana'] }, withCaptains({ captains: ['ana'] }, cfg, dirx)).map((m) => m.to), ['5551988887777@s.whatsapp.net']);
   assert.strictEqual(join({ player: 'Zé', captains: [] }, withCaptains({ captains: [] }, cfg, dirx)).length, cfg.captains.length);
