@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { canonOf, reply, join, toJid, tag, findAvisos, loginAsk, isList } = require('./bot');
+const { canonOf, chatOf, PREFIX, reply, join, toJid, tag, findAvisos, loginAsk, isList } = require('./bot');
 
 // !canon: the answered message's text (or caption), the note after the command, the author
 const quoted = (q) => ({ message: { extendedTextMessage: { text: '!canon é o juiz', contextInfo: { participant: '5551900000009@s.whatsapp.net', quotedMessage: q } } } });
@@ -12,6 +12,17 @@ assert.deepStrictEqual(canonOf(quoted({ conversation: 'Eu conheci o BK!' }), '!c
 assert.strictEqual(canonOf(quoted({ imageMessage: { caption: 'o BK' } }), '!CANON').quote, 'o BK');
 assert.strictEqual(canonOf({ message: { conversation: '!canon' } }, '!canon'), null);
 assert.strictEqual(reply('!canon', { siteUrl: 'x' }, null), null, 'never a plain reply: !canon is handled in the transport');
+
+// AI chat: a mention of the bot, an answer to its message, an unknown "!" command; known commands and plain talk stay out
+const me = ['5551911111111:7@s.whatsapp.net', '99887766:7@lid'];
+const ctxm = (text, contextInfo) => ({ message: { extendedTextMessage: { text, contextInfo } } });
+assert.strictEqual(chatOf(ctxm('@99887766 quem é o BK?', { mentionedJid: ['99887766@lid'] }), '@99887766 quem é o BK?', me, false), 'quem é o BK?');
+assert.strictEqual(chatOf(ctxm('e daí?', { quotedMessage: { conversation: PREFIX + ' oi' } }), 'e daí?', me, false), 'e daí?');
+assert.strictEqual(chatOf(ctxm('e daí?', { quotedMessage: { conversation: 'oi' } }), 'e daí?', me, false), null);
+assert.strictEqual(chatOf({ message: { conversation: '!súmula' } }, '!súmula', me, false), 'súmula');
+assert.strictEqual(chatOf({ message: { conversation: '!tabela' } }, '!tabela', me, true), null);
+assert.strictEqual(chatOf({ message: { conversation: 'bora jogar' } }, 'bora jogar', me, false), null);
+assert.strictEqual(chatOf({ message: { conversation: '!!!' } }, '!!!', me, false), null);
 
 const cfg = { siteUrl: 'https://biofut.example/', captains: [{ name: 'Victor', phone: '+55 51 90000-0001' }, { name: 'Canova', phone: '5551900000002' }] };
 const url = 'https://biofut.example/#/jogo';

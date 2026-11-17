@@ -37,7 +37,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
 from pathlib import Path
 
-import canon, conferir, costs, glm, lista, sheet, sumula
+import canon, chat, conferir, costs, glm, lista, sheet, sumula
 try:
     import push  # Web Push needs the cryptography package; without it the site runs and push is off
 except ImportError:
@@ -3047,7 +3047,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.body = {}
         if not user and too_many_fails(self.ip()):
             return self.send_json({"error": "muitas tentativas, tente de novo em uma hora"}, 429)
-        if action in ("sumula_image", "lista", "avatar", "nomes", "canon") and not (
+        if action in ("sumula_image", "lista", "avatar", "nomes", "canon", "chat") and not (
                 BOT_TOKEN and hmac.compare_digest(self.headers.get("X-BioFut-Token", "").encode(), BOT_TOKEN.encode())):
             return self.send_json({"error": "token errado"}, 401)
         if action == "lista":  # the bot: a group text that looks like the sign-up list. The number only finds the name.
@@ -3062,6 +3062,20 @@ class Handler(SimpleHTTPRequestHandler):
                 out = sync_list(st, text, ts, poster, phone_pk(body.get("phone")), str(body.get("sender") or "").strip()[:30])
                 save_state(st)  # last_list too, when nothing changed
             return self.send_json(out or {"ok": False})
+        if action == "chat":  # the bot: a member mentioned it, answered it or sent an unknown "!" command -> {text}
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 5000)))
+                text = str(body["text"]).strip()
+            except (ValueError, KeyError, TypeError) as e:
+                return self.send_json({"error": f"corpo inválido: {e}"}, 400)
+            who = member_of(body.get("phone")) or str(body.get("sender") or "").strip()[:30]
+            try:
+                wiki = json.loads(wiki_bytes(WIKI / "member.json", True)[0])
+                return self.send_json({"text": chat.answer(text, who, wiki, os.environ["DEEPSEEK_API_KEY"],
+                                                           float(os.environ.get("BIOFUT_CHAT_DAILY_USD", chat.CAP)))})
+            except Exception as e:  # the group sees silence, staff sees why
+                notify(f"⚠️ chat falhou ({who}: {text[:80]}): {e}")
+                return self.send_json({"error": "falhou"}, 500)
         if action == "canon":  # the bot: the admin answered {quote, phone, sender, note} with !canon -> memory + a wiki page
             try:
                 body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 20000)))
