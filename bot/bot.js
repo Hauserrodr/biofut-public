@@ -65,6 +65,17 @@ const tag = (text) => `${PREFIX} ${String(text).replace(/^🤖\s*/u, '')}`;
 const isPic = (buf) => buf.length > 8 && (buf.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) || buf.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])));
 // the admin group Gab creates: "BioFut Avisos", "biofut avisos", "BIOFUT - avisos"... (groups: {jid: {id, subject}})
 const findAvisos = (groups) => Object.values(groups || {}).find((g) => /bio\s*fut.*avisos/i.test(g.subject || ''))?.id;
+// A question for the AI: the bot is mentioned, one of its messages is answered, or a "!" command it doesn't know.
+// me: the bot's own JIDs (phone and LID); known: reply() handles the text. -> the question without the mention, or null
+function chatOf(m, text, me, known) {
+  if (known) return null;
+  const ctx = m.message?.extendedTextMessage?.contextInfo || {};
+  const q = ctx.quotedMessage;
+  const quoted = q?.conversation || q?.extendedTextMessage?.text || q?.imageMessage?.caption || '';
+  const ids = me.filter(Boolean).map(bare);
+  const hit = (ctx.mentionedJid || []).some((j) => ids.includes(bare(j))) || quoted.startsWith(PREFIX) || /^!/.test(text);
+  return hit ? text.replace(/@\d+/g, '').replace(/^!+\s*/, '').trim() || null : null;
+}
 const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text, image) => transport.send(to, tag(text), image) });
 // "cancelado" / "jogo cancelado hoje" in the group on the game's day -> the site gives the bets back. A question is not a call.
 const isCancel = (text) => /\bcancelad[ao]\b/i.test(String(text || '')) && String(text).length < 120 && !/\?/.test(text);
@@ -231,9 +242,11 @@ async function liveTransport(cfg, onText) {
         if (!text || text.startsWith(PREFIX)) continue;
         if (chat !== cfg.groupJid) continue; // only the BioFut group, never Gab's private chats
         if (/^!canon\b/i.test(text)) { canonize(sock, m, text, cfg); continue; }  // anyone in the group
-        onText(chat, text);
         // the poster's phone JID (Baileys 7: participant may be a LID, its phone JID is then participantAlt)
         const who = m.key.fromMe ? sock.user?.id : [m.key.participant, m.key.participantAlt].find((j) => String(j).endsWith('@s.whatsapp.net'));
+        const q = chatOf(m, text, [sock.user?.id, sock.user?.lid], reply(text, cfg, null) !== null);
+        if (q) { askBot(sock, m, q, who ? bare(who).split('@')[0] : '', cfg); continue; }
+        onText(chat, text);
         if (isList(text)) forwardList(m, text, who, cfg);
         else if (isCancel(text)) toSite('/api/cancelado', { ts: Number(m.messageTimestamp), sender: m.pushName || '', phone: who ? bare(who).split('@')[0] : '' }, cfg);;
       }
@@ -326,9 +339,16 @@ async function toSite(path, body, cfg) {
   try {
     const r = await fetch(new URL(path, cfg.sumulaUrl || 'http://127.0.0.1:8013/'), {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-biofut-token': process.env.BIOFUT_BOT_TOKEN || '' },
-      body: JSON.stringify(body) });
-    if (!r.ok) console.warn(path, r.status, await r.text());
+      body: JSON.stringify(body), signal: AbortSignal.timeout(90e3) });
+    if (!r.ok) return console.warn(path, r.status, await r.text());
+    return await r.json().catch(() => null);  // /api/chat reads the answer; the others ignore it
   } catch (e) { console.warn(path, 'failed:', e.message); }
+}
+
+// AI chat (2026-11-17): the site answers from the wiki (DeepSeek, daily cap there); the bot quotes the question
+async function askBot(sock, m, q, phone, cfg) {
+  const r = await toSite('/api/chat', { text: q, sender: m.pushName || '', phone }, cfg);
+  if (r?.text) sock.sendMessage(m.key.remoteJid, { text: tag(r.text) }, { quoted: m });
 }
 
 // ---------------------------------------------------------------- server
@@ -414,4 +434,4 @@ if (require.main === module) {
   })().catch((e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { PREFIX, canonOf, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
+module.exports = { PREFIX, canonOf, chatOf, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
