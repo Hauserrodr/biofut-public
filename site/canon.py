@@ -1,4 +1,4 @@
-"""!canon: the admin answers a group message with "!canon" and it becomes BioWiki lore.
+"""!canon: a member answers a group message with "!canon" and it becomes BioWiki lore.
 
 The bot sends the quoted message here (server.py /api/canon). Every fact goes to data/wiki/canon.jsonl (the memory, append
 only). DeepSeek then rewrites the one page the fact belongs to, or starts a new one, in the wiki's own voice, and the result

@@ -69,11 +69,8 @@ const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (
 // "cancelado" / "jogo cancelado hoje" in the group on the game's day -> the site gives the bets back. A question is not a call.
 const isCancel = (text) => /\bcancelad[ao]\b/i.test(String(text || '')) && String(text).length < 120 && !/\?/.test(text);
 
-// !canon (2026-11-13): The admin answers a group message with "!canon [nota]" -> {quote, note, jid} of the answered message, or null.
+// !canon (2026-11-13; open to every member 2026-11-17): a member answers a group message with "!canon [nota]" -> {quote, note, jid} of the answered message, or null.
 // The site keeps the fact and writes its BioWiki page (site/canon.py), then posts the link in the group.
-// the admin: the bot's own number, or a phone/LID in cfg.admins (the bot can run on a number that is not the admin's)
-const isAdmin = (m, cfg) => m.key.fromMe || [m.key.participant, m.key.participantAlt]
-  .some((j) => j && (cfg.admins || []).map(String).includes(String(j).split('@')[0].split(':')[0]));
 function canonOf(m, text) {
   const ctx = m.message?.extendedTextMessage?.contextInfo, q = ctx?.quotedMessage;
   const quote = q?.conversation || q?.extendedTextMessage?.text || q?.imageMessage?.caption || q?.videoMessage?.caption;
@@ -233,7 +230,7 @@ async function liveTransport(cfg, onText) {
         // fromMe is allowed (the bot's own !commands count). Its tagged replies are skipped (no loop).
         if (!text || text.startsWith(PREFIX)) continue;
         if (chat !== cfg.groupJid) continue; // only the BioFut group, never Gab's private chats
-        if (/^!canon\b/i.test(text)) { if (isAdmin(m, cfg)) canonize(sock, m, text, cfg); continue; }  // the admin only
+        if (/^!canon\b/i.test(text)) { canonize(sock, m, text, cfg); continue; }  // anyone in the group
         onText(chat, text);
         // the poster's phone JID (Baileys 7: participant may be a LID, its phone JID is then participantAlt)
         const who = m.key.fromMe ? sock.user?.id : [m.key.participant, m.key.participantAlt].find((j) => String(j).endsWith('@s.whatsapp.net'));
@@ -417,4 +414,4 @@ if (require.main === module) {
   })().catch((e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { PREFIX, canonOf, isAdmin, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
+module.exports = { PREFIX, canonOf, reply, join, pick, toJid, tag, findAvisos, loginAsk, isList, syncAvatars, withCaptains };
