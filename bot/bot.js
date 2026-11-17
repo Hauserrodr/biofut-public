@@ -65,16 +65,18 @@ const tag = (text) => `${PREFIX} ${String(text).replace(/^🤖\s*/u, '')}`;
 const isPic = (buf) => buf.length > 8 && (buf.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) || buf.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])));
 // the admin group Gab creates: "BioFut Avisos", "biofut avisos", "BIOFUT - avisos"... (groups: {jid: {id, subject}})
 const findAvisos = (groups) => Object.values(groups || {}).find((g) => /bio\s*fut.*avisos/i.test(g.subject || ''))?.id;
-// A question for the AI: the bot is mentioned, one of its messages is answered, or a "!" command it doesn't know.
-// me: the bot's own JIDs (phone and LID); known: reply() handles the text. -> the question without the mention, or null
+// A question for the AI: the bot is mentioned, one of its messages is answered, "@bot" / "@ai" / "!bot" / "!ai" is typed
+// anywhere, or a "!" command it doesn't know. me: the bot's own JIDs (phone and LID); known: reply() handles the text.
+// -> the question without the mention or the call word, or null
+const CALL = /(^|\s)[@!](bot|ai)\b[,:]?/gi;
 function chatOf(m, text, me, known) {
   if (known) return null;
   const ctx = m.message?.extendedTextMessage?.contextInfo || {};
   const q = ctx.quotedMessage;
   const quoted = q?.conversation || q?.extendedTextMessage?.text || q?.imageMessage?.caption || '';
   const ids = me.filter(Boolean).map(bare);
-  const hit = (ctx.mentionedJid || []).some((j) => ids.includes(bare(j))) || quoted.startsWith(PREFIX) || /^!/.test(text);
-  return hit ? text.replace(/@\d+/g, '').replace(/^!+\s*/, '').trim() || null : null;
+  const hit = (ctx.mentionedJid || []).some((j) => ids.includes(bare(j))) || quoted.startsWith(PREFIX) || /^!/.test(text) || new RegExp(CALL.source, 'i').test(text);
+  return hit ? text.replace(CALL, ' ').replace(/@\d+/g, '').replace(/^\s*!+\s*/, '').replace(/ {2,}/g, ' ').trim() || null : null;
 }
 const tagged = (transport, cfg) => ({ ...transport, raw: transport.send, send: (to, text, image) => transport.send(to, tag(text), image) });
 // "cancelado" / "jogo cancelado hoje" in the group on the game's day -> the site gives the bets back. A question is not a call.

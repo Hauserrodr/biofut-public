@@ -23,6 +23,15 @@ assert.strictEqual(chatOf({ message: { conversation: '!súmula' } }, '!súmula',
 assert.strictEqual(chatOf({ message: { conversation: '!tabela' } }, '!tabela', me, true), null);
 assert.strictEqual(chatOf({ message: { conversation: 'bora jogar' } }, 'bora jogar', me, false), null);
 assert.strictEqual(chatOf({ message: { conversation: '!!!' } }, '!!!', me, false), null);
+// typed call words, anywhere in the text; the word itself never reaches the AI
+const say = (t) => chatOf({ message: { conversation: t } }, t, me, false);
+assert.strictEqual(say('@bot quem é o BK?'), 'quem é o BK?');
+assert.strictEqual(say('e aí @AI, quem ganhou a copa?'), 'e aí quem ganhou a copa?');
+assert.strictEqual(say('!bot quem é o BK?'), 'quem é o BK?');
+assert.strictEqual(say('!ai: me conta uma lenda'), 'me conta uma lenda');
+assert.strictEqual(say('@bot'), null);
+assert.strictEqual(say('o robot ganhou'), null);
+assert.strictEqual(say('email@bot.com'), null);
 
 const cfg = { siteUrl: 'https://biofut.example/', captains: [{ name: 'Victor', phone: '+55 51 90000-0001' }, { name: 'Canova', phone: '5551900000002' }] };
 const url = 'https://biofut.example/#/jogo';
