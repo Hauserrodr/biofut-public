@@ -2808,6 +2808,29 @@ def pin_ok(pin):
     return not PIN or hmac.compare_digest(str(pin or "").encode(), PIN.encode())
 
 
+STREAM_PIN = os.environ.get("BIOFUT_STREAM_PIN", "")  # /transmitir: whoever has it can publish a camera (empty: nobody)
+CAM = re.compile(r"cam-[a-z0-9-]{1,24}")  # mediamtx paths; cam-principal also goes to YouTube (stream/yt.sh)
+LANCES = HERE / "data" / "lances.jsonl"  # ⚽ marks: {ts, who, src, cam, text}, the clips get cut around them after the Cup
+MTX_API = "http://127.0.0.1:9997/v3/paths/list"
+
+
+def stream_ok(a, pin=None):
+    """mediamtx asks before every publish and read (authMethod: http). Watching is public; publishing needs the stream PIN."""
+    pin = STREAM_PIN if pin is None else pin
+    if a.get("action") == "read":
+        return True
+    return (a.get("action") == "publish" and bool(pin) and bool(CAM.fullmatch(str(a.get("path") or "")))
+            and hmac.compare_digest(str(a.get("password") or a.get("token") or "").encode(), pin.encode()))
+
+
+def live_cams(url=MTX_API):
+    try:
+        items = json.load(urllib.request.urlopen(url, timeout=3)).get("items") or []
+    except (OSError, ValueError, AttributeError):
+        return []  # the relay is off: no cameras
+    return sorted(i["name"] for i in items if i.get("ready") and CAM.fullmatch(str(i.get("name"))))
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(HERE), **kw)
@@ -2829,7 +2852,7 @@ class Handler(SimpleHTTPRequestHandler):
         """Every POST and how it went -> the activity log. Login polls, the beacon and the bot's photos log themselves or not at all."""
         action = self.path.removeprefix("/api/")
         obj = obj if isinstance(obj, dict) else {}
-        if action in ("ev", "sumula_image") or action == "login/status" and code == 200 and not obj.get("approved"):
+        if action in ("ev", "sumula_image", "stream_auth") or action == "login/status" and code == 200 and not obj.get("approved"):
             return
         body = {} if action.startswith("login/") or action == "whoami" else self.body  # never the phone number
         log_event(action[:30], self.user() or (obj.get("user") if action == "login/status" else None), self.ip(), self.mobile(),
@@ -2858,6 +2881,37 @@ class Handler(SimpleHTTPRequestHandler):
 
     def admin(self):
         return self.role() == "admin"
+
+    def stream_post(self, action, user):
+        try:
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 5000)) or b"{}")
+            body = body if isinstance(body, dict) else {}
+        except ValueError:
+            body = {}
+        if action == "stream_auth":  # mediamtx on this box calls 127.0.0.1:8013 directly; nginx adds X-Forwarded-For
+            if self.client_address[0] != "127.0.0.1" or self.headers.get("X-Forwarded-For") or self.headers.get("CF-Connecting-IP"):
+                return self.send_json({"error": "só local"}, 403)
+            key = "stream:" + str(body.get("ip") or "?")
+            if body.get("action") == "publish" and too_many_fails(key):
+                return self.send_json({"error": "muitas tentativas"}, 401)
+            if stream_ok(body):
+                return self.send_json({})
+            if body.get("action") == "publish" and (body.get("password") or body.get("token")):  # mediamtx asks once without them first
+                too_many_fails(key, failed=True)
+            return self.send_json({"error": "PIN de transmissão errado"}, 401)
+        bot = BOT_TOKEN and hmac.compare_digest(self.headers.get("X-BioFut-Token", "").encode(), BOT_TOKEN.encode())
+        cam = STREAM_PIN and hmac.compare_digest(self.headers.get("X-Stream-Pin", "").encode(), STREAM_PIN.encode())
+        if not (bot or cam or user):
+            too_many_fails(self.ip(), failed=True)
+            return self.send_json({"error": "PIN de transmissão errado"}, 403)
+        row = {"ts": round(time.time(), 1), "who": user or (member_of(body.get("phone")) if bot else None) or str(body.get("sender") or "?")[:30],
+               "src": "bot" if bot else "cam" if cam else "site", "cam": str(body.get("cam") or "")[:30], "text": str(body.get("text") or "")[:120]}
+        with LOCK:  # never the phone number
+            LANCES.parent.mkdir(parents=True, exist_ok=True)
+            with LANCES.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "
+")
+        return self.send_json({"ok": True})
 
     def ip(self):  # nginx and Cloudflare are in front; the server itself listens on 127.0.0.1
         return self.headers.get("CF-Connecting-IP") or self.client_address[0]
@@ -2948,7 +3002,9 @@ class Handler(SimpleHTTPRequestHandler):
             if not f.exists() or not (user or m[1] in public_media()):
                 return self.send_error(404)
             return self.send_private(f.read_bytes(), "image/jpeg", "private, max-age=604800")
-        if path in ("/admin", "/transparencia", "/entrar"):
+        if path == "/api/cams":  # /aovivo polls it: the cameras on the air now
+            return self.send_json(live_cams())
+        if path in ("/admin", "/transparencia", "/entrar", "/transmitir", "/aovivo"):
             self.path = path + ".html"
             return super().do_GET()
         if path == "/api/admin/events":
@@ -3045,6 +3101,8 @@ class Handler(SimpleHTTPRequestHandler):
         action = self.path.removeprefix("/api/")
         user = self.user()
         self.body = {}
+        if action in ("stream_auth", "lance"):  # before the group PIN: cameras use the stream PIN
+            return self.stream_post(action, user)
         if not user and too_many_fails(self.ip()):
             return self.send_json({"error": "muitas tentativas, tente de novo em uma hora"}, 429)
         if action in ("sumula_image", "lista", "avatar", "nomes", "canon", "chat") and not (
