@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ao vivo · Copa BioFut</title>
+<meta name="description" content="As câmeras da Copa BioFut ao vivo.">
+<meta property="og:title" content="Copa BioFut ao vivo">
+<meta property="og:description" content="As câmeras da Copa BioFut ao vivo.">
+<meta property="og:image" content="https://biofut.h-brain.org/og.png">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css?v=20261023b">
+<style>
+main.live { max-width: 1200px; margin: 0 auto; padding: 16px; }
+main.live h1 { font: 800 clamp(32px, 8vw, 52px)/1 var(--cond); text-transform: uppercase; margin: 6px 0 14px; }
+#grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+figure { margin: 0; position: relative; }
+video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; display: block; }
+figcaption { position: absolute; left: 10px; top: 8px; font: 700 14px var(--cond); letter-spacing: .1em; text-transform: uppercase;
+             color: #fff; background: #0009; padding: 3px 8px; border-radius: 999px; pointer-events: none; }
+figcaption::before { content: "● "; color: #e33; }
+.meta { color: var(--mut); font-size: 14px; }
+</style>
+</head>
+<body>
+<main class="live">
+  <div class="kicker">Copa BioFut</div>
+  <h1>Ao vivo</h1>
+  <p class="meta" id="none">Nenhuma câmera no ar agora. A página atualiza sozinha.</p>
+  <div id="grid"></div>
+  <p class="meta">Toque no vídeo para ligar o som.</p>
+</main>
+<script>
+const players = new Map();  // cam -> {fig, pc}
+
+async function watch(cam) {
+  const fig = document.createElement('figure');
+  const v = Object.assign(document.createElement('video'), { autoplay: true, muted: true, playsInline: true });
+  v.onclick = () => { v.muted = !v.muted; v.play(); };
+  const cap = document.createElement('figcaption');
+  cap.textContent = cam.replace(/^cam-/, '');
+  fig.append(v, cap);
+  document.getElementById('grid').append(fig);
+  const p = { fig, pc: null };
+  players.set(cam, p);
+  const pc = p.pc = new RTCPeerConnection();
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.addTransceiver('audio', { direction: 'recvonly' });
+  pc.ontrack = (e) => { if (v.srcObject !== e.streams[0]) v.srcObject = e.streams[0]; };
+  pc.onconnectionstatechange = () => pc.connectionState === 'failed' && drop(cam);
+  try {
+    await pc.setLocalDescription(await pc.createOffer());
+    await new Promise((ok) => {
+      if (pc.iceGatheringState === 'complete') return ok();
+      pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && ok();
+      setTimeout(ok, 3000);
+    });
+    const r = await fetch(`/mtx/${cam}/whep`, { method: 'POST', body: pc.localDescription.sdp, headers: { 'Content-Type': 'application/sdp' } });
+    if (!r.ok) throw new Error(r.status);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await r.text() });
+  } catch { drop(cam); }  // the next poll tries again
+}
+
+function drop(cam) {
+  const p = players.get(cam);
+  if (!p) return;
+  p.pc?.close(); p.fig.remove(); players.delete(cam);
+}
+
+async function poll() {
+  try {
+    const cams = await (await fetch('/api/cams')).json();
+    for (const c of players.keys()) if (!cams.includes(c)) drop(c);
+    for (const c of cams) if (!players.has(c)) watch(c);
+    document.getElementById('none').hidden = cams.length > 0;
+  } catch {}
+}
+poll();
+setInterval(poll, 10000);
+</script>
+</body>
+</html>

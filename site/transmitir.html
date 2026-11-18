@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transmitir · BioFut</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css?v=20261023b">
+<style>
+main.cam { max-width: 520px; margin: 0 auto; padding: 16px; }
+main.cam h1 { font: 800 clamp(32px, 9vw, 48px)/1 var(--cond); text-transform: uppercase; margin: 6px 0 14px; }
+label { display: block; font: 600 13px var(--cond); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 12px 0 6px; }
+input { width: 100%; height: 48px; font-size: 20px; box-sizing: border-box; }
+.meta { color: var(--mut); font-size: 14px; }
+.err { color: var(--loss); font-size: 15px; min-height: 1.3em; margin-top: 8px; }
+video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; display: block; }
+.state { font: 700 15px var(--cond); letter-spacing: .1em; text-transform: uppercase; margin: 10px 0; }
+.state.on { color: var(--win, #3c3); }
+.state.on::before { content: "● "; }
+.btn { width: 100%; height: 52px; margin-top: 14px; }
+#lance { height: 96px; font: 800 34px var(--cond); text-transform: uppercase; letter-spacing: .06em; }
+#lance:active { transform: scale(.98); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main class="cam">
+  <div class="kicker">Copa BioFut · câmera</div>
+  <h1>Transmitir</h1>
+  <form id="setup">
+    <label for="pin">PIN de transmissão</label>
+    <input id="pin" inputmode="numeric" autocomplete="off" required>
+    <label for="name">Nome da câmera</label>
+    <input id="name" placeholder="gol-norte" pattern="[a-zA-Z0-9 -]{1,24}" maxlength="24" required>
+    <p class="meta">Use <b>principal</b> para a câmera que vai pro YouTube. Celular na horizontal, no tripé, carregador ligado.</p>
+    <button class="btn">Começar</button>
+    <div class="err" id="err"></div>
+  </form>
+  <section id="live" hidden>
+    <video id="v" autoplay muted playsinline></video>
+    <div class="state" id="state">conectando…</div>
+    <button class="btn" id="lance">⚽ Lance</button>
+    <p class="meta">Aperte logo depois de um gol ou de uma jogada boa: vira um corte do vídeo.</p>
+    <div class="err" id="err2"></div>
+    <button class="btn" id="stop">Parar</button>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const store = { get: (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+$('pin').value = store.get('cam_pin'); $('name').value = store.get('cam_name');
+let media, pc, slug, pin, wake, running = false, retry;
+
+const show = (s, on) => { $('state').textContent = s; $('state').classList.toggle('on', !!on); };
+
+async function keepAwake() {
+  try { if (running && 'wakeLock' in navigator && document.visibilityState === 'visible') wake = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', keepAwake);
+
+async function publish() {
+  clearTimeout(retry);
+  if (pc) pc.close();
+  pc = new RTCPeerConnection();
+  for (const t of media.getTracks())
+    pc.addTransceiver(t, { direction: 'sendonly', streams: [media],
+                           sendEncodings: t.kind === 'video' ? [{ maxBitrate: 1200000 }] : undefined });
+  // H264 first: YouTube takes it without re-encoding (the server only copies the video)
+  const caps = RTCRtpSender.getCapabilities?.('video')?.codecs || [];
+  const h264 = caps.filter((c) => /h264/i.test(c.mimeType))
+                   .sort((a, b) => /packetization-mode=1/.test(b.sdpFmtpLine) - /packetization-mode=1/.test(a.sdpFmtpLine));
+  const vt = pc.getTransceivers().find((t) => t.sender.track?.kind === 'video');
+  if (h264.length && vt?.setCodecPreferences) vt.setCodecPreferences([...h264, ...caps.filter((c) => !/h264/i.test(c.mimeType))]);
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (s === 'connected') show('ao vivo', true);
+    if (s === 'failed' || s === 'disconnected') again('sinal caiu, reconectando…');
+  };
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise((ok) => {  // no trickle: send every candidate in the offer
+    if (pc.iceGatheringState === 'complete') return ok();
+    pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && ok();
+    setTimeout(ok, 3000);
+  });
+  const r = await fetch(`/mtx/cam-${slug}/whip`, { method: 'POST', body: pc.localDescription.sdp,
+    headers: { 'Content-Type': 'application/sdp', Authorization: 'Basic ' + btoa('cam:' + pin) } });
+  if (r.status === 401) throw new Error('PIN de transmissão errado');
+  if (!r.ok) throw new Error(`servidor respondeu ${r.status}`);
+  await pc.setRemoteDescription({ type: 'answer', sdp: await r.text() });
+}
+
+function again(msg) {
+  if (!running) return;
+  show(msg);
+  clearTimeout(retry);
+  retry = setTimeout(() => publish().catch((e) => again(e.message + ', tentando de novo…')), 3000);
+}
+
+$('setup').onsubmit = async (e) => {
+  e.preventDefault();
+  $('err').textContent = '';
+  pin = $('pin').value.trim();
+  slug = $('name').value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
+  if (!slug) return ($('err').textContent = 'nome inválido');
+  store.set('cam_pin', pin); store.set('cam_name', $('name').value.trim());
+  try {
+    media = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: false, noiseSuppression: false } });
+  } catch (err) { return ($('err').textContent = 'sem acesso à câmera: ' + err.message); }
+  $('v').srcObject = media;
+  running = true;
+  $('setup').hidden = true; $('live').hidden = false;
+  keepAwake();
+  show('conectando…');
+  try { await publish(); }
+  catch (err) {
+    if (/PIN/.test(err.message)) { stop(); return ($('err').textContent = err.message); }
+    again(err.message + ', tentando de novo…');
+  }
+};
+
+function stop() {
+  running = false; clearTimeout(retry);
+  if (pc) pc.close();
+  media?.getTracks().forEach((t) => t.stop());
+  try { wake?.release(); } catch {}
+  $('setup').hidden = false; $('live').hidden = true;
+}
+$('stop').onclick = stop;
+
+$('lance').onclick = async () => {
+  navigator.vibrate?.(80);
+  $('err2').textContent = '';
+  try {
+    const r = await fetch('/api/lance', { method: 'POST', body: JSON.stringify({ cam: slug }),
+      headers: { 'Content-Type': 'application/json', 'X-Stream-Pin': pin } });
+    $('lance').textContent = r.ok ? '✓ marcado' : '⚽ Lance';
+    if (!r.ok) $('err2').textContent = 'não marcou: ' + r.status;
+  } catch (err) { $('err2').textContent = 'não marcou: ' + err.message; }
+  setTimeout(() => ($('lance').textContent = '⚽ Lance'), 1500);
+};
+</script>
+</body>
+</html>
