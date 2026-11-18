@@ -2909,8 +2909,7 @@ class Handler(SimpleHTTPRequestHandler):
         with LOCK:  # never the phone number
             LANCES.parent.mkdir(parents=True, exist_ok=True)
             with LANCES.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "
-")
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
         return self.send_json({"ok": True})
 
     def ip(self):  # nginx and Cloudflare are in front; the server itself listens on 127.0.0.1
