@@ -246,6 +246,11 @@ async function liveTransport(cfg, onText) {
         if (/^!canon\b/i.test(text)) { canonize(sock, m, text, cfg); continue; }  // anyone in the group
         // the poster's phone JID (Baileys 7: participant may be a LID, its phone JID is then participantAlt)
         const who = m.key.fromMe ? sock.user?.id : [m.key.participant, m.key.participantAlt].find((j) => String(j).endsWith('@s.whatsapp.net'));
+        if (/^!(gol|lance)\b/i.test(text)) {  // Cup day: a mark for the video clips; the bot answers only with a ⚽ reaction
+          toSite('/api/lance', { text, sender: m.pushName || '', phone: who ? bare(who).split('@')[0] : '' }, cfg);
+          sock.sendMessage(chat, { react: { text: '⚽', key: m.key } }).catch(() => {});
+          continue;
+        }
         const q = chatOf(m, text, [sock.user?.id, sock.user?.lid], reply(text, cfg, null) !== null);
         if (q) { askBot(sock, m, q, who ? bare(who).split('@')[0] : '', cfg); continue; }
         onText(chat, text);

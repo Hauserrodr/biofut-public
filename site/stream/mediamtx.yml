@@ -1,0 +1,42 @@
+# BioFut camera relay (mediamtx v1.21). Phones publish over WebRTC (WHIP, /transmitir), viewers read over WebRTC
+# (WHEP, /aovivo), every camera is recorded, cam-principal also goes to YouTube. Installed by setup.sh.
+logLevel: info
+
+# The site decides: reading is public, publishing needs BIOFUT_STREAM_PIN (server.py stream_ok).
+authMethod: http
+authHTTPAddress: http://127.0.0.1:8013/api/stream_auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+api: yes
+apiAddress: 127.0.0.1:9997
+
+rtsp: yes  # local only: yt.sh reads cam-principal from here
+rtspTransports: [tcp]
+rtspAddress: 127.0.0.1:8554
+rtmp: no
+hls: no
+srt: no
+
+# nginx sends /mtx/ to 8889; the media itself goes straight to 8189 (UDP, TCP fallback).
+webrtc: yes
+webrtcAddress: 127.0.0.1:8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: [150.136.226.109]
+webrtcTrustedProxies: [127.0.0.1]
+
+pathDefaults:
+  record: yes
+  recordPath: /srv/biofut-stream/rec/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordSegmentDuration: 10m
+  recordDeleteAfter: 0s  # never: pull.ps1 moves the finished segments to the PC
+
+paths:
+  cam-principal:
+    runOnReady: /usr/local/bin/biofut-yt.sh
+    runOnReadyRestart: yes
+  "~^cam-[a-z0-9-]{1,24}$":
