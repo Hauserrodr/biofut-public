@@ -11,7 +11,7 @@ if ! /usr/local/bin/mediamtx --version 2>/dev/null | grep -q "$V"; then
   tmp=$(mktemp -d)
   curl -fsSL -o "$tmp/$T" "https://github.com/bluenviron/mediamtx/releases/download/$V/$T"
   curl -fsSL -o "$tmp/sums" "https://github.com/bluenviron/mediamtx/releases/download/$V/checksums.sha256"
-  (cd "$tmp" && grep " $T\$" sums | sha256sum -c -)
+  (cd "$tmp" && grep -E " \*?$T\$" sums | sha256sum -c -)
   tar -xzf "$tmp/$T" -C "$tmp" mediamtx
   sudo install -m 755 "$tmp/mediamtx" /usr/local/bin/mediamtx
   rm -rf "$tmp"

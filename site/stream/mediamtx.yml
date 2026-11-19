@@ -19,6 +19,7 @@ rtspAddress: 127.0.0.1:8554
 rtmp: no
 hls: no
 srt: no
+moq: no
 
 # nginx sends /mtx/ to 8889; the media itself goes straight to 8189 (UDP, TCP fallback).
 webrtc: yes
