@@ -37,7 +37,6 @@ pathDefaults:
   recordDeleteAfter: 0s  # never: pull.ps1 moves the finished segments to the PC
 
 paths:
-  cam-principal:
+  "~^cam-[a-z0-9-]{1,24}$":  # yt.sh sends a camera to YouTube when /etc/biofut-stream.env has its key
     runOnReady: /usr/local/bin/biofut-yt.sh
     runOnReadyRestart: yes
-  "~^cam-[a-z0-9-]{1,24}$":

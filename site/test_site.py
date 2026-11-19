@@ -1280,6 +1280,14 @@ assert call("/api/lance", {"text": "!gol", "sender": "Fulano", "phone": "5551998
 assert raw("/api/lance", {"cam": "principal"}, **{"X-Stream-Pin": "1234"}) == 200 and raw("/api/lance", {}, **{"X-Stream-Pin": "0"}) == 403
 rows = [json.loads(l) for l in server.LANCES.read_text(encoding="utf-8").splitlines()]
 assert [r["src"] for r in rows] == ["bot", "cam"] and rows[1]["cam"] == "principal" and "5551998765432" not in server.LANCES.read_text(encoding="utf-8")
+assert [r["kind"] for r in rows] == ["gol", "lance"] and rows[1]["t"] is None
+now = time.time()  # a mark from a phone that is not streaming, queued offline 10 min ago: its tap time stays
+assert raw("/api/lance", {"kind": "escanteio", "t": now - 600, "off": -250, "sender": "beira"}, **{"X-Stream-Pin": "1234"}) == 200
+r = json.loads(server.LANCES.read_text(encoding="utf-8").splitlines()[-1])
+assert (r["kind"], r["t"], r["off"], r["cam"], r["who"]) == ("escanteio", round(now - 600, 2), -250, "", "beira")
+w = server.lance_row({"kind": "x", "t": now + 60, "off": "a"}, "?", "cam", now)
+assert (w["kind"], w["t"], w["off"]) == ("lance", None, None), "unknown kind, a tap in the future and a bad offset are dropped"
+assert json.load(urllib.request.urlopen(url + "/api/stream"))["t"] > now - 5
 server.STREAM_PIN, server.LANCES = "", lances0
 server.FAILS.clear()
 httpd.shutdown()

@@ -18,6 +18,7 @@ main.live { max-width: 1200px; margin: 0 auto; padding: 16px; }
 main.live h1 { font: 800 clamp(32px, 8vw, 52px)/1 var(--cond); text-transform: uppercase; margin: 6px 0 14px; }
 #grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
 figure { margin: 0; position: relative; }
+#yt { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; display: block; margin-bottom: 12px; background: #000; }
 video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; display: block; }
 figcaption { position: absolute; left: 10px; top: 8px; font: 700 14px var(--cond); letter-spacing: .1em; text-transform: uppercase;
              color: #fff; background: #0009; padding: 3px 8px; border-radius: 999px; pointer-events: none; }
@@ -30,6 +31,7 @@ figcaption::before { content: "● "; color: #e33; }
   <div class="kicker">Copa BioFut</div>
   <h1>Ao vivo</h1>
   <p class="meta" id="none">Nenhuma câmera no ar agora. A página atualiza sozinha.</p>
+  <iframe id="yt" hidden allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Câmera principal no YouTube"></iframe>
   <div id="grid"></div>
   <p class="meta">Toque no vídeo para ligar o som.</p>
 </main>
@@ -70,15 +72,30 @@ function drop(cam) {
   p.pc?.close(); p.fig.remove(); players.delete(cam);
 }
 
+// The main camera plays from YouTube (it carries the viewers, not this server); the other cameras play from here.
+let yt = '', ytSince = 0;
+fetch('/api/stream').then((r) => r.json()).then((s) => { yt = s.yt || ''; poll(); }).catch(() => {});
+
+function youtube(on) {
+  const f = document.getElementById('yt');
+  if (!on) { ytSince = 0; f.hidden = true; f.removeAttribute('src'); return; }
+  ytSince ||= Date.now();
+  if (f.hidden && Date.now() - ytSince > 20000) {  // YouTube needs a few seconds after the push starts to go live
+    f.src = `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(yt)}&autoplay=1&mute=1`;
+    f.hidden = false;
+  }
+}
+
 async function poll() {
   try {
-    const cams = await (await fetch('/api/cams')).json();
+    let cams = await (await fetch('/api/cams')).json();
+    const main = cams.includes('cam-principal');
+    if (yt) { youtube(main); cams = cams.filter((c) => c !== 'cam-principal'); }
     for (const c of players.keys()) if (!cams.includes(c)) drop(c);
     for (const c of cams) if (!players.has(c)) watch(c);
-    document.getElementById('none').hidden = cams.length > 0;
+    document.getElementById('none').hidden = cams.length > 0 || (yt && main);
   } catch {}
 }
-poll();
 setInterval(poll, 10000);
 </script>
 </body>
