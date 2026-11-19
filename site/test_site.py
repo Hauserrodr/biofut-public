@@ -1259,6 +1259,29 @@ assert "error" in staff("/api/admin_give", {"name": "Eve", "card": "Ninguém Ass
 if server.push:
     assert "não ativou" in staff("/api/push_send", {"to": "Eve", "body": "oi"})["error"]
 server.ADMIN = ""
+# Cup streaming: mediamtx asks /api/stream_auth; watching is public, publishing needs the PIN and a cam-* path.
+ok = lambda **a: server.stream_ok(a, pin="1234")
+assert ok(action="read", path="anything") and ok(action="publish", path="cam-gol-norte", password="1234")
+assert not ok(action="publish", path="cam-gol-norte", password="12345") and not ok(action="publish", path="cam-x")
+assert not ok(action="publish", path="youtube", password="1234") and not ok(action="publish", path="cam-" + "x" * 30, password="1234")
+assert not server.stream_ok({"action": "publish", "path": "cam-a", "password": ""}, pin="")  # no PIN set: nobody streams
+assert server.live_cams("http://127.0.0.1:1/v3/paths/list") == []  # relay off: no cameras, no crash
+server.STREAM_PIN, server.LANCES, lances0 = "1234", tmp / "lances.jsonl", server.LANCES
+def raw(path, body, **hd):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url + path, json.dumps(body).encode(), {"Content-Type": "application/json", **hd})) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+pub = {"action": "publish", "path": "cam-principal", "password": "1234", "ip": "203.0.113.9"}
+assert raw("/api/stream_auth", pub) == 200 and raw("/api/stream_auth", dict(pub, password="9")) == 401
+assert raw("/api/stream_auth", pub, **{"X-Forwarded-For": "203.0.113.9"}) == 403, "through nginx: refused"
+assert call("/api/lance", {"text": "!gol", "sender": "Fulano", "phone": "5551998765432"})[0] == 200
+assert raw("/api/lance", {"cam": "principal"}, **{"X-Stream-Pin": "1234"}) == 200 and raw("/api/lance", {}, **{"X-Stream-Pin": "0"}) == 403
+rows = [json.loads(l) for l in server.LANCES.read_text(encoding="utf-8").splitlines()]
+assert [r["src"] for r in rows] == ["bot", "cam"] and rows[1]["cam"] == "principal" and "5551998765432" not in server.LANCES.read_text(encoding="utf-8")
+server.STREAM_PIN, server.LANCES = "", lances0
+server.FAILS.clear()
 httpd.shutdown()
 
 # Pix reminder: the day after a game, from 10:00, once per game (a flag in the state), never on the game's day, never muted,
