@@ -2812,6 +2812,19 @@ STREAM_PIN = os.environ.get("BIOFUT_STREAM_PIN", "")  # /transmitir: whoever has
 CAM = re.compile(r"cam-[a-z0-9-]{1,24}")  # mediamtx paths; cam-principal also goes to YouTube (stream/yt.sh)
 LANCES = HERE / "data" / "lances.jsonl"  # ⚽ marks: {ts, who, src, cam, text}, the clips get cut around them after the Cup
 MTX_API = "http://127.0.0.1:9997/v3/paths/list"
+YT_CHANNEL = os.environ.get("BIOFUT_YT_CHANNEL", "")  # UC... id: /aovivo embeds the channel's live (cam-principal) from YouTube
+KINDS = ("gol", "falta", "escanteio", "lateral", "lance")
+
+
+def lance_row(body, who, src, now):
+    """t = the tap on the phone's clock, corrected against this server (NTP): a mark queued offline keeps its real moment."""
+    t = body.get("t")
+    t = round(t, 2) if type(t) in (int, float) and now - 6 * 3600 < t < now + 5 else None
+    off = body.get("off")
+    kind = str(body.get("kind") or "")
+    kind = kind if kind in KINDS else "gol" if re.match(r"!gol\b", str(body.get("text") or ""), re.I) else "lance"
+    return {"ts": round(now, 1), "t": t, "kind": kind, "who": who, "src": src, "cam": str(body.get("cam") or "")[:30],
+            "text": str(body.get("text") or "")[:120], "off": int(off) if type(off) in (int, float) and abs(off) < 1e8 else None}
 
 
 def stream_ok(a, pin=None):
@@ -2904,8 +2917,8 @@ class Handler(SimpleHTTPRequestHandler):
         if not (bot or cam or user):
             too_many_fails(self.ip(), failed=True)
             return self.send_json({"error": "PIN de transmissão errado"}, 403)
-        row = {"ts": round(time.time(), 1), "who": user or (member_of(body.get("phone")) if bot else None) or str(body.get("sender") or "?")[:30],
-               "src": "bot" if bot else "cam" if cam else "site", "cam": str(body.get("cam") or "")[:30], "text": str(body.get("text") or "")[:120]}
+        row = lance_row(body, user or (member_of(body.get("phone")) if bot else None) or str(body.get("sender") or "?")[:30],
+                        "bot" if bot else "cam" if cam else "site", time.time())
         with LOCK:  # never the phone number
             LANCES.parent.mkdir(parents=True, exist_ok=True)
             with LANCES.open("a", encoding="utf-8") as f:
@@ -3003,6 +3016,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_private(f.read_bytes(), "image/jpeg", "private, max-age=604800")
         if path == "/api/cams":  # /aovivo polls it: the cameras on the air now
             return self.send_json(live_cams())
+        if path == "/api/stream":  # the phones sync their clock on it (t); /aovivo gets the YouTube channel
+            return self.send_json({"t": time.time(), "yt": YT_CHANNEL})
         if path in ("/admin", "/transparencia", "/entrar", "/transmitir", "/aovivo"):
             self.path = path + ".html"
             return super().do_GET()
