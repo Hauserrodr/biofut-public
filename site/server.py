@@ -2844,6 +2844,328 @@ def live_cams(url=MTX_API):
     return sorted(i["name"] for i in items if i.get("ready") and CAM.fullmatch(str(i.get("name"))))
 
 
+# ---------- SuperCopa ao vivo (#/copa): games, score and events, run by the staff from a phone at the field ----------
+COPA = HERE / "data" / "copa.json"
+COPA_TIMES = ("Pavões", "Bagres", "Babuínos", "Axolotes")  # index.html COPA_TEAMS
+FASES = ("grupo", "semi", "3o", "final")
+COPA_STATUS = ("agendado", "ao_vivo", "fim")
+COPA_EV = ("gol", "falta", "escanteio", "lateral", "cartao", "lance")
+COPA_PRIOR, COPA_PRIOR_W = 1.5, 2  # palpite: 1.5 goals per game per team before any game, worth 2 games of evidence
+COPA_LEAD = 10  # a YouTube link opens this many seconds before the mark: the tap comes after the play
+
+
+COPA_DURACAO = 25  # minutes per game: the staff had not settled 20 to 30, so each game keeps its own (op "jogo", duracao)
+COPA_PLANO = [("08:30", "grupo", "Bagres", "Pavões"), ("09:10", "grupo", "Axolotes", "Babuínos"), ("09:50", "grupo", "Axolotes", "Bagres"),
+              ("10:40", "grupo", "Pavões", "Babuínos"), ("11:20", "grupo", "Babuínos", "Bagres"), ("12:00", "grupo", "Axolotes", "Pavões"),
+              ("13:30", "3o", None, None), ("14:00", "final", None, None)]  # the staff's schedule for 21/11, Planet Ball court 6
+HORA = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+
+
+def copa_jogo(id, fase, a=None, b=None, hora=None):
+    return {"id": id, "fase": fase, "a": a, "b": b, "hora": hora, "duracao": COPA_DURACAO, "inicio": None, "fim": None, "gols_a": 0, "gols_b": 0,
+            "pen_a": None, "pen_b": None, "status": "agendado", "eventos": [], "yt_inicio": None, "yt_video": None}
+
+
+def copa_default(times=COPA_TIMES):
+    """Every team plays every other, then the 3rd place game and the final, their teams empty until the group ends
+    (copa_preenche). The 2026 teams get the staff's schedule; other teams the circle method (no two games in a row when it can be helped)."""
+    if tuple(times) == COPA_TIMES:
+        return {"times": list(times), "local": "Planet Ball, quadra 6",
+                "jogos": [copa_jogo(f"j{n}", f, a, b, h) for n, (h, f, a, b) in enumerate(COPA_PLANO, 1)], "atualizado": None}
+    ts = list(times) + ([None] if len(times) % 2 else [])
+    pares = []
+    for _ in range(len(ts) - 1):
+        pares += [(ts[i], ts[-1 - i]) for i in range(len(ts) // 2) if ts[i] and ts[-1 - i]]
+        ts = [ts[0], ts[-1], *ts[1:-1]]
+    jogos = [copa_jogo(f"j{n}", "grupo", a, b) for n, (a, b) in enumerate(pares, 1)]
+    n = len(jogos)
+    return {"times": list(times), "jogos": jogos + [copa_jogo(f"j{n + 1}", "3o"), copa_jogo(f"j{n + 2}", "final")], "atualizado": None}
+
+
+def copa_load():
+    try:
+        return json.loads(COPA.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return copa_default()
+
+
+def copa_tabela(c):
+    """Group standings from the finished group games: points, goal difference, goals for, then the games among the tied teams."""
+    t = {n: {"time": n, "P": 0, "J": 0, "V": 0, "E": 0, "D": 0, "GP": 0, "GC": 0, "SG": 0} for n in c["times"]}
+    grupo = [j for j in c["jogos"] if j["fase"] == "grupo" and j["status"] == "fim" and j["a"] in t and j["b"] in t]
+    for j in grupo:
+        for x, gx, gy in ((j["a"], j["gols_a"], j["gols_b"]), (j["b"], j["gols_b"], j["gols_a"])):
+            r, k = t[x], "V" if gx > gy else "E" if gx == gy else "D"
+            r["J"] += 1; r["GP"] += gx; r["GC"] += gy; r["SG"] = r["GP"] - r["GC"]; r[k] += 1; r["P"] += {"V": 3, "E": 1, "D": 0}[k]
+
+    def h2h(nome, empatados):
+        p = sg = 0
+        for j in grupo:
+            if {j["a"], j["b"]} <= empatados and nome in (j["a"], j["b"]):
+                gx, gy = (j["gols_a"], j["gols_b"]) if j["a"] == nome else (j["gols_b"], j["gols_a"])
+                p += 3 if gx > gy else int(gx == gy); sg += gx - gy
+        return p, sg
+
+    key = lambda r: (r["P"], r["SG"], r["GP"])
+    out = []
+    for k in sorted({key(r) for r in t.values()}, reverse=True):
+        grp = [r for r in t.values() if key(r) == k]
+        nomes = {r["time"] for r in grp}
+        out += sorted(grp, key=lambda r: (*(-v for v in h2h(r["time"], nomes)), r["time"]))
+    return out
+
+
+def copa_artilharia(c):
+    gols = {}
+    for j in c["jogos"]:
+        for e in j["eventos"]:
+            if e["tipo"] == "gol" and e.get("jogador"):
+                k = (e["jogador"], j.get(e["time"]) if e.get("time") in ("a", "b") else None)
+                gols[k] = gols.get(k, 0) + 1
+    return [{"jogador": n, "time": t, "gols": g} for (n, t), g in sorted(gols.items(), key=lambda x: (-x[1], x[0][0]))]
+
+
+def copa_vencedor(j):
+    """The winner of a finished game (penalties break a draw), or None."""
+    if j["status"] != "fim" or not j["a"] or not j["b"]:
+        return None
+    ga, gb = j["gols_a"], j["gols_b"]
+    if ga == gb and j["pen_a"] is not None and j["pen_b"] is not None:
+        ga, gb = j["pen_a"], j["pen_b"]
+    return j["a"] if ga > gb else j["b"] if gb > ga else None
+
+
+def copa_preenche(c):
+    """All group games over: the final gets 1st vs 2nd, the 3rd place game 3rd vs 4th, unless the staff set them by hand."""
+    grupo = [j for j in c["jogos"] if j["fase"] == "grupo"]
+    if not grupo or any(j["status"] != "fim" for j in grupo):
+        return
+    tab = [r["time"] for r in copa_tabela(c)]
+    for j in c["jogos"]:
+        if j["status"] == "agendado" and not j.get("manual"):
+            if j["fase"] == "final" and len(tab) >= 2:
+                j["a"], j["b"] = tab[0], tab[1]
+            elif j["fase"] == "3o" and len(tab) >= 4:
+                j["a"], j["b"] = tab[2], tab[3]
+
+
+def copa_forca(c):
+    """Each team's (attack, defence) in goals per game over the finished games, pulled to the prior."""
+    s = {n: [0, 0, 0] for n in c["times"]}
+    for j in c["jogos"]:
+        if j["status"] == "fim" and j["a"] in s and j["b"] in s:
+            for x, gx, gy in ((j["a"], j["gols_a"], j["gols_b"]), (j["b"], j["gols_b"], j["gols_a"])):
+                s[x][0] += gx; s[x][1] += gy; s[x][2] += 1
+    m, w = COPA_PRIOR, COPA_PRIOR_W
+    return {n: ((gp + m * w) / (jn + w), (gc + m * w) / (jn + w)) for n, (gp, gc, jn) in s.items()}
+
+
+def copa_palpite(forca, a, b, teto=13):
+    """Win / draw / loss for a, from two independent Poisson scores. Statistics, not a bet."""
+    (ata, defa), (atb, defb) = forca[a], forca[b]
+    la, lb = ata * defb / COPA_PRIOR, atb * defa / COPA_PRIOR
+    pa = [math.exp(-la) * la ** k / math.factorial(k) for k in range(teto)]
+    pb = [math.exp(-lb) * lb ** k / math.factorial(k) for k in range(teto)]
+    v = sum(pa[i] * pb[k] for i in range(teto) for k in range(i))
+    e = sum(pa[i] * pb[i] for i in range(teto))
+    d = sum(pa[i] * pb[k] for i in range(teto) for k in range(i + 1, teto))
+    tot = v + e + d
+    return {"v": round(v / tot, 4), "e": round(e / tot, 4), "d": round(d / tot, 4), "xa": round(la, 2), "xb": round(lb, 2)}
+
+
+def copa_link(j, t):
+    if not (j.get("yt_video") and j.get("yt_inicio")) or t < j["yt_inicio"]:
+        return None
+    return f"https://youtu.be/{j['yt_video']}?t={max(0, int(t - j['yt_inicio']) - COPA_LEAD)}"
+
+
+def copa_lances():
+    out = []
+    if LANCES.exists():
+        for line in LANCES.open(encoding="utf-8"):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict):
+                out.append(r)
+    return out
+
+
+def copa_view(c, lances=(), now=None):
+    """GET /api/copa: the file plus the standings, scorers, palpites, and the /transmitir marks inside each game's time."""
+    now = now or time.time()
+    c = json.loads(json.dumps(c))
+    forca = copa_forca(c)
+    for j in c["jogos"]:
+        ini = j["inicio"]
+        for e in j["eventos"]:
+            e["seg"] = int(e["ts"] - ini) if ini else None
+            e["link"] = copa_link(j, e["ts"])
+        j["lances"] = []
+        if ini:
+            fim = j["fim"] or now
+            for r in lances:
+                t = r.get("t") or r.get("ts")
+                if type(t) in (int, float) and ini <= t <= fim:
+                    j["lances"].append({"ts": t, "kind": r.get("kind") if r.get("kind") in KINDS else "lance", "who": str(r.get("who") or "")[:30],
+                                        "text": str(r.get("text") or "")[:120], "cam": str(r.get("cam") or "")[:30], "seg": int(t - ini), "link": copa_link(j, t)})
+            j["lances"].sort(key=lambda x: x["ts"])
+        j["vencedor"] = copa_vencedor(j)
+        j["palpite"] = copa_palpite(forca, j["a"], j["b"]) if j["status"] == "agendado" and j["a"] in forca and j["b"] in forca else None
+    return {**c, "tabela": copa_tabela(c), "artilharia": copa_artilharia(c), "agora": round(now, 1), "yt": YT_CHANNEL}
+
+
+def copa_int(v, campo, nulo=False):
+    if v is None and nulo:
+        return None
+    if type(v) is not int or not 0 <= v <= 99:
+        raise ValueError(f"{campo}: um número de 0 a 99")
+    return v
+
+
+def copa_txt(v, n, campo):
+    if v is None or v == "":
+        return None
+    if type(v) is not str or len(v.strip()) > n:
+        raise ValueError(f"{campo}: texto de até {n} letras")
+    return v.strip() or None
+
+
+def copa_epoch(v, campo):
+    if v is None:
+        return None
+    if type(v) not in (int, float) or not 1.7e9 < v < 2.2e9:
+        raise ValueError(f"{campo}: horário inválido")
+    return round(v, 1)
+
+
+def copa_act(c, body, now=None):
+    """POST /api/copa {op}: placar, status, evento, del_evento, jogo (edit or add), times. Raises ValueError on bad input."""
+    now = round(now or time.time(), 1)
+    op = body.get("op")
+    jogos = {j["id"]: j for j in c["jogos"]}
+
+    def jogo():
+        j = jogos.get(str(body.get("id") or ""))
+        if not j:
+            raise ValueError("jogo não encontrado")
+        return j
+
+    if op == "placar":
+        j = jogo()
+        j["gols_a"], j["gols_b"] = copa_int(body.get("gols_a"), "gols_a"), copa_int(body.get("gols_b"), "gols_b")
+        if "pen_a" in body or "pen_b" in body:
+            pa, pb = copa_int(body.get("pen_a"), "pen_a", True), copa_int(body.get("pen_b"), "pen_b", True)
+            if (pa is None) != (pb is None):
+                raise ValueError("pênaltis: os dois lados ou nenhum")
+            if pa is not None and j["fase"] == "grupo":
+                raise ValueError("pênaltis só no mata-mata")
+            j["pen_a"], j["pen_b"] = pa, pb
+    elif op == "status":
+        j, s = jogo(), body.get("status")
+        if s not in COPA_STATUS:
+            raise ValueError("status: agendado, ao_vivo ou fim")
+        if s != "agendado" and not (j["a"] and j["b"]):
+            raise ValueError("defina os dois times antes")
+        if s == "agendado":
+            j["inicio"] = j["fim"] = None
+        else:
+            j["inicio"] = j["inicio"] or now
+            j["fim"] = now if s == "fim" else None
+        j["status"] = s
+    elif op == "evento":
+        j, tipo, lado = jogo(), body.get("tipo"), body.get("time")
+        if tipo not in COPA_EV:
+            raise ValueError("tipo: " + ", ".join(COPA_EV))
+        if lado not in ("a", "b", None):
+            raise ValueError("time: a, b ou nenhum")
+        if tipo == "gol" and not lado:
+            raise ValueError("gol de qual time?")
+        if len(j["eventos"]) >= 300:
+            raise ValueError("eventos demais neste jogo")
+        ts = body.get("ts")
+        ts = round(ts, 1) if type(ts) in (int, float) and now - 12 * 3600 < ts <= now + 60 else now
+        j["eventos"].append({"ts": ts, "tipo": tipo, "time": lado, "jogador": copa_txt(body.get("jogador"), 40, "jogador"),
+                             "texto": copa_txt(body.get("texto"), 120, "texto")})
+        j["eventos"].sort(key=lambda e: e["ts"])
+        if tipo == "gol":
+            j["gols_" + lado] = min(99, j["gols_" + lado] + 1)
+    elif op == "del_evento":
+        j, i = jogo(), body.get("idx")
+        if type(i) is not int or not -len(j["eventos"]) <= i < len(j["eventos"]):
+            raise ValueError("evento não encontrado")
+        e = j["eventos"].pop(i)
+        if e["tipo"] == "gol" and e["time"]:
+            j["gols_" + e["time"]] = max(0, j["gols_" + e["time"]] - 1)
+    elif op == "jogo":
+        novo = not body.get("id")
+        if novo:
+            if len(c["jogos"]) >= 30:
+                raise ValueError("jogos demais")
+            n = max((int(x["id"][1:]) for x in c["jogos"] if re.fullmatch(r"j\d+", x["id"])), default=0) + 1
+            j = copa_jogo(f"j{n}", "grupo")
+        else:
+            j = jogo()
+        if body.get("remover"):
+            if novo or j["status"] != "agendado" or j["eventos"]:
+                raise ValueError("só dá para remover um jogo que não começou")
+            c["jogos"].remove(j)
+        else:
+            if "fase" in body:
+                if body["fase"] not in FASES:
+                    raise ValueError("fase: " + ", ".join(FASES))
+                j["fase"] = body["fase"]
+            for k in ("a", "b"):
+                if k in body:
+                    if body[k] is not None and body[k] not in c["times"]:
+                        raise ValueError(f"{k}: time desconhecido")
+                    j[k] = body[k]
+            if "a" in body or "b" in body:
+                j["manual"] = j["fase"] != "grupo" and bool(j["a"] or j["b"])  # set by hand: the group table no longer overwrites it
+            if j["a"] and j["a"] == j["b"]:
+                raise ValueError("um time não joga contra ele mesmo")
+            if "hora" in body:
+                if body["hora"] is not None and not HORA.fullmatch(str(body["hora"])):
+                    raise ValueError("hora: HH:MM")
+                j["hora"] = body["hora"]
+            if "duracao" in body:
+                if type(body["duracao"]) is not int or not 5 <= body["duracao"] <= 90:
+                    raise ValueError("duracao: de 5 a 90 minutos")
+                j["duracao"] = body["duracao"]
+            for k in ("inicio", "fim", "yt_inicio"):
+                if k in body:
+                    j[k] = copa_epoch(body[k], k)
+            if "yt_video" in body:
+                v = body["yt_video"]
+                if v:
+                    m = re.search(r"(?:youtu\.be/|[?&]v=|/live/|/shorts/|^)([\w-]{11})(?:$|[?&#/])", str(v)[:200])
+                    if not m:
+                        raise ValueError("yt_video: o id ou o link do vídeo no YouTube")
+                    v = m[1]
+                j["yt_video"] = v or None
+            if novo:
+                c["jogos"].append(j)
+    elif op == "times":
+        ts = body.get("times")
+        if type(ts) is not list or not 2 <= len(ts) <= 8 or any(type(t) is not str or not 1 <= len(t.strip()) <= 30 for t in ts):
+            raise ValueError("times: de 2 a 8 nomes de até 30 letras")
+        ts = [t.strip() for t in ts]
+        if len(set(ts)) != len(ts):
+            raise ValueError("times repetidos")
+        if all(j["status"] == "agendado" for j in c["jogos"]):
+            c.update(copa_default(ts))  # nothing played yet: a new schedule for the new teams
+        elif not {x for j in c["jogos"] for x in (j["a"], j["b"]) if x} <= set(ts):
+            raise ValueError("a Copa já começou: os times dos jogos continuam")
+        else:
+            c["times"] = ts
+    else:
+        raise ValueError("op: placar, status, evento, del_evento, jogo ou times")
+    copa_preenche(c)
+    c["atualizado"] = now
+    return c
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(HERE), **kw)
@@ -3016,6 +3338,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_private(f.read_bytes(), "image/jpeg", "private, max-age=604800")
         if path == "/api/cams":  # /aovivo polls it: the cameras on the air now
             return self.send_json(live_cams())
+        if path == "/api/copa":  # #/copa ao vivo: public, polled every 15 s while the page is open
+            with LOCK:
+                c = copa_load()
+            return self.send_json(copa_view(c, copa_lances()))
         if path == "/api/stream":  # the phones sync their clock on it (t); /aovivo gets the YouTube channel
             return self.send_json({"t": time.time(), "yt": YT_CHANNEL})
         if path in ("/admin", "/transparencia", "/entrar", "/transmitir", "/aovivo"):
@@ -3254,6 +3580,13 @@ class Handler(SimpleHTTPRequestHandler):
                 secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
                 cookie = f"biofut={sign(name, '*' if body.get('keep') else self.ip(), pk)}; Path=/; Max-Age={SESSION_DAYS * 86400}; HttpOnly; SameSite=Lax{secure}"
                 return self.send_json({"approved": True, "user": name}, extra=[("Set-Cookie", cookie)])
+            if action == "copa":  # the staff runs the Cup from a phone: {op, ...} (copa_act), the reply is the GET view
+                if self.role() not in ("admin", "conselho"):
+                    return self.send_json({"error": "só o admin e o Conselho mexem na Copa"}, 403)
+                with LOCK:
+                    c = copa_act(copa_load(), body)
+                    write_json(COPA, c, 1)
+                return self.send_json(copa_view(c, copa_lances()))
             if action == "review":
                 role = self.role()
                 if role not in ("admin", "conselho"):

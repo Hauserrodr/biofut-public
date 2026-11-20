@@ -78,9 +78,6 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 .sc-art{justify-self:center;width:clamp(200px,24vw,300px);height:auto;aspect-ratio:1;mix-blend-mode:multiply}
 .sc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:clamp(14px,1.6vw,20px)}
 .sc-team{--tg:linear-gradient(115deg,#1a1a54,#222676 55%,#2d3196);container-type:inline-size;border:1px solid var(--line);border-radius:6px;overflow:clip;background:#fff}
-.sc-team[data-t="Bagres"]{--tg:linear-gradient(115deg,#057a44,#009b3c 55%,#00b133)}
-.sc-team[data-t="Babuínos"]{--tg:linear-gradient(115deg,#000306,#052c41 55%,#1387bc)}
-.sc-team[data-t="Axolotes"]{--tg:linear-gradient(115deg,#c10529,#dd028c 55%,#f700e2)}
 .sc-team header{display:flex;align-items:center;gap:12px;padding:18px;background:var(--tg);color:#fff}
 .sc-team header span{font-size:1.75rem;line-height:1}
 .sc-team h3{font-weight:800;font-size:clamp(1.5rem,1.25rem + .8vw,2rem);letter-spacing:.03em;color:#fff}
@@ -123,6 +120,111 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 @media (prefers-reduced-motion:no-preference){@supports ((animation-timeline:view()) and (animation-range:entry)){
   .sc-team,.sc-feat,.sc-tl li{animation:sc-in linear both;animation-timeline:view();animation-range:entry 0% entry 50%}}}
 @keyframes sc-in{from{opacity:0;translate:0 24px}}
+/* #/copa live (cup day, or #/copa?live=1): game card, bracket, games, highlights, scorers, palpite; staff controls on the card */
+.sc26 .tch{--tg:linear-gradient(115deg,#1a1a54,#222676 55%,#2d3196);display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 10px 4px 6px;border-radius:999px;background:var(--tg);color:#fff;font:700 .875rem/1.2 var(--sai);letter-spacing:.03em;white-space:nowrap}
+.sc26 .tch.tbd{background:var(--line);color:var(--dim)}
+.sc26 [data-t="Bagres"]{--tg:linear-gradient(115deg,#057a44,#009b3c 55%,#00b133)}
+.sc26 [data-t="Babuínos"]{--tg:linear-gradient(115deg,#000306,#052c41 55%,#1387bc)}
+.sc26 [data-t="Axolotes"]{--tg:linear-gradient(115deg,#c10529,#dd028c 55%,#f700e2)}
+.sc26>.sc-lh{display:flex;align-items:center;gap:14px;padding-top:20px}
+.sc-lh img{width:56px;height:auto}
+.sc-lh p{margin:2px 0 0;font-size:.8125rem;color:var(--mut)}
+.sc-live .sc-ls{padding:clamp(36px,6vw,72px) var(--gut) 0}  /* inside #cpLive, so not a direct .sc26>section */
+.sc-ls>h2{margin:0 0 16px;font-weight:800;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem);line-height:1}
+.sc-ls>.sc-note{margin:-8px 0 14px}
+.sc-card{border:1px solid var(--line);border-radius:6px;background:#fff;overflow:clip}
+.sc-card>header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;background:var(--ink);color:#fff;font:700 .8125rem/1.2 var(--sai);letter-spacing:.1em;text-transform:uppercase}
+.sc-sb{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:18px 14px 8px;text-align:center}
+.sc-sb .tch{justify-self:center;font-size:1rem}
+.sc-sc{font:800 clamp(2.75rem,2rem + 4vw,4.5rem)/1 var(--sai);font-size-adjust:cap-height .69;white-space:nowrap}
+.sc-sc small{display:block;margin-top:4px;font-size:.8125rem;font-weight:700;color:var(--dim)}
+.sc-clk{padding:0 14px 14px;text-align:center;font:700 1rem/1.3 var(--sai);color:var(--mut)}
+.sc-clk b{font-size:1.5rem;color:var(--ink)}
+.dot{display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:#e01e37;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+.sc-feed{max-height:280px;margin:0;padding:0 14px 8px;list-style:none;overflow:auto;border-top:1px solid var(--line)}
+.sc-feed li{display:grid;grid-template-columns:3.2em 1.6em 1fr auto;align-items:center;gap:6px;min-height:44px;border-bottom:1px solid var(--line);font-size:.9375rem}
+.sc-feed li:last-child{border:0}
+.sc-feed .m{font:700 .875rem var(--sai);color:var(--dim)}
+.yt{display:inline-grid;place-items:center;min-width:44px;min-height:44px;color:#e01e37;font-weight:800;text-decoration:none}
+.sc-empty{padding:14px;color:var(--dim);font-size:.9375rem}
+.pill.st{padding:3px 9px;border-radius:999px;font:700 .6875rem/1.4 var(--sai);letter-spacing:.08em;text-transform:uppercase;background:var(--line);color:var(--mut)}
+.pill.st.ao_vivo{background:#e01e37;color:#fff}.pill.st.fim{background:var(--ink);color:#fff}
+/* staff */
+.sc-ctl{display:grid;gap:10px;padding:14px;border-top:3px solid var(--gold);background:#fff7e8}
+.sc-ctl button,.sc-ctl input,.sc-ctl select{min-height:44px;border:1px solid var(--line2);border-radius:6px;background:#fff;color:var(--ink);font:700 .9375rem/1 var(--sai)}
+.sc-ctl button{padding:0 10px;cursor:pointer}
+.sc-ctl button:active{background:var(--line)}
+.sc-ctl .go{background:var(--ink);color:#fff;border-color:var(--ink)}
+.sc-ctl .gol{background:var(--gold);border-color:var(--gold)}
+.sc-ctl input{width:4.5em;padding:0 8px;text-align:center}
+.sc-ctl select{padding:0 8px;width:100%}
+.sc-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sc-side{display:grid;gap:6px;align-content:start}
+.sc-side>.tch{justify-self:start}
+.sc-gl{display:grid;grid-template-columns:1fr 44px;gap:6px}
+.sc-evs{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sc-evs button{font-size:.8125rem}
+.sc-pen{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.sc-ctl details summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font:700 .875rem var(--sai)}
+#golDlg{width:min(420px,100% - 32px);padding:18px;border:0;border-radius:8px}
+#golDlg h3{margin:0 0 12px;font:800 1.5rem var(--sai)}
+#golDlg .g{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#golDlg button{min-height:48px;border:1px solid #d6d2d2;border-radius:6px;background:#fff;color:#0a0a0a;font:700 1rem var(--sai,system-ui);cursor:pointer}
+#golDlg .x{grid-column:1/-1;background:#0a0a0a;color:#fff}
+/* bracket: the group table feeds the final (1st x 2nd) and 3rd place (3rd x 4th); fixed row heights so the lines meet the rows */
+.br{display:grid;gap:0}
+.br-t{border:1px solid var(--line);border-radius:6px;background:#fff;overflow:clip}
+.br-t>div{display:grid;grid-template-columns:1.8em minmax(0,1fr) 2em 2.4em 2.4em;align-items:center;gap:6px;height:52px;padding:0 10px;border-top:1px solid var(--line);font:600 .9375rem var(--sai)}
+.br-t>.h{height:32px;border:0;background:var(--card2);font-size:.6875rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.br-t>div>span:nth-child(n+3){text-align:center}
+.br-t b{font-weight:800}
+.br-t .q{color:#b77400}
+.br-v{display:block;width:100%;height:36px}
+.br-k{display:grid;gap:22px}
+.br-b{position:relative;border:1px solid var(--line2);border-radius:6px;background:#fff}
+.br-b>i{position:absolute;left:8px;top:-9px;padding:0 6px;background:var(--bg);font:700 .6875rem/18px var(--sai);letter-spacing:.1em;text-transform:uppercase;font-style:normal;color:var(--dim)}
+.br-b>div{display:flex;align-items:center;justify-content:space-between;gap:8px;height:40px;padding:0 10px}
+.br-b>div+div{border-top:1px solid var(--line)}
+.br-b>div b{font:800 1.125rem var(--sai)}
+.br-b>div.w{background:#fff3da;box-shadow:inset 3px 0 0 var(--gold)}
+.br-b>div.w b{color:#b77400}
+.br-b.fin{border-color:var(--gold);border-width:2px}
+.br-h{display:none}
+@media (min-width:900px){
+  .br{grid-template-columns:minmax(0,1fr) 72px 280px}
+  .br-v{display:none}.br-h{display:block;width:72px;height:240px}
+  .br-k{position:relative;display:block;height:240px}
+  .br-k>.br-b{position:absolute;inset-inline:0}
+  .br-k>.fin{top:42px}.br-k>.ter{top:147px}
+}
+.br-h path,.br-v path{fill:none;stroke:var(--line2);stroke-width:2}
+.br-h path.on,.br-v path.on{stroke:var(--gold)}
+.sc-jl{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.sc-jl li{display:grid;grid-template-columns:3.2em minmax(0,1fr) auto;align-items:center;gap:8px;min-height:56px;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.sc-jl li.sel{border-color:var(--gold);box-shadow:inset 3px 0 0 var(--gold)}
+.sc-jl .hr{font:700 .875rem/1.2 var(--sai);color:var(--dim)}
+.sc-jl .vs{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font:800 1.0625rem var(--sai)}
+.sc-jl button{min-height:44px;padding:0 10px;border:1px solid var(--line2);border-radius:6px;background:#fff;font:700 .8125rem var(--sai);cursor:pointer}
+.sc-chips{display:flex;gap:8px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none}
+.sc-chips button{flex:none;min-height:44px;padding:0 16px;border:1.5px solid var(--ink);border-radius:999px;background:#fff;color:var(--ink);font:700 .875rem var(--sai);cursor:pointer}
+.sc-chips button.on{background:var(--ink);color:#fff}
+.sc-strip{display:grid;grid-auto-flow:column;grid-auto-columns:min(240px,78%);gap:10px;margin:0;padding:0 0 8px;list-style:none;overflow-x:auto;scroll-snap-type:x mandatory}
+.sc-strip li{display:grid;gap:4px;align-content:start;padding:12px;border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:0 0 6px 6px;background:#fff;scroll-snap-align:start;font-size:.875rem}
+.sc-strip li b{font:800 1rem var(--sai)}
+.sc-strip .yt{justify-self:start;padding:0 12px;border:1px solid #e01e37;border-radius:999px;min-height:40px}
+.sc-art2{width:100%;border-collapse:collapse;background:#fff;font:600 .9375rem var(--sai)}
+.sc-art2 td,.sc-art2 th{height:44px;padding:0 8px;border-bottom:1px solid var(--line);text-align:left}
+.sc-art2 th{font-size:.6875rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.sc-art2 td:last-child,.sc-art2 th:last-child{text-align:right;font-weight:800}
+.sc-pp{display:grid;gap:10px}
+.sc-pp article{padding:12px 14px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.sc-pp .vs{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sc-pp .bar{display:flex;height:10px;margin:10px 0 6px;border-radius:999px;overflow:hidden;background:var(--line)}
+.sc-pp .bar i:nth-child(1){background:#00b133}.sc-pp .bar i:nth-child(2){background:#fab039}.sc-pp .bar i:nth-child(3){background:#c10529}
+.sc-pp p{margin:0;font-size:.8125rem;color:var(--mut)}
+.sc-ia{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:3px;background:var(--ink);color:#fff;font:700 .6875rem/1.4 var(--sai);letter-spacing:.08em;vertical-align:middle}
+@media (prefers-reduced-motion:reduce){.sc-live *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 #giftDlg{text-align:center;border:2px solid #f5c542}
 #giftDlg .big{font:800 56px var(--cond);color:#f5c542;line-height:1}
 @media (prefers-reduced-motion:reduce){.rain{display:none}}
@@ -857,6 +959,7 @@ function copaBanner() {  // home: the SuperCopa in evidence until the day after 
     <div class="copa-r"><span class="btn pri pulse">${COPA_FORM && copaOpen() ? "Quero jogar a Copa →" : "Ver a Copa →"}</span></div></a>`;
 }
 function pageCopa() {
+  if (copaLive()) return pageCopaLive();
   const feats = [
     ["📝", "Inscrição no site", "Nome, posição e time num lugar só: a comissão vê a lista pronta, sem caçar mensagem no grupo."],
     ["🎲", "Draft dos times pelo celular", "Capitães escolhem ao vivo, moeda 3D decide quem começa, todo mundo acompanha com as cartas de cada jogador."],
@@ -878,14 +981,7 @@ function pageCopa() {
     <div class="sc-go">${COPA_FORM && !copaOpen() ? '<span class="pill g">Inscrições encerradas em 05/11</span>' : COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p class="sc-note">Formulário da comissão: garanta a vaga até 05/11.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}</div>
     <p class="sc-coin"><b>🪙 Jogou a Copa, ganhou 50 moedas.</b> Depois da Copa, a lista de quem jogou vem da comissão e as moedas caem no seu saldo.</p>
   </section>
-  <section class="sc-teams" aria-labelledby="scTimes">
-    <div class="sc-head"><div><h2 class="sc-h" id="scTimes">Os times</h2><p class="sc-eng">Draft dos capitães</p>
-      <p class="sc-kdate"><time datetime="2026-11-12">12.11.2026</time><span>No grupo · capitão primeiro · GK goleiro</span></p></div>
-      <img class="sc-art" src="/copa_art.jpg" alt="Os quatro capitães com a taça da SuperCopa" width="1024" height="1024" loading="lazy" decoding="async"></div>
-    <div class="sc-grid">${COPA_TEAMS.map(([i, t, [c, ...ps]]) => `<article class="sc-team" data-t="${t}"><header><span aria-hidden="true">${i}</span><h3>${t}</h3></header>
-      <p class="sc-capt"><span>Capitão</span><b>${esc(c)}</b></p>
-      <ol start="2">${ps.map(p => `<li>${p.endsWith(" (GK)") ? `${esc(p.slice(0, -5))}<abbr title="goleiro">GK</abbr>` : esc(p)}</li>`).join("")}</ol></article>`).join("")}</div>
-  </section>
+  ${copaTimes()}
   <section class="sc-votes" aria-labelledby="scVotos">
     <div class="sc-headc"><p class="sc-eng">Ideias em estudo</p><h2 class="sc-h" id="scVotos">O que o site pode fazer na Copa</h2>
       <p class="sc-intro">Vote em cada uma: o que vale a pena e o que é viagem. O voto é anônimo: só a contagem aparece, ninguém vê quem votou em quê.</p></div>
@@ -896,7 +992,20 @@ function pageCopa() {
       <div><textarea id="copaIdeaT" rows="3" maxlength="2000" aria-label="Sua ideia para a Copa" placeholder="Ex.: transmissão ao vivo da final"></textarea>
       <button class="btn pri">Enviar ideia</button></div></form>
   </section>
-  <section class="sc-hist" aria-labelledby="scCopas">
+  ${copaHist()}</div>`;
+}
+function copaTimes() {
+  return `<section class="sc-teams" aria-labelledby="scTimes">
+    <div class="sc-head"><div><h2 class="sc-h" id="scTimes">Os times</h2><p class="sc-eng">Draft dos capitães</p>
+      <p class="sc-kdate"><time datetime="2026-11-12">12.11.2026</time><span>No grupo · capitão primeiro · GK goleiro</span></p></div>
+      <img class="sc-art" src="/copa_art.jpg" alt="Os quatro capitães com a taça da SuperCopa" width="1024" height="1024" loading="lazy" decoding="async"></div>
+    <div class="sc-grid">${COPA_TEAMS.map(([i, t, [c, ...ps]]) => `<article class="sc-team" data-t="${t}"><header><span aria-hidden="true">${i}</span><h3>${t}</h3></header>
+      <p class="sc-capt"><span>Capitão</span><b>${esc(c)}</b></p>
+      <ol start="2">${ps.map(p => `<li>${p.endsWith(" (GK)") ? `${esc(p.slice(0, -5))}<abbr title="goleiro">GK</abbr>` : esc(p)}</li>`).join("")}</ol></article>`).join("")}</div>
+  </section>`;
+}
+function copaHist() {
+  return `<section class="sc-hist" aria-labelledby="scCopas">
     <p class="sc-eng">Desde 2022</p><h2 class="sc-h" id="scCopas">As outras copas</h2>
     <ol class="sc-tl">
       <li><b>2022</b><p>1ª copa: Pavões campeões. Os Flamingos fizeram a melhor campanha e caíram na final. Maior público e mais gols da história.</p></li>
@@ -904,7 +1013,7 @@ function pageCopa() {
       <li><b>2024</b><p>3ª copa, decidida nos pênaltis: Babuínos 1x1 Jaguatiricas, 2x0 nas cobranças. Barp pegou duas e foi o melhor jogador, MK artilheiro.</p></li>
       <li><b>2025</b><p>4ª copa: grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Axolotes 2x1 de virada nas Salamandras, Rafael artilheiro, Edu melhor da copa.</p></li>
     </ol>
-  </section></div>`;
+  </section>`;
 }
 
 // ponytail: the 2026-11-12 group draft, static; a site draft for 4 teams can replace it next Copa. Captain first.
@@ -919,8 +1028,10 @@ function copaClock() {
   const ms = Math.max(0, new Date(COPA_DAY + "T08:30") - new Date()), u = [[864e5, "dias"], [36e5, "horas"], [6e4, "min"], [1e3, "seg"]];
   return u.map(([k, l], i) => `<span><b class="num">${String(Math.floor(ms / k) % (i ? [0, 24, 60, 60][i] : 1e9)).padStart(2, "0")}</b>${l}</span>`).join("");
 }
-setInterval(() => { const c = $("#cd"); if (c) c.innerHTML = copaClock(); }, 1000);
+setInterval(() => { const c = $("#cd"); if (c) c.innerHTML = copaClock();
+  document.querySelectorAll("[data-ini]").forEach(b => b.textContent = cpClock({inicio: +b.dataset.ini})); }, 1000);
 async function bindCopa() {
+  if (copaLive()) return bindCopaLive();
   const show = votes => {
     document.querySelectorAll("[data-cv]").forEach(b => { const x = votes[b.dataset.cv] || [0, 0, 0, 0], v = +b.dataset.v;
       b.querySelector("b").textContent = x[v - 1] || ""; b.classList.toggle("on", x[3] === v); });
@@ -942,6 +1053,164 @@ async function bindCopa() {
     if (await post("feedback", {kind: "ideia", text: "Copa: " + t})) { $("#copaIdeaT").value = ""; toast("Valeu! A ideia foi para a comissão"); }
   };
 }
+
+// ---------- #/copa live: from 08:00 on the cup day (or #/copa?live=1), the page follows /api/copa every 15 s while it is visible ----------
+const copaLive = () => /[?&]live=1\b/.test(location.hash) || Date.now() >= Date.parse(COPA_DAY + "T08:00:00-03:00");
+let CP = null, CPskew = 0;  // the last /api/copa view; server clock minus ours, in seconds
+const CP_EV = {gol: ["⚽", "Gol"], falta: ["🛑", "Falta"], escanteio: ["🚩", "Escanteio"], lateral: ["↔️", "Lateral"], cartao: ["🟨", "Cartão"], lance: ["🎥", "Lance"]};
+const CP_CHIPS = [["gol", "Gols"], ["falta", "Faltas"], ["escanteio", "Escanteios"], ["lateral", "Laterais"], ["lance", "Lances"]];
+const CP_FASE = {grupo: "Grupo", "3o": "3º lugar", final: "Final"};
+const CP_ST = {agendado: "Agendado", ao_vivo: "Ao vivo", fim: "Fim"};
+const cpTeam = t => COPA_TEAMS.find(x => x[1] === t);
+const tch = t => t ? `<span class="tch" data-t="${esc(t)}"><span aria-hidden="true">${cpTeam(t)?.[0] || "⚽"}</span>${esc(t)}</span>` : '<span class="tch tbd">a definir</span>';
+const cpMin = s => s == null ? "" : `${Math.floor(s / 60) + 1}'`;
+const cpClock = j => { const s = Math.max(0, Math.floor((j.fim || Date.now() / 1000 + CPskew) - j.inicio)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const cpYt = l => l ? `<a class="yt" href="${esc(l)}" target="_blank" rel="noopener" aria-label="Ver no YouTube">▶</a>` : "";
+function cpCur() {  // the game on the card: the staff's pick, else the live one, else the next, else the last
+  const js = CP.jogos;
+  return js.find(j => j.id === ui.copaSel) || js.find(j => j.status === "ao_vivo") || js.find(j => j.status === "agendado") || js[js.length - 1];
+}
+function cpFeed(j) {  // the staff's events and the /transmitir marks, newest first
+  const ev = j.eventos.map((e, i) => ({...e, kind: e.tipo, i, txt: [e.jogador, e.time && j[e.time], e.texto].filter(Boolean).join(" · ")}));
+  const ln = j.lances.map(l => ({...l, txt: [l.who, l.text].filter(Boolean).join(" · ") || "marcado na transmissão"}));
+  return [...ev, ...ln].sort((a, b) => b.ts - a.ts);
+}
+function cpCard() {
+  const j = cpCur(), ko = j.fase !== "grupo", pen = j.pen_a != null ? `<small>pênaltis ${j.pen_a} × ${j.pen_b}</small>` : "";
+  const feed = cpFeed(j), lim = j.duracao || 25;
+  const clk = j.status === "ao_vivo" ? `<span class="dot" aria-hidden="true"></span><b class="num" data-ini="${j.inicio}">${cpClock(j)}</b> de ${lim} min`
+    : j.status === "fim" ? `Encerrado${j.vencedor ? ` · ${esc(j.vencedor)} ${ko ? "vence" : "venceu"}` : " · empate"}` : `Começa às ${esc(j.hora || "--:--")} · ${lim} min`;
+  return `<article class="sc-card"><header><span>${CP_FASE[j.fase] || j.fase}${j.hora ? " · " + esc(j.hora) : ""}</span><span class="pill st ${j.status}">${CP_ST[j.status]}</span></header>
+    <div class="sc-sb">${tch(j.a)}<div class="sc-sc num" aria-label="placar">${j.gols_a} × ${j.gols_b}${pen}</div>${tch(j.b)}</div>
+    <p class="sc-clk">${clk}</p>
+    ${feed.length ? `<ol class="sc-feed" aria-label="Lances do jogo">${feed.map(e => `<li><span class="m">${cpMin(e.seg)}</span><span aria-hidden="true">${CP_EV[e.kind]?.[0] || "🎥"}</span><span>${CP_EV[e.kind]?.[1] || "Lance"}${e.txt ? `: ${esc(e.txt)}` : ""}</span>${cpYt(e.link)}</li>`).join("")}</ol>`
+      : `<p class="sc-empty">${j.status === "agendado" ? "Os lances aparecem aqui quando a bola rolar." : "Nenhum lance marcado ainda."}</p>`}
+    ${STAFF() ? cpCtl(j) : ""}</article>`;
+}
+function cpCtl(j) {  // the staff's buttons for the game on the card (server: POST /api/copa {op})
+  const side = s => `<div class="sc-side">${tch(j[s])}<div class="sc-gl"><button class="gol" data-gol="${s}">+ Gol</button><button data-menos="${s}" aria-label="Tirar um gol de ${esc(j[s] || "")}">−</button></div>
+    <div class="sc-evs">${["falta", "escanteio", "lateral", "cartao"].map(k => `<button data-ev="${k}" data-s="${s}">${CP_EV[k][0]} ${CP_EV[k][1]}</button>`).join("")}</div></div>`;
+  return `<div class="sc-ctl" aria-label="Controle da comissão">
+    <select id="cpSel" aria-label="Jogo no cartão">${CP.jogos.map(x => `<option value="${x.id}"${x.id === j.id ? " selected" : ""}>${esc(x.hora || "")} ${CP_FASE[x.fase] || ""}: ${esc(x.a || "?")} × ${esc(x.b || "?")}</option>`).join("")}</select>
+    ${j.status === "ao_vivo" ? '<button class="go" data-st="fim">■ Encerrar o jogo</button>' : j.status === "agendado" ? '<button class="go" data-st="ao_vivo">▶ Começar o jogo</button>' : '<button data-st="ao_vivo">↺ Reabrir o jogo</button>'}
+    <div class="sc-2">${side("a")}${side("b")}</div>
+    <button data-undo ${j.eventos.length ? "" : "disabled"}>↶ Desfazer o último lance</button>
+    ${j.fase !== "grupo" ? `<div class="sc-pen"><span>Pênaltis</span><input id="cpPa" type="number" min="0" max="99" inputmode="numeric" aria-label="Pênaltis ${esc(j.a || "")}" value="${j.pen_a ?? ""}">×<input id="cpPb" type="number" min="0" max="99" inputmode="numeric" aria-label="Pênaltis ${esc(j.b || "")}" value="${j.pen_b ?? ""}"><button data-pen>Salvar</button></div>` : ""}
+    <details><summary>Ajustes do jogo</summary><div class="sc-pen"><label>Duração <input id="cpDur" type="number" min="5" max="90" inputmode="numeric" value="${j.duracao || 25}"> min</label>
+      <label>Vídeo <input id="cpYt" style="width:12em" placeholder="link do YouTube" value="${esc(j.yt_video || "")}"></label><button data-cfg>Salvar</button></div>
+      <p class="sc-note">O relógio do jogo corre com a bola fora: a duração é só a referência no cartão.</p></details></div>`;
+}
+function cpBracket() {
+  const t = CP.tabela, done = CP.jogos.filter(j => j.fase === "grupo").every(j => j.status === "fim"), ko = f => CP.jogos.find(j => j.fase === f);
+  const row = (r, i) => `<div><span class="${i < 2 ? "q" : ""}"><b>${i + 1}º</b></span><span>${tch(r.time)}</span><span>${r.J}</span><span>${r.SG > 0 ? "+" : ""}${r.SG}</span><span><b>${r.P}</b></span></div>`;
+  const box = (j, cls, lbl) => !j ? "" : `<div class="br-b ${cls}"><i>${lbl}${j.hora ? " · " + esc(j.hora) : ""}</i>${["a", "b"].map(s => `<div class="${j.vencedor && j.vencedor === j[s] ? "w" : ""}">${tch(j[s])}<b class="num">${j.status === "agendado" ? "" : j["gols_" + s] + (j["pen_" + s] != null ? ` (${j["pen_" + s]})` : "")}</b></div>`).join("")}</div>`;
+  const on = done ? ' class="on"' : "";
+  return `<div class="br"><div class="br-t" role="table" aria-label="Tabela do grupo"><div class="h"><span></span><span>Time</span><span>J</span><span>SG</span><span>P</span></div>${t.map(row).join("")}</div>
+    <svg class="br-h" viewBox="0 0 72 240" aria-hidden="true"><path${on} d="M0 58H36V110H0M36 84H72"/><path${on} d="M0 162H36V214H0M36 188H72"/></svg>
+    <svg class="br-v" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true"><path${on} vector-effect="non-scaling-stroke" d="M50 0V36"/></svg>
+    <div class="br-k">${box(ko("final"), "fin", "Final · 1º × 2º")}${box(ko("3o"), "ter", "3º lugar · 3º × 4º")}</div></div>`;
+}
+function cpGames() {
+  const cur = cpCur();
+  return `<ol class="sc-jl">${CP.jogos.map(j => `<li class="${j.id === cur.id ? "sel" : ""}"><span class="hr">${esc(j.hora || "")}<br>${CP_FASE[j.fase] || ""}</span>
+    <span class="vs">${tch(j.a)}<span class="num">${j.status === "agendado" ? "×" : `${j.gols_a} × ${j.gols_b}`}</span>${tch(j.b)}</span>
+    ${j.id === cur.id || !STAFF() ? `<span class="pill st ${j.status}">${CP_ST[j.status]}</span>` : `<button data-sel="${j.id}" aria-label="Pôr este jogo no cartão">${CP_ST[j.status]} ›</button>`}</li>`).join("")}</ol>`;
+}
+function cpHigh() {  // every event and mark of the cup, filtered by kind; a cartão counts with the fouls
+  const f = ui.copaF || "gol", all = CP.jogos.flatMap(j => cpFeed(j).map(e => ({...e, j})))
+    .filter(e => (e.kind === "cartao" ? "falta" : e.kind) === f).sort((a, b) => b.ts - a.ts);
+  return `<div class="sc-chips" role="group" aria-label="Filtrar destaques">${CP_CHIPS.map(([k, l]) => `<button data-f="${k}" aria-pressed="${k === f}" class="${k === f ? "on" : ""}">${l}</button>`).join("")}</div>
+    ${all.length ? `<ul class="sc-strip">${all.slice(0, 40).map(e => `<li><span>${CP_EV[e.kind]?.[0] || "🎥"} <b>${CP_EV[e.kind]?.[1] || "Lance"}</b> ${cpMin(e.seg)}</span>
+      <span>${esc(e.j.a || "?")} × ${esc(e.j.b || "?")}</span>${e.txt ? `<span class="sc-note">${esc(e.txt)}</span>` : ""}${e.link ? `<a class="yt" href="${esc(e.link)}" target="_blank" rel="noopener">▶ Ver no YouTube</a>` : ""}</li>`).join("")}</ul>`
+      : '<p class="sc-empty">Nada aqui ainda.</p>'}`;
+}
+function cpScorers() {
+  const a = CP.artilharia;
+  return a.length ? `<table class="sc-art2"><thead><tr><th>#</th><th>Jogador</th><th>Time</th><th>Gols</th></tr></thead><tbody>${a.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jogador)}</td><td>${r.time ? tch(r.time) : ""}</td><td class="num">${r.gols}</td></tr>`).join("")}</tbody></table>`
+    : '<p class="sc-empty">Nenhum gol com nome ainda.</p>';
+}
+function cpPalpite() {
+  const js = CP.jogos.filter(j => j.palpite).slice(0, 3), pc = x => Math.round(100 * x) + "%";
+  return js.length ? `<div class="sc-pp">${js.map(j => { const p = j.palpite; return `<article><div class="vs">${tch(j.a)}<span class="sc-note">${esc(j.hora || "")}</span>${tch(j.b)}</div>
+    <div class="bar" role="img" aria-label="${esc(j.a)} ${pc(p.v)}, empate ${pc(p.e)}, ${esc(j.b)} ${pc(p.d)}"><i style="width:${pc(p.v)}"></i><i style="width:${pc(p.e)}"></i><i style="width:${pc(p.d)}"></i></div>
+    <p>${esc(j.a)} ${pc(p.v)} · empate ${pc(p.e)} · ${esc(j.b)} ${pc(p.d)} · gols esperados ${String(p.xa).replace(".", ",")} × ${String(p.xb).replace(".", ",")}</p></article>`; }).join("")}</div>`
+    : '<p class="sc-empty">Sem jogo marcado com os dois times.</p>';
+}
+function cpBody() {
+  if (!CP) return '<section class="sc-ls"><p class="sc-empty">Carregando a Copa…</p></section>';
+  return `<section class="sc-ls" aria-labelledby="cpAgora"><h2 id="cpAgora">Agora</h2>${cpCard()}</section>
+  <section class="sc-ls" aria-labelledby="cpChave"><h2 id="cpChave">A chave</h2><p class="sc-note">1º e 2º do grupo vão para a final, 3º e 4º disputam o 3º lugar. Empate em pontos: saldo, gols pró, confronto direto.</p>${cpBracket()}</section>
+  <section class="sc-ls" aria-labelledby="cpJogos"><h2 id="cpJogos">Os jogos</h2>${cpGames()}</section>
+  <section class="sc-ls" aria-labelledby="cpDest"><h2 id="cpDest">Destaques</h2>${cpHigh()}</section>
+  <section class="sc-ls" aria-labelledby="cpArt"><h2 id="cpArt">Artilharia</h2>${cpScorers()}</section>
+  <section class="sc-ls" aria-labelledby="cpIa"><h2 id="cpIa">Palpite da IA<span class="sc-ia">palpite estatístico, não é aposta</span></h2>
+    <p class="sc-note">Modelo de Poisson com os gols de cada time na Copa, puxados para 1,5 gol por jogo enquanto há poucos jogos.</p>${cpPalpite()}</section>`;
+}
+function pageCopaLive() {
+  return `<div class="sc26 sc-live">
+  <section class="sc-lh"><img src="/copa_logo.webp" alt="" width="678" height="804"><div><h1 class="sc-h" style="margin:0;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem)">SuperCopa BioFut</h1>
+    <p>Sábado 21/11 · Planet Ball, quadra 6 · 8:30 às 14:30</p></div></section>
+  <div id="cpLive">${cpBody()}</div>
+  ${copaTimes()}
+  ${copaHist()}</div>
+  <dialog id="golDlg" aria-labelledby="golH"><h3 id="golH">Gol de quem?</h3><div class="g" id="golL"></div></dialog>`;
+}
+async function cpLoad() {
+  const j = await fetch("/api/copa").then(r => r.ok ? r.json() : null).catch(() => null);
+  if (j) cpSet(j);
+}
+function cpSet(j) {
+  CP = j; CPskew = j.agora - Date.now() / 1000;
+  const box = $("#cpLive"), typing = ["INPUT", "SELECT"].includes(document.activeElement?.tagName) || $("#golDlg")?.open;
+  if (box && !typing) { const y = scrollY; box.innerHTML = cpBody(); scrollTo(0, y); }
+}
+async function cpDo(body) {  // one staff op; the reply is the new view
+  const j = await post("copa", body);
+  if (j) cpSet(j);
+  return j;
+}
+function bindCopaLive() {
+  cpLoad();
+  const box = $("#cpLive");
+  box.onclick = async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const j = CP && cpCur(); if (!j) return;
+    if (b.dataset.f) { ui.copaF = b.dataset.f; return cpSet(CP); }
+    if (b.dataset.sel) { ui.copaSel = b.dataset.sel; return cpSet(CP); }
+    if (b.dataset.st) {
+      if (b.dataset.st === "fim" && !confirm(`Encerrar ${j.a} × ${j.b}?`)) return;
+      ui.copaSel = j.id; return cpDo({op: "status", id: j.id, status: b.dataset.st});
+    }
+    if (b.dataset.gol) {
+      const s = b.dataset.gol, ps = (cpTeam(j[s])?.[2] || []).map(p => p.replace(/ \(GK\)$/, ""));
+      $("#golH").textContent = `Gol de quem? ${j[s] || ""}`;
+      $("#golL").innerHTML = ps.map(p => `<button value="${esc(p)}">${esc(p)}</button>`).join("") + '<button value="">Sem nome</button><button class="x" value="-">Cancelar</button>';
+      $("#golL").onclick = async ev => { const p = ev.target.closest("button"); if (!p) return;
+        $("#golDlg").close(); if (p.value !== "-") await cpDo({op: "evento", id: j.id, tipo: "gol", time: s, jogador: p.value || null}); };
+      return $("#golDlg").showModal();
+    }
+    if (b.dataset.menos) {  // the last goal of that side goes, its scorer too; a score typed without events just drops one
+      const s = b.dataset.menos, i = j.eventos.map(e => e.tipo === "gol" && e.time === s).lastIndexOf(true);
+      if (i >= 0) return cpDo({op: "del_evento", id: j.id, idx: i});
+      if (j["gols_" + s] > 0) return cpDo({op: "placar", id: j.id, gols_a: j.gols_a - (s === "a"), gols_b: j.gols_b - (s === "b")});
+      return toast("Esse time está sem gols", true);
+    }
+    if (b.dataset.ev) return cpDo({op: "evento", id: j.id, tipo: b.dataset.ev, time: b.dataset.s}).then(r => r && toast(CP_EV[b.dataset.ev][1] + " marcada"));
+    if ("undo" in b.dataset) {
+      const e = j.eventos[j.eventos.length - 1]; if (!e) return;
+      if (confirm(`Desfazer ${CP_EV[e.tipo][1].toLowerCase()}${e.jogador ? " de " + e.jogador : ""}?`)) cpDo({op: "del_evento", id: j.id, idx: -1});
+      return;
+    }
+    if ("pen" in b.dataset) {
+      const v = id => $(id).value === "" ? null : +$(id).value;
+      return cpDo({op: "placar", id: j.id, gols_a: j.gols_a, gols_b: j.gols_b, pen_a: v("#cpPa"), pen_b: v("#cpPb")}).then(r => r && toast("Pênaltis salvos"));
+    }
+    if ("cfg" in b.dataset) return cpDo({op: "jogo", id: j.id, duracao: +$("#cpDur").value, yt_video: $("#cpYt").value.trim() || null}).then(r => r && toast("Jogo salvo"));
+  };
+  box.onchange = e => { if (e.target.id === "cpSel") { ui.copaSel = e.target.value; e.target.blur(); cpSet(CP); } };
+}
+setInterval(() => { if (location.hash.startsWith("#/copa") && copaLive() && !document.hidden) cpLoad(); }, 15000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && location.hash.startsWith("#/copa") && copaLive()) cpLoad(); });
 
 function pageApoie() {
   return `
@@ -1651,7 +1920,7 @@ function bellInit() {
 // ---------- router ----------
 function render() {
   if (!D) return; // hashchange antes do /api/data; o fetch chama render() ao chegar
-  const h = location.hash.slice(1) || "/", [, page, arg] = h.split("/");
+  const h = (location.hash.slice(1) || "/").split("?")[0], [, page, arg] = h.split("/");  // #/copa?live=1: the query is not part of the page
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "/#/" + (page === "jogador" ? "tabela" : page || "")));
   const app = $("#app"), y = scrollY, same = render.last === h; render.last = h;
   const name = arg && decodeURIComponent(arg);

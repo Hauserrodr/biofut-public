@@ -1288,6 +1288,82 @@ assert (r["kind"], r["t"], r["off"], r["cam"], r["who"]) == ("escanteio", round(
 w = server.lance_row({"kind": "x", "t": now + 60, "off": "a"}, "?", "cam", now)
 assert (w["kind"], w["t"], w["off"]) == ("lance", None, None), "unknown kind, a tap in the future and a bad offset are dropped"
 assert json.load(urllib.request.urlopen(url + "/api/stream"))["t"] > now - 5
+# SuperCopa live: the staff's schedule, the group table (head-to-head breaks a tie), the final and 3rd place filled from it,
+# events and scorers, the /transmitir marks inside each game's time, the palpite, and only the staff can change it.
+cp = server.copa_default()
+assert [(j["id"], j["fase"], j["hora"], j["a"], j["b"], j["duracao"]) for j in cp["jogos"]][:2] == [
+    ("j1", "grupo", "08:30", "Bagres", "Pavões", 25), ("j2", "grupo", "09:10", "Axolotes", "Babuínos", 25)]
+grupo = [j for j in cp["jogos"] if j["fase"] == "grupo"]
+assert len(grupo) == 6 and len({frozenset((j["a"], j["b"])) for j in grupo}) == 6, "every pair once"
+assert [(j["fase"], j["hora"], j["a"]) for j in cp["jogos"][6:]] == [("3o", "13:30", None), ("final", "14:00", None)]
+t0 = 1.79e9
+for jid, ga, gb in (("j1", 1, 2), ("j2", 1, 1), ("j3", 0, 3), ("j4", 0, 1), ("j5", 0, 1)):
+    server.copa_act(cp, {"op": "status", "id": jid, "status": "ao_vivo"}, t0)
+    server.copa_act(cp, {"op": "placar", "id": jid, "gols_a": ga, "gols_b": gb}, t0)
+    server.copa_act(cp, {"op": "status", "id": jid, "status": "fim"}, t0 + 1500)
+assert cp["jogos"][7]["a"] is None, "the final waits for the last group game"
+server.copa_act(cp, {"op": "status", "id": "j6", "status": "ao_vivo"}, t0)
+server.copa_act(cp, {"op": "evento", "id": "j6", "tipo": "falta", "time": "a"}, t0 + 60)
+server.copa_act(cp, {"op": "status", "id": "j6", "status": "fim"}, t0 + 1500)
+tab = server.copa_tabela(cp)
+assert [r["time"] for r in tab] == ["Bagres", "Babuínos", "Pavões", "Axolotes"], "Babuínos beat Pavões, tied on P, SG and GP"
+assert {k: tab[0][k] for k in ("P", "J", "V", "E", "D", "GP", "GC", "SG")} == {"P": 6, "J": 3, "V": 2, "E": 0, "D": 1, "GP": 5, "GC": 2, "SG": 3}
+assert [(j["a"], j["b"]) for j in cp["jogos"][6:]] == [("Pavões", "Axolotes"), ("Bagres", "Babuínos")]
+server.copa_act(cp, {"op": "jogo", "id": "j7", "a": "Axolotes", "b": "Pavões"}, t0)
+server.copa_act(cp, {"op": "placar", "id": "j6", "gols_a": 0, "gols_b": 0}, t0)
+assert (cp["jogos"][6]["a"], cp["jogos"][6]["manual"]) == ("Axolotes", True), "set by hand: the table leaves it"
+f = cp["jogos"][7]
+server.copa_act(cp, {"op": "jogo", "id": "j8", "yt_video": "https://www.youtube.com/live/abcdefghijk?si=x", "yt_inicio": t0 + 2000, "duracao": 30, "hora": "14:10"}, t0)
+assert (f["yt_video"], f["duracao"], f["hora"]) == ("abcdefghijk", 30, "14:10")
+server.copa_act(cp, {"op": "status", "id": "j8", "status": "ao_vivo"}, t0 + 2100)
+for lado, quem in (("a", "Fulano"), ("a", "Fulano"), ("b", None)):
+    server.copa_act(cp, {"op": "evento", "id": "j8", "tipo": "gol", "time": lado, "jogador": quem}, t0 + 2200)
+server.copa_act(cp, {"op": "evento", "id": "j8", "tipo": "gol", "time": "b", "jogador": "Ciclano"}, t0 + 2300)
+server.copa_act(cp, {"op": "del_evento", "id": "j8", "idx": -1}, t0 + 2310)
+assert (f["gols_a"], f["gols_b"], len(f["eventos"])) == (2, 1, 3), "undo takes the goal back"
+assert server.copa_artilharia(cp) == [{"jogador": "Fulano", "time": "Bagres", "gols": 2}]
+lances = [{"t": t0 + 2330, "kind": "escanteio", "who": "beira"}, {"t": None, "ts": t0 + 2340, "kind": "zzz"}, {"t": t0 + 50, "kind": "gol"}, "x"]
+v = server.copa_view(cp, [r for r in lances if isinstance(r, dict)], t0 + 2400)
+vf = v["jogos"][7]
+assert [(r["kind"], r["seg"]) for r in vf["lances"]] == [("escanteio", 230), ("lance", 240)], "only the marks inside this game"
+assert vf["lances"][0]["link"] == f"https://youtu.be/abcdefghijk?t={330 - server.COPA_LEAD}" and vf["eventos"][0]["seg"] == 100
+assert [r["kind"] for r in v["jogos"][5]["lances"]] == ["gol"] and v["jogos"][0]["vencedor"] == "Pavões" and v["tabela"][0]["time"] == "Bagres"
+fz = server.copa_forca(cp)
+p = server.copa_palpite(fz, "Bagres", "Axolotes")
+assert abs(p["v"] + p["e"] + p["d"] - 1) < 1e-3 and p["v"] > p["d"] and p["xa"] > p["xb"]
+p0 = server.copa_palpite(server.copa_forca(server.copa_default()), "Bagres", "Pavões")
+assert p0["v"] == p0["d"] and p0["xa"] == 1.5
+f["status"], f["pen_a"], f["pen_b"], f["gols_b"] = "fim", 4, 3, 2
+assert server.copa_vencedor(f) == "Bagres" and server.copa_vencedor({**f, "pen_a": None, "pen_b": None}) is None
+for bad in ({"op": "x"}, {"op": "placar", "id": "j1", "gols_a": 100, "gols_b": 0}, {"op": "placar", "id": "j1", "gols_a": "1", "gols_b": 0},
+            {"op": "placar", "id": "j1", "gols_a": 1, "gols_b": 0, "pen_a": 3, "pen_b": 2}, {"op": "placar", "id": "j8", "gols_a": 1, "gols_b": 1, "pen_a": 3},
+            {"op": "status", "id": "j1", "status": "pausa"}, {"op": "evento", "id": "j1", "tipo": "gol"}, {"op": "evento", "id": "j1", "tipo": "voo"},
+            {"op": "evento", "id": "j1", "tipo": "falta", "jogador": "x" * 41}, {"op": "del_evento", "id": "j1", "idx": 5}, {"op": "jogo", "id": "j9"},
+            {"op": "jogo", "id": "j1", "a": "Zebras"}, {"op": "jogo", "id": "j1", "b": "Bagres", "a": "Bagres"}, {"op": "jogo", "id": "j1", "duracao": 3},
+            {"op": "jogo", "id": "j1", "hora": "25:00"}, {"op": "jogo", "id": "j1", "yt_video": "nada"}, {"op": "jogo", "id": "j1", "inicio": 5},
+            {"op": "jogo", "id": "j1", "remover": True}, {"op": "times", "times": ["A"]}, {"op": "times", "times": ["A", "A"]}, {"op": "times", "times": ["Zebras", "Bagres"]},
+            {"op": "status", "id": "j99", "status": "fim"}):
+    try: server.copa_act(cp, bad, t0); raise AssertionError(bad)
+    except ValueError: pass
+c5 = server.copa_act(server.copa_default(), {"op": "times", "times": ["A", "B", "C", "D", "E"]}, t0)
+assert sum(j["fase"] == "grupo" for j in c5["jogos"]) == 10 and c5["jogos"][-1]["fase"] == "final"
+server.copa_act(c5, {"op": "jogo", "fase": "grupo", "a": "A", "b": "B"}, t0)
+assert c5["jogos"][-1]["id"] == "j13" and server.copa_act(c5, {"op": "jogo", "id": "j13", "remover": True}, t0)["jogos"][-1]["id"] == "j12"
+try: server.copa_act(server.copa_default(), {"op": "status", "id": "j7", "status": "ao_vivo"}, t0); raise AssertionError("no teams yet")
+except ValueError: pass
+server.COPA, copa0, server.ADMIN = tmp / "copa.json", server.COPA, "adm"
+assert json.loads(call("/api/copa")[1])["jogos"][0]["a"] == "Bagres"
+assert call("/api/copa", {"action": "copa", "op": "status", "id": "j1", "status": "ao_vivo"}, cookie=eve)[0] == 403
+assert call("/api/copa", {"action": "copa", "op": "status", "id": "j1", "status": "ao_vivo"})[0] == 403
+assert call("/api/copa", {"action": "copa", "op": "placar", "id": "j1", "gols_a": 120, "gols_b": 0}, cookie=me)[0] == 400
+s, b = call("/api/copa", {"action": "copa", "op": "status", "id": "j1", "status": "ao_vivo"}, cookie=me)
+assert s == 200 and json.loads(b)["jogos"][0]["status"] == "ao_vivo" and json.loads(server.COPA.read_text(encoding="utf-8"))["jogos"][0]["inicio"]
+server.LANCES.parent.mkdir(exist_ok=True)
+with server.LANCES.open("a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"t": time.time(), "kind": "falta", "who": "beira"}) + "\n")
+o = staff("/api/copa", {"action": "copa", "op": "evento", "id": "j1", "tipo": "gol", "time": "b", "jogador": "Fulano"})
+assert o["jogos"][0]["gols_b"] == 1 and o["artilharia"][0]["time"] == "Pavões" and [r["kind"] for r in o["jogos"][0]["lances"]] == ["falta"]
+server.COPA, server.ADMIN = copa0, ""
 server.STREAM_PIN, server.LANCES = "", lances0
 server.FAILS.clear()
 httpd.shutdown()
