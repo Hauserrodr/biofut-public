@@ -3166,6 +3166,120 @@ def copa_act(c, body, now=None):
     return c
 
 
+# ---------- Histórico das copas (#/historia): the mined history, every fact with its source; the staff confirm or fix each one ----------
+HISTORIA = HERE / "data" / "historia.json"  # written by hand from the group's spreadsheet and chat; never in git (names)
+HIST_FATOS = ("campeao", "final", "artilheiro", "melhor_jogador", "melhor_goleiro", "local")  # the facts each year shows, in order
+HIST_CAMPOS = HIST_FATOS + ("nota",)  # the staff can also write a short note on a year
+HIST_STATUS = ("confirmado", "sem_fonte", "em_disputa")
+HIST_FONTE = {"campeao": {"campeao"}, "final": {"final", "placares", "vice"}, "artilheiro": {"artilheiro"},  # fontes[].campo words -> fact
+              "melhor_jogador": {"melhor_jogador"}, "melhor_goleiro": {"melhor_goleiro"}, "local": {"local"}}
+HIST_TEMA = (("melhor jogador", "melhor_jogador"), ("goleiro", "melhor_goleiro"), ("artilheiro", "artilheiro"), ("final", "final"),
+             ("campe", "campeao"), ("local", "local"))  # conflitos[].tema "2025 melhor jogador" -> (2025, fact)
+FONE = re.compile(r"\+?\d[\d\s()-]{8,}\d")
+
+
+def sem_fone(v):
+    """Every string with its phone-like runs (10+ digits) cut: the history is public."""
+    if isinstance(v, str):
+        return FONE.sub(lambda m: "…" if sum(ch.isdigit() for ch in m[0]) >= 10 else m[0], v)
+    if isinstance(v, list):
+        return [sem_fone(x) for x in v]
+    if isinstance(v, dict):
+        return {k: sem_fone(x) for k, x in v.items()}
+    return v
+
+
+def hist_valor(c, campo):
+    """A fact's text as mined, or None when nobody recorded it."""
+    v = c.get(campo)
+    if campo == "final":
+        if not isinstance(v, dict) or not (v.get("a") and v.get("b")):
+            return None
+        placar = f" {v['gols_a']}×{v['gols_b']} " if type(v.get("gols_a")) is int and type(v.get("gols_b")) is int else " × "
+        return f"{v['a']}{placar}{v['b']}" + (f" (pênaltis {v['penaltis']})" if v.get("penaltis") else "")
+    if campo == "artilheiro":
+        if not isinstance(v, dict) or not v.get("nome"):
+            return None
+        return v["nome"] + (f" · {v['gols']} gols" if type(v.get("gols")) is int else "")
+    return v if isinstance(v, str) and v.strip() else None
+
+
+def hist_fatos(c, conflitos):
+    """Each fact of a year: its value, the sources that name it, the conflict (both versions) and the status. The staff's
+    status wins; then a conflict -> em_disputa; nothing recorded -> sem_registro; no source -> sem_fonte; else com_fonte."""
+    staff, out = c.get("staff") or {}, []
+    for campo in HIST_CAMPOS:
+        s = staff.get(campo) or {}
+        valor = s.get("texto") or (None if campo == "nota" else hist_valor(c, campo))
+        if campo == "nota" and not valor:
+            continue
+        fontes = [{k: f.get(k) for k in ("autor", "data", "trecho")} for f in c.get("fontes") or []
+                  if HIST_FONTE.get(campo, set()) & {re.sub(r"\(.*?\)", "", w).strip() for w in str(f.get("campo") or "").split(",")}]
+        if s.get("texto"):
+            fontes = [{"autor": s.get("por"), "data": s.get("em"), "trecho": "texto da comissão"}]
+        disputa = conflitos.get((c.get("ano"), campo))
+        status = s.get("status") or ("em_disputa" if disputa else "sem_registro" if not valor else "com_fonte" if fontes else "sem_fonte")
+        nota = (c.get("final") or {}).get("nota") if campo == "final" and not s.get("texto") else None
+        out.append({"campo": campo, "valor": valor, "nota": nota, "fontes": fontes, "disputa": disputa, "status": status,
+                    "staff": {k: s[k] for k in ("status", "texto", "por", "em") if s.get(k)} or None})
+    return out
+
+
+def historia_view(h):
+    """GET /api/historia: the file (phones cut) with each year's facts ready to show."""
+    conflitos = {}
+    for k in h.get("conflitos") or []:
+        m = re.match(r"(\d{4})\s+(.*)", str(k.get("tema") or ""))
+        campo = m and next((c for w, c in HIST_TEMA if w in m[2].lower()), None)
+        if campo:
+            conflitos[(int(m[1]), campo)] = {"site": k.get("site"), "fonte": k.get("fonte")}
+    copas = [{**c, "fatos": hist_fatos(c, conflitos)} for c in h.get("copas") or [] if isinstance(c, dict)]
+    cov = h.get("coverage") or {}
+    return sem_fone({"copas": sorted(copas, key=lambda c: c.get("ano") or 0), "copa_2026": h.get("copa_2026_formato"),
+                     "sem_fonte": h.get("sem_fonte") or [], "coverage": {k: cov.get(k) for k in ("first_msg", "last_msg", "nota")}})
+
+
+def historia_load():
+    try:
+        return json.loads(HISTORIA.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"copas": []}
+
+
+def historia_bytes(_cache={}):
+    """The GET body, rebuilt only when the file changes."""
+    t = HISTORIA.stat().st_mtime_ns if HISTORIA.exists() else None
+    if _cache.get("t", 0) != t or _cache.get("f") != HISTORIA:
+        _cache.update(t=t, f=HISTORIA, raw=json.dumps(historia_view(historia_load()) if t else {"copas": []}, ensure_ascii=False).encode())
+    return _cache["raw"]
+
+
+def historia_act(h, body, quem, now=None):
+    """POST /api/historia {op, ano, campo, ...}: status (confirmado / sem_fonte / em_disputa / null = back to the data)
+    or texto (up to 160 letters; empty = back to the mined value). Raises ValueError on bad input."""
+    op, ano, campo = body.get("op"), body.get("ano"), body.get("campo")
+    if op not in ("status", "texto"):
+        raise ValueError("op: status ou texto")
+    c = next((c for c in h.get("copas") or [] if type(ano) is int and isinstance(c, dict) and c.get("ano") == ano), None)
+    if not c:
+        raise ValueError("ano não encontrado")
+    campos = HIST_FATOS if op == "status" else HIST_CAMPOS
+    if campo not in campos:
+        raise ValueError("campo: " + ", ".join(campos))
+    s = c.setdefault("staff", {}).setdefault(campo, {})
+    if op == "status":
+        v = body.get("status")
+        if v is not None and v not in HIST_STATUS:
+            raise ValueError("status: " + ", ".join(HIST_STATUS) + " ou null")
+        s["status"] = v
+    else:
+        s["texto"] = copa_txt(body.get("texto"), 160, "texto")
+    s.update(por=str(quem or "")[:40] or None, em=time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) - 3 * 3600)))
+    if not (s.get("status") or s.get("texto")):
+        del c["staff"][campo]
+    return h
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(HERE), **kw)
@@ -3342,6 +3456,8 @@ class Handler(SimpleHTTPRequestHandler):
             with LOCK:
                 c = copa_load()
             return self.send_json(copa_view(c, copa_lances()))
+        if path == "/api/historia":  # #/historia and the Copa page's history: public, {"copas": []} until the file is on the server
+            return self.send_private(historia_bytes(), "application/json; charset=utf-8", "no-cache")  # a staff fix shows at once
         if path == "/api/stream":  # the phones sync their clock on it (t); /aovivo gets the YouTube channel
             return self.send_json({"t": time.time(), "yt": YT_CHANNEL})
         if path in ("/admin", "/transparencia", "/entrar", "/transmitir", "/aovivo"):
@@ -3587,6 +3703,13 @@ class Handler(SimpleHTTPRequestHandler):
                     c = copa_act(copa_load(), body)
                     write_json(COPA, c, 1)
                 return self.send_json(copa_view(c, copa_lances()))
+            if action == "historia":  # the staff confirm, flag or fix a fact of the cup history (historia_act); the reply is the GET view
+                if self.role() not in ("admin", "conselho"):
+                    return self.send_json({"error": "só o admin e o Conselho mexem no histórico"}, 403)
+                with LOCK:
+                    h = historia_act(historia_load(), body, user or self.role())
+                    write_json(HISTORIA, h, 1)
+                return self.send_json(json.loads(historia_bytes()))
             if action == "review":
                 role = self.role()
                 if role not in ("admin", "conselho"):
