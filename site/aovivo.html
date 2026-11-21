@@ -34,6 +34,11 @@ figcaption::before { content: "● "; color: #e33; }
 .pl small { font: 600 12px var(--cond); opacity: .85; white-space: nowrap; }
 .pl .clk { text-align: center; font-variant-numeric: tabular-nums; opacity: 1; }
 .meta { color: var(--mut); font-size: 14px; }
+#feed { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; }
+#feed[hidden] { display: none; }
+#feed li { display: grid; grid-template-columns: 34px 24px 1fr; gap: 6px; align-items: baseline; padding: 8px 10px; border-radius: 10px;
+           background: color-mix(in srgb, currentColor 7%, transparent); font-size: 15px; }
+#feed .m { font: 700 15px var(--cond); font-variant-numeric: tabular-nums; opacity: .7; text-align: right; }
 </style>
 </head>
 <body>
@@ -43,6 +48,7 @@ figcaption::before { content: "● "; color: #e33; }
   <p class="meta" id="none">Nenhuma câmera no ar agora. A página atualiza sozinha.</p>
   <figure id="ytf" hidden><iframe id="yt" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Câmera principal no YouTube"></iframe><div class="pl" hidden></div></figure>
   <div id="grid"></div>
+  <ol id="feed" aria-label="Lances do jogo" hidden></ol>
   <p class="meta">Toque no vídeo para ligar o som. <a id="ytl" hidden target="_blank" rel="noopener">Abrir no YouTube</a></p>
 </main>
 <script>
@@ -116,6 +122,14 @@ setInterval(poll, 10000);
 let bar = '', ini = 0, skew = 0;  // the live game's start and the server clock minus ours, in seconds
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
 const clk = () => { const s = Math.max(0, Math.floor(Date.now() / 1000 + skew - ini)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+// The live game's events under the videos, newest first (the same list as the card on #/copa).
+const EV = {gol: ['⚽', 'Gol'], falta: ['🛑', 'Falta'], escanteio: ['🚩', 'Escanteio'], lateral: ['↔️', 'Lateral'], cartao: ['🟨', 'Cartão'], amarelo: ['🟨', 'Amarelo'], vermelho: ['🟥', 'Vermelho']};
+function feed(j) {
+  const quem = (e) => [e.jogador || (e.sofreu || e.assist) && '?', e.sofreu && 'em ' + e.sofreu, e.assist && `(assist. ${e.assist})`].filter(Boolean).join(' ');
+  const ev = j.eventos.map((e) => ({ ...e, kind: e.tipo, txt: [quem(e), e.time && j[e.time], e.texto].filter(Boolean).join(' · ') }));
+  const ln = (j.lances || []).map((l) => ({ ...l, txt: [l.who, l.text].filter(Boolean).join(' · ') || 'marcado na transmissão' }));
+  return [...ev, ...ln].sort((a, b) => b.ts - a.ts).map((e) => `<li><span class="m">${e.seg == null ? '' : Math.floor(e.seg / 60) + 1 + "'"}</span><span aria-hidden="true">${EV[e.kind]?.[0] || '🎥'}</span><span>${EV[e.kind]?.[1] || 'Lance'}${e.txt ? `: ${esc(e.txt)}` : ''}</span></li>`).join('');
+}
 async function placar() {
   try {
     const c = await (await fetch('/api/copa')).json(), j = c.jogos.find((x) => x.status === 'ao_vivo');
@@ -123,7 +137,9 @@ async function placar() {
     const n = (s, t) => j.eventos.filter((e) => e.time === s && e.tipo === t).length;
     const lado = (s) => [`Faltas ${n(s, 'falta')}`, n(s, 'amarelo') && `🟨 ${n(s, 'amarelo')}`, n(s, 'vermelho') && `🟥 ${n(s, 'vermelho')}`].filter(Boolean).join(' · ');
     bar = j ? `<span>${esc(j.a)}</span><b>${j.gols_a} × ${j.gols_b}</b><span>${esc(j.b)}</span><small>${lado('a')}</small><small class="clk">${ini ? clk() : ''}</small><small>${lado('b')}</small>` : '';
+    document.getElementById('feed').innerHTML = j ? feed(j) : '';
   } catch {}  // keep the last bar until the next poll
+  document.getElementById('feed').hidden = !document.getElementById('feed').innerHTML;
   document.querySelectorAll('figure .pl').forEach((d) => { d.innerHTML = bar; d.hidden = !bar; });
 }
 placar();
