@@ -3073,7 +3073,9 @@ def copa_act(c, body, now=None):
         if s != "agendado" and not (j["a"] and j["b"]):
             raise ValueError("defina os dois times antes")
         if s == "agendado":
-            j["inicio"] = j["fim"] = None
+            j["fim"] = None
+            if not j["eventos"]:  # a game with goals or cards keeps its clock: a mis-tap back to agendado and on again does not restart it at 00:00
+                j["inicio"] = None
         else:
             j["inicio"] = j["inicio"] or now
             j["fim"] = now if s == "fim" else None
@@ -3090,13 +3092,16 @@ def copa_act(c, body, now=None):
             raise ValueError("eventos demais neste jogo")
         ts = body.get("ts")
         ts = round(ts, 1) if type(ts) in (int, float) and now - 12 * 3600 < ts <= now + 60 else now
-        j["eventos"].append({"ts": ts, "tipo": tipo, "time": lado, "jogador": copa_txt(body.get("jogador"), 40, "jogador"),
-                             "assist": copa_txt(body.get("assist"), 40, "assist") if tipo == "gol" else None,
-                             "sofreu": copa_txt(body.get("sofreu"), 40, "sofreu") if tipo == "falta" else None,
-                             "texto": copa_txt(body.get("texto"), 120, "texto")})
-        j["eventos"].sort(key=lambda e: e["ts"])
-        if tipo == "gol":
-            j["gols_" + lado] = min(99, j["gols_" + lado] + 1)
+        ev = {"ts": ts, "tipo": tipo, "time": lado, "jogador": copa_txt(body.get("jogador"), 40, "jogador"),
+              "assist": copa_txt(body.get("assist"), 40, "assist") if tipo == "gol" else None,
+              "sofreu": copa_txt(body.get("sofreu"), 40, "sofreu") if tipo == "falta" else None,
+              "texto": copa_txt(body.get("texto"), 120, "texto")}
+        # a double tap or a resent request (the same event, side and names under 5 s apart) counts once
+        if not any(abs(e["ts"] - ts) < 5 and e | {"ts": ts} == ev for e in j["eventos"]):
+            j["eventos"].append(ev)
+            j["eventos"].sort(key=lambda e: e["ts"])
+            if tipo == "gol":
+                j["gols_" + lado] = min(99, j["gols_" + lado] + 1)
     elif op == "del_evento":
         j, i = jogo(), body.get("idx")
         if type(i) is not int or not -len(j["eventos"]) <= i < len(j["eventos"]):
