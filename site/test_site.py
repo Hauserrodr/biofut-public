@@ -1375,7 +1375,7 @@ server.HISTORIA.write_text(json.dumps({
                "fontes": [{"campo": "jogos, placares, artilheiro", "data": None, "autor": None, "trecho": "planilha"},
                           {"campo": "campeao (capitao)", "data": "2026-10-03", "autor": "Ciclano", "trecho": "Bagres campeões " + fone}]},
               {"ano": 2022, "campeao": "Axolotes", "final": None, "artilheiro": None, "fontes": []}],
-    "conflitos": [{"tema": "2023 melhor jogador", "site": "Beltrano", "fonte": "Ciclano diz Fulano"}, {"tema": "2026 capitaes", "site": "x", "fonte": "y"}],
+    "conflitos": [{"tema": "2023 melhor jogador", "site": "Beltrano", "fonte": "Ciclano diz Fulano"}, {"tema": "2026 capitaes", "site": "x", "fonte": "y"}, {"tema": "2023 melhor goleiro", "site": "a", "fonte": "b", "decisao": "a, decidido em 2026-11-20"}],
     "sem_fonte": ["2023: melhor goleiro"]}), encoding="utf-8")
 s, b = call("/api/historia")
 h = json.loads(b)
@@ -1383,7 +1383,8 @@ assert s == 200 and [c["ano"] for c in h["copas"]] == [2022, 2023] and "9" * 10 
 f = {x["campo"]: x for x in h["copas"][1]["fatos"]}
 assert f["campeao"]["status"] == "com_fonte" and f["campeao"]["fontes"][0]["autor"] == "Ciclano" and f["campeao"]["fontes"][0]["trecho"].endswith("…")
 assert f["final"]["valor"] == "Bagres 1×1 Pavões" and f["final"]["nota"] == "planilha" and f["artilheiro"]["valor"] == "Fulano · 3 gols"
-assert f["melhor_jogador"]["status"] == "em_disputa" and f["melhor_jogador"]["disputa"] == {"site": "Beltrano", "fonte": "Ciclano diz Fulano"}
+assert f["melhor_jogador"]["status"] == "em_disputa" and f["melhor_jogador"]["disputa"] == {"site": "Beltrano", "fonte": "Ciclano diz Fulano", "decisao": None}
+assert f["melhor_goleiro"]["status"] != "em_disputa" and not f["melhor_goleiro"]["disputa"] and f["melhor_goleiro"]["decisao"] == "a, decidido em 2026-11-20", "decisao = settled"
 assert f["melhor_goleiro"]["status"] == "sem_registro" and "nota" not in f
 assert {x["campo"]: x["status"] for x in h["copas"][0]["fatos"]}["campeao"] == "sem_fonte"
 ano = {"action": "historia", "op": "status", "ano": 2023, "campo": "melhor_jogador", "status": "confirmado"}

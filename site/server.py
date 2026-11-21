@@ -3217,10 +3217,11 @@ def hist_fatos(c, conflitos):
                   if HIST_FONTE.get(campo, set()) & {re.sub(r"\(.*?\)", "", w).strip() for w in str(f.get("campo") or "").split(",")}]
         if s.get("texto"):
             fontes = [{"autor": s.get("por"), "data": s.get("em"), "trecho": "texto da comissão"}]
-        disputa = conflitos.get((c.get("ano"), campo))
+        disputa = conflitos.get((c.get("ano"), campo)) or {}
+        decisao, disputa = disputa.get("decisao"), None if disputa.get("decisao") else disputa or None
         status = s.get("status") or ("em_disputa" if disputa else "sem_registro" if not valor else "com_fonte" if fontes else "sem_fonte")
         nota = (c.get("final") or {}).get("nota") if campo == "final" and not s.get("texto") else None
-        out.append({"campo": campo, "valor": valor, "nota": nota, "fontes": fontes, "disputa": disputa, "status": status,
+        out.append({"campo": campo, "valor": valor, "nota": nota, "fontes": fontes, "disputa": disputa, "decisao": decisao, "status": status,
                     "staff": {k: s[k] for k in ("status", "texto", "por", "em") if s.get(k)} or None})
     return out
 
@@ -3232,7 +3233,7 @@ def historia_view(h):
         m = re.match(r"(\d{4})\s+(.*)", str(k.get("tema") or ""))
         campo = m and next((c for w, c in HIST_TEMA if w in m[2].lower()), None)
         if campo:
-            conflitos[(int(m[1]), campo)] = {"site": k.get("site"), "fonte": k.get("fonte")}
+            conflitos[(int(m[1]), campo)] = {"site": k.get("site"), "fonte": k.get("fonte"), "decisao": k.get("decisao")}  # decisao = settled, no dispute
     copas = [{**c, "fatos": hist_fatos(c, conflitos)} for c in h.get("copas") or [] if isinstance(c, dict)]
     cov = h.get("coverage") or {}
     return sem_fone({"copas": sorted(copas, key=lambda c: c.get("ano") or 0), "copa_2026": h.get("copa_2026_formato"),

@@ -121,11 +121,87 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
   .sc-team,.sc-feat,.sc-tl li{animation:sc-in linear both;animation-timeline:view();animation-range:entry 0% entry 50%}}}
 @keyframes sc-in{from{opacity:0;translate:0 24px}}
 /* #/copa live (cup day, or #/copa?live=1): game card, bracket, games, highlights, scorers, palpite; staff controls on the card */
-.sc26 .tch{--tg:linear-gradient(115deg,#1a1a54,#222676 55%,#2d3196);display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 10px 4px 6px;border-radius:999px;background:var(--tg);color:#fff;font:700 .875rem/1.2 var(--sai);letter-spacing:.03em;white-space:nowrap}
-.sc26 .tch.tbd{background:var(--line);color:var(--dim)}
-.sc26 [data-t="Bagres"]{--tg:linear-gradient(115deg,#057a44,#009b3c 55%,#00b133)}
-.sc26 [data-t="Babuínos"]{--tg:linear-gradient(115deg,#000306,#052c41 55%,#1387bc)}
-.sc26 [data-t="Axolotes"]{--tg:linear-gradient(115deg,#c10529,#dd028c 55%,#f700e2)}
+:is(.sc26,.hx) .tch{--tg:linear-gradient(115deg,#1a1a54,#222676 55%,#2d3196);display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 10px 4px 6px;border-radius:999px;background:var(--tg);color:#fff;font:700 .875rem/1.2 var(--sai);letter-spacing:.03em;white-space:nowrap}
+:is(.sc26,.hx) .tch.tbd{background:var(--line);color:var(--dim)}
+:is(.sc26,.hx) [data-t="Bagres"]{--tg:linear-gradient(115deg,#057a44,#009b3c 55%,#00b133)}
+:is(.sc26,.hx) [data-t="Babuínos"]{--tg:linear-gradient(115deg,#000306,#052c41 55%,#1387bc)}
+:is(.sc26,.hx) [data-t="Axolotes"]{--tg:linear-gradient(115deg,#c10529,#dd028c 55%,#f700e2)}
+/* #/historia: the cups since 2022, each fact with its source. It follows the site theme (dark by default) with the Copa type and team colours */
+.hx{--sai:"Saira Semi Condensed","Barlow Condensed",system-ui,sans-serif;--eng:"Holtwood One SC",Georgia,serif;max-width:820px;margin:0 auto;padding:clamp(20px,4vw,48px) 0 96px}
+.hx [data-t="Pavões"]{--tg:linear-gradient(115deg,#1a1a54,#222676 55%,#2d3196)}
+.hx [data-t="Flamingos"]{--tg:linear-gradient(115deg,#8c1c4e,#d63a7c 55%,#f27aa8)}
+.hx [data-t="Canários"]{--tg:linear-gradient(115deg,#6b5200,#a07b00 55%,#c99a00)}
+.hx [data-t="Papagaios"]{--tg:linear-gradient(115deg,#0a4f2a,#147a3c 55%,#2a9d4a)}
+.hx [data-t="Piranhas"]{--tg:linear-gradient(115deg,#5c0a12,#a3162a 55%,#d0303f)}
+.hx [data-t="Traíras"]{--tg:linear-gradient(115deg,#2d3a1e,#4b5d2c 55%,#6c7f3a)}
+.hx [data-t="Palhaços"]{--tg:linear-gradient(115deg,#5a1a7a,#8a2bb0 55%,#c04fd8)}
+.hx [data-t="Jaguatiricas"]{--tg:linear-gradient(115deg,#6b3200,#a04d00 55%,#cf6a10)}
+.hx [data-t="Botos"]{--tg:linear-gradient(115deg,#7a3b55,#b0607e 55%,#d48aa4)}
+.hx [data-t="Capivaras"]{--tg:linear-gradient(115deg,#3d2a1a,#6b4a2e 55%,#8f6a45)}
+.hx [data-t="Salamandras"]{--tg:linear-gradient(115deg,#1a1a1a,#a33a00 55%,#e05a00)}
+.hx-eng{margin:0;font:400 .8125rem/1.3 var(--eng);font-size-adjust:cap-height .75;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+.hx-h{margin:10px 0 0;font:800 clamp(2.5rem,1.6rem + 4vw,4.25rem)/.92 var(--sai);font-size-adjust:cap-height .69;letter-spacing:.01em;text-wrap:balance}
+.hx-intro{max-width:56ch;margin:16px 0 0;font-size:clamp(1rem,.95rem + .25vw,1.125rem);color:var(--mut);text-wrap:pretty}
+.hx-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin:20px 0 0;padding:0;list-style:none;font-size:.8125rem;color:var(--mut)}
+.hx-legend li{display:flex;align-items:center;gap:8px}
+.hx-tag{--tc:var(--mut);display:inline-block;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--tc) 16%,transparent);color:var(--tc);font:700 .6875rem/1.2 var(--sai);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.hx-tag.ok{--tc:var(--win)}.hx-tag.sf{--tc:var(--gold)}.hx-tag.dp{--tc:var(--acc)}
+.sc26 .hx-tag.ok{--tc:#00873a}.sc26 .hx-tag.sf{--tc:#8a5a00}.sc26 .hx-tag.dp{--tc:#c10529}
+.hx-tl{display:grid;gap:clamp(24px,4vw,36px);margin:clamp(32px,5vw,56px) 0 0;padding:0;list-style:none}
+.hx-y{--tg:linear-gradient(115deg,#2a2d2a,#3d413d 55%,#555a55);border:1px solid var(--line);border-radius:8px;background:var(--card);overflow:clip}
+.hx-yh{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:16px;padding:18px;background:var(--tg);color:#fff}
+.hx-ano{font:400 clamp(2.25rem,1.9rem + 1.6vw,3rem)/1 var(--eng);font-size-adjust:cap-height .75;letter-spacing:.04em}
+.hx-yh p{margin:0;font:700 .75rem/1.3 var(--sai);letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.82)}
+.hx-yh h2{margin:4px 0 0;font:800 clamp(1.5rem,1.25rem + 1vw,2rem)/1 var(--sai);font-size-adjust:cap-height .69;letter-spacing:.02em;color:#fff}
+.hx-dl{margin:0;padding:2px 18px}
+.hx-f{display:grid;gap:4px;padding:14px 0;border-top:1px solid var(--line)}
+.hx-f:first-child{border-top:0}
+@media (min-width:620px){.hx-f{grid-template-columns:9rem minmax(0,1fr);gap:16px}}
+.hx-f dt{padding-top:3px;font:700 .75rem/1.4 var(--sai);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.hx-f dd{margin:0;min-width:0}
+.hx-v{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;font-weight:600;font-size:1.0625rem;line-height:1.35;overflow-wrap:anywhere}
+.hx-sc{font:800 1.25rem/1 var(--sai);font-variant-numeric:tabular-nums}
+.hx-none{color:var(--dim);font-weight:400;font-style:italic}
+.hx-src{margin:6px 0 0;font-size:.75rem;line-height:1.5;color:var(--dim);overflow-wrap:anywhere}
+.hx-src q{font-style:italic}
+.hx-dp{display:grid;gap:8px;margin:10px 0 0;padding:10px 12px;border-left:3px solid var(--acc);border-radius:0 6px 6px 0;background:var(--acc-soft);font-size:.875rem;line-height:1.45}
+.hx-dp p{margin:0}
+.hx-dp b{display:block;margin-bottom:2px;font:700 .6875rem/1.2 var(--sai);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.hx-ctl{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.hx-ctl:has(>:nth-child(4)){display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.hx-ctl button,.hx-ed button{min-height:44px;padding:0 6px;white-space:nowrap;border:1px solid var(--line2);border-radius:999px;background:var(--card2);color:var(--ink);font:700 .8125rem/1 var(--sai);letter-spacing:.04em;cursor:pointer}
+.hx-ctl button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.hx-ctl button:disabled{opacity:.5}
+.hx-add{margin:0;padding:0 18px 4px}
+.hx-ed{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;margin:10px 0 0}
+.hx-ed input{min-width:0;min-height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--ink)}
+.hx-ed .go{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.hx-ed small{grid-column:1/-1;font-size:.75rem;color:var(--dim)}
+@media (max-width:460px){.hx-ed{grid-template-columns:1fr 1fr}.hx-ed input{grid-column:1/-1}}
+.hx-more{padding:4px 18px 18px;border-top:1px solid var(--line)}
+.hx-more h3{margin:16px 0 8px;font:700 .75rem/1.2 var(--sai);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.hx-more ul{margin:0;padding-left:1.1em;font-size:.9375rem;color:var(--mut)}
+.hx-more li+li{margin-top:4px}
+.hx-sfl{margin:0;font-size:.8125rem;color:var(--mut)}
+.hx-more details{margin-top:12px}
+.hx-more summary{display:flex;align-items:center;min-height:44px;cursor:pointer;font:700 .875rem/1 var(--sai);letter-spacing:.08em;text-transform:uppercase}
+.hx-games{display:grid;gap:2px;margin:0 0 14px;padding:0;list-style:none;font-size:.9375rem}
+.hx-games li{display:grid;grid-template-columns:4.75rem minmax(0,1fr);gap:8px;padding:4px 0}
+.hx-games span{font:700 .6875rem/1.9 var(--sai);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.hx-games b{font-family:var(--sai);font-variant-numeric:tabular-nums}
+.hx-rost{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:12px}
+.hx-rost p{margin:6px 0 0;font-size:.8125rem;line-height:1.5;color:var(--mut)}
+.hx-st{margin:0;padding:16px 18px;color:var(--mut)}
+.hx-next{--tg:linear-gradient(115deg,#0a0a0a,#2a2112 60%,#6e4a00);border-color:color-mix(in srgb,var(--gold) 45%,var(--line))}
+.hx-next .hx-ano{color:#fab039}
+.hx-nb{display:grid;gap:16px;padding:18px}
+.hx-nb>p{margin:0;color:var(--mut)}
+.hx-caps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:0;padding:0;list-style:none}
+.hx-caps li{display:grid;justify-items:start;gap:4px;font-size:.8125rem;color:var(--mut)}
+.hx-nb .btn{justify-self:start}
+.hx-wait,.hx-cov{margin:24px 0 0;font-size:.8125rem;color:var(--dim)}
+.sc-hist .hx-tag{margin-left:4px;vertical-align:1px}
+.sc-hist .sc-more{margin:clamp(28px,4vw,40px) 0 0}
 .sc26>.sc-lh{display:flex;align-items:center;gap:14px;padding-top:20px}
 .sc-lh img{width:56px;height:auto}
 .sc-lh p{margin:2px 0 0;font-size:.8125rem;color:var(--mut)}
@@ -231,7 +307,7 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 </style>
 </head>
 <body>
-<script src="/site.js?v=20261023b"></script>
+<script src="/site.js?v=20261120a"></script>
 <main><div id="app"><div class="skel"></div></div><div id="radio" class="card pad sec" hidden></div></main>
 <footer><div><span>BioFut · Futebol da Biologia UFRGS · desde 2019</span><span id="foot"></span><a class="link" href="https://www.h-brain.org/?utm_source=biofut&amp;utm_medium=referral&amp;utm_campaign=footer">Feito por H-Brain</a></div></footer>
 <dialog id="giftDlg"><form method="dialog">
@@ -1004,16 +1080,100 @@ function copaTimes() {
       <ol start="2">${ps.map(p => `<li>${p.endsWith(" (GK)") ? `${esc(p.slice(0, -5))}<abbr title="goleiro">GK</abbr>` : esc(p)}</li>`).join("")}</ol></article>`).join("")}</div>
   </section>`;
 }
-function copaHist() {
+function copaHist() {  // from /api/historia when the server has the history; the short static list (sourced claims only) until then
+  const cs = HX?.copas || [], fato = (c, k) => (c.fatos || []).find(f => f.campo === k);
+  const li = cs.length ? cs.map(c => `<li><b>${c.ano}</b><p>${c.edicao ? c.edicao + "ª copa" : "Copa"}<br>${[["campeao", "Campeão"], ["final", "Final"], ["artilheiro", "Artilheiro"], ["melhor_jogador", "Melhor jogador"]]
+      .map(([k, l]) => fato(c, k)).filter(f => f?.valor).map(f => `${HX_ROT[f.campo]}: ${esc(f.valor)}${hxTag(f)}`).join("<br>")}</p></li>`).join("")
+    : HX_EST.map(([a, , t]) => `<li><b>${a}</b><p>${t}</p></li>`).join("");
   return `<section class="sc-hist" aria-labelledby="scCopas">
     <p class="sc-eng">Desde 2022</p><h2 class="sc-h" id="scCopas">As outras copas</h2>
-    <ol class="sc-tl">
-      <li><b>2022</b><p>1ª copa: Pavões campeões. Os Flamingos fizeram a melhor campanha e caíram na final. Maior público e mais gols da história.</p></li>
-      <li><b>2023</b><p>2ª copa, sábado de churrasco na Planet Ball: Bagres campeões nos pênaltis contra as Piranhas, Traíras em 3º.</p></li>
-      <li><b>2024</b><p>3ª copa, decidida nos pênaltis: Babuínos 1x1 Jaguatiricas, 2x0 nas cobranças. Barp pegou duas e foi o melhor jogador, MK artilheiro.</p></li>
-      <li><b>2025</b><p>4ª copa: grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Axolotes 2x1 de virada nas Salamandras, Rafael artilheiro, Edu melhor da copa.</p></li>
-    </ol>
+    <ol class="sc-tl">${li}</ol>
+    <p class="sc-more"><a class="btn" href="#/historia">Ver a história completa →</a></p>
   </section>`;
+}
+const HX_EST = [  // ponytail: the fallback before data/historia.json is on the server; only what the spreadsheet backs
+  [2022, "Pavões", "1ª copa: Pavões campeões. Os Flamingos fizeram a melhor campanha e caíram na final. Mais gols da história."],
+  [2023, "Bagres", "2ª copa: Bagres 1x1 Piranhas na final e título nos pênaltis, Traíras em 3º."],
+  [2024, "Babuínos", "3ª copa, decidida nos pênaltis: Babuínos 1x1 Jaguatiricas na final, MK artilheiro."],
+  [2025, "Axolotes", "4ª copa: grupos na HD Farrapos, final na Planet Ball debaixo de chuva. Axolotes campeões contra as Salamandras, Rafael artilheiro, Edu melhor da copa."],
+];
+
+// ---------- #/historia: the cups since 2022 from /api/historia (data/historia.json on the server); every fact shows where it came from ----------
+// The staff (admin, Conselho) confirm a fact, flag it, or write a short text over it; the server keeps the mined value under it.
+let HX = null;  // the last /api/historia view
+const hxLoad = () => fetch("/api/historia").then(r => r.ok ? r.json() : null).then(j => j && (HX = j)).catch(() => null);
+const HX_EMO = {Flamingos: "🦩", Canários: "🐤", Papagaios: "🦜", Piranhas: "🐠", Traíras: "🐡", Palhaços: "🤡", Jaguatiricas: "🐆", Botos: "🐬", Capivaras: "🦫", Salamandras: "🔥"};
+const HX_ROT = {campeao: "Campeão", final: "Final", artilheiro: "Artilheiro", melhor_jogador: "Melhor jogador", melhor_goleiro: "Melhor goleiro", local: "Local", nota: "Nota da comissão"};
+const HX_ST = {confirmado: "confirmado", sem_fonte: "sem fonte", em_disputa: "em disputa"};
+const hxDia = s => String(s ?? "").replace(/(\d{4})-(\d\d)-(\d\d)/g, "$3/$2/$1");
+const hxTag = f => ({confirmado: '<span class="hx-tag ok">confirmado</span>', sem_fonte: '<span class="hx-tag sf">sem fonte</span>', em_disputa: '<span class="hx-tag dp">em disputa</span>'})[f.status] || "";
+const hxF = x => [esc(x.autor || "Planilha do grupo"), x.data && esc(hxDia(x.data)), x.trecho && (x.trecho === "texto da comissão" ? "texto da comissão" : `<q>${esc(x.trecho)}</q>`)].filter(Boolean).join(", ");
+function hxValor(c, f) {
+  if (!f.valor) return '<span class="hx-none">Ninguém registrou</span>';
+  const x = c.final, mined = !f.staff?.texto;
+  if (f.campo === "campeao" && mined) return tch(f.valor);
+  if (f.campo === "final" && mined && x?.a) return `${tch(x.a)}<b class="hx-sc">${Number.isInteger(x.gols_a) && Number.isInteger(x.gols_b) ? `${x.gols_a}×${x.gols_b}` : "×"}</b>${tch(x.b)}`;
+  return `<span>${esc(f.valor)}</span>`;
+}
+function hxFato(c, f) {
+  const src = [f.fontes?.length && "Fonte: " + f.fontes.slice(0, 2).map(hxF).join("; "), f.nota && "Obs.: " + esc(f.nota), f.decisao && "Decisão: " + esc(hxDia(f.decisao)),
+    f.staff?.status && `Marcado como ${HX_ST[f.staff.status]} por ${esc(f.staff.por || "comissão")} em ${esc(hxDia(f.staff.em))}`].filter(Boolean);
+  const ctl = !STAFF() ? "" : ui.hxEd === `${c.ano}:${f.campo}` ? hxEdit(c, f) : `<div class="hx-ctl" data-ano="${c.ano}" data-c="${f.campo}">${f.campo === "nota" ? ""
+    : !f.valor ? "" : [["confirmado", "Confirmar"], ["sem_fonte", "Sem fonte"], ["em_disputa", "Disputa"]].map(([s, l]) => `<button type="button" data-st="${s}" aria-pressed="${f.staff?.status === s}">${l}</button>`).join("")}<button type="button" data-ed>${f.valor ? "Editar" : "+ Escrever"}</button></div>`;
+  return `<div class="hx-f"><dt>${HX_ROT[f.campo]}</dt><dd><p class="hx-v">${hxValor(c, f)}${hxTag(f)}</p>
+    ${src.length ? `<p class="hx-src">${src.join("<br>")}</p>` : ""}
+    ${f.status === "em_disputa" && f.disputa ? `<div class="hx-dp"><p><b>No site</b>${esc(hxDia(f.disputa.site))}</p><p><b>Nas mensagens</b>${esc(hxDia(f.disputa.fonte))}</p></div>` : ""}${ctl}</dd></div>`;
+}
+const hxEdit = (c, f) => `<form class="hx-ed" data-ano="${c.ano}" data-c="${f.campo}"><input name="t" maxlength="160" enterkeyhint="done" value="${esc(f.staff?.texto || f.valor || "")}" aria-label="${HX_ROT[f.campo]}, ${c.ano}" placeholder="Até 160 letras">
+  <button class="go">Salvar</button><button type="button" data-x>Cancelar</button><small>Vazio volta ao dado original.</small></form>`;
+function hxAno(c) {
+  const fs = c.fatos || [], camp = fs.find(f => f.campo === "campeao")?.valor, sf = (HX.sem_fonte || []).filter(s => s.startsWith(c.ano + ":")).map(s => s.slice(5).trim());
+  const add = STAFF() && !fs.some(f => f.campo === "nota") ? `<div class="hx-add">${ui.hxEd === c.ano + ":nota" ? hxEdit(c, {campo: "nota"})
+    : `<div class="hx-ctl" data-ano="${c.ano}" data-c="nota"><button type="button" data-ed>+ Nota da comissão</button></div>`}</div>` : "";
+  const more = [c.curiosidades?.length && `<h3>Lembranças do grupo</h3><ul>${c.curiosidades.map(x => `<li>${esc(hxDia(x))}</li>`).join("")}</ul>`,
+    sf.length && `<h3>Sem fonte</h3><p class="hx-sfl">${esc(hxDia(sf.join("; ")))}</p>`,
+    (c.jogos?.length || c.times?.length) && `<details><summary>Jogos e elencos</summary>
+      ${c.jogos?.length ? `<ol class="hx-games">${c.jogos.map(j => `<li><span>${esc(j.fase || "")}</span><div>${esc(j.a)} <b>${Number.isInteger(j.gols_a) ? j.gols_a : "?"}×${Number.isInteger(j.gols_b) ? j.gols_b : "?"}</b> ${esc(j.b)}</div></li>`).join("")}</ol>` : ""}
+      <div class="hx-rost">${(c.times || []).map(t => `<div>${tch(t.nome)}<p>${esc([t.capitao && t.capitao + " (capitão)", ...(t.jogadores || []).filter(p => p !== t.capitao)].filter(Boolean).join(", "))}</p></div>`).join("")}</div></details>`].filter(Boolean).join("");
+  return `<li class="hx-y" id="hx${c.ano}"${camp ? ` data-t="${esc(camp)}"` : ""}><header class="hx-yh"><b class="hx-ano">${c.ano}</b>
+    <div><p>${c.edicao ? c.edicao + "ª copa" : "Copa"}${c.data ? " · " + esc(hxDia(c.data)) : ""}</p><h2>${camp ? `${cpTeam(camp)?.[0] || HX_EMO[camp] || "🏆"} ${esc(camp)}` : "Campeão não registrado"}</h2></div></header>
+    <dl class="hx-dl">${fs.map(f => hxFato(c, f)).join("")}</dl>${add}${more ? `<div class="hx-more">${more}</div>` : ""}</li>`;
+}
+const hxNext = () => `<li class="hx-y hx-next"><header class="hx-yh"><b class="hx-ano">2026</b><div><p>5ª copa · sábado ${hxDia(COPA_DAY)}</p><h2>SuperCopa BioFut</h2></div></header>
+  <div class="hx-nb"><p>Planet Ball, quadra 6, das 8:30 às 14:30. Quatro times em todos contra todos, depois a disputa de 3º lugar e a final.</p>
+  <ul class="hx-caps">${COPA_TEAMS.map(([, t, [cap]]) => `<li>${tch(t)}<span>Capitão: ${esc(cap)}</span></li>`).join("")}</ul>
+  <a class="btn pri" href="#/copa">Ver a Copa 2026 →</a></div></li>`;
+function hxBody() {
+  if (!HX) return '<p class="hx-wait">Carregando a história…</p>';
+  const cs = HX.copas || [], cov = HX.coverage || {};
+  return `<ol class="hx-tl">${cs.length ? cs.map(hxAno).join("") : HX_EST.map(([a, t, x]) => `<li class="hx-y" data-t="${t}"><header class="hx-yh"><b class="hx-ano">${a}</b><div><h2>${cpTeam(t)?.[0] || ""} ${t}</h2></div></header><p class="hx-st">${x}</p></li>`).join("")}${hxNext()}</ol>
+    <p class="hx-cov">${cs.length && cov.first_msg ? `As copas de 2022 a 2024 vêm da planilha do grupo. As mensagens lidas vão de ${esc(hxDia(cov.first_msg))} a ${esc(hxDia(cov.last_msg))}.` : "Os detalhes de cada copa, com fonte, ainda não estão no site."}</p>`;
+}
+function pageHistoria() {
+  return `<div class="hx"><header><p class="hx-eng">Desde 2022</p><h1 class="hx-h">História das copas</h1>
+    <p class="hx-intro">Quatro copas contadas pela planilha e pelas mensagens do grupo. Cada fato mostra de onde veio. Quando há duas versões, as duas aparecem.</p>
+    <ul class="hx-legend"><li><span class="hx-tag ok">confirmado</span>pela comissão</li><li><span class="hx-tag sf">sem fonte</span>ninguém mostrou de onde veio</li><li><span class="hx-tag dp">em disputa</span>tem duas versões</li></ul></header>
+    <div id="hxBody">${hxBody()}</div></div>`;
+}
+async function bindHistoria() {
+  await Promise.all([hxLoad(), BF.me.catch(() => null)]);  // ROLE comes with BF.me: the staff controls need it
+  HX ||= {copas: []};
+  const box = $("#hxBody"); if (!box) return;
+  const draw = () => { const y = scrollY; box.innerHTML = hxBody(); scrollTo(0, y); };
+  draw();
+  box.onclick = async e => {
+    const b = e.target.closest("button"), w = b?.closest("[data-ano]"); if (!w || b.type === "submit") return;
+    const ano = +w.dataset.ano, campo = w.dataset.c;
+    if ("x" in b.dataset) { ui.hxEd = null; return draw(); }
+    if ("ed" in b.dataset) { ui.hxEd = `${ano}:${campo}`; draw(); return box.querySelector(`.hx-ed[data-ano="${ano}"][data-c="${campo}"] input`)?.focus(); }
+    if (b.dataset.st) { b.disabled = true;
+      const j = await post("historia", {op: "status", ano, campo, status: b.getAttribute("aria-pressed") === "true" ? null : b.dataset.st});
+      if (j) HX = j; draw(); }
+  };
+  box.onsubmit = async e => { e.preventDefault();
+    const f = e.target, j = await post("historia", {op: "texto", ano: +f.dataset.ano, campo: f.dataset.c, texto: f.t.value.trim()});
+    if (j) { HX = j; ui.hxEd = null; draw(); toast("Salvo no histórico"); }
+  };
 }
 
 // ponytail: the 2026-11-12 group draft, static; a site draft for 4 teams can replace it next Copa. Captain first.
@@ -1031,6 +1191,7 @@ function copaClock() {
 setInterval(() => { const c = $("#cd"); if (c) c.innerHTML = copaClock();
   document.querySelectorAll("[data-ini]").forEach(b => b.textContent = cpClock({inicio: +b.dataset.ini})); }, 1000);
 async function bindCopa() {
+  hxLoad().then(() => { const h = $(".sc-hist"); if (h && HX?.copas?.length) h.outerHTML = copaHist(); });  // the history section, from the server once it has it
   if (copaLive()) return bindCopaLive();
   const show = votes => {
     document.querySelectorAll("[data-cv]").forEach(b => { const x = votes[b.dataset.cv] || [0, 0, 0, 0], v = +b.dataset.v;
@@ -1062,7 +1223,7 @@ const CP_CHIPS = [["gol", "Gols"], ["falta", "Faltas"], ["escanteio", "Escanteio
 const CP_FASE = {grupo: "Grupo", "3o": "3º lugar", final: "Final"};
 const CP_ST = {agendado: "Agendado", ao_vivo: "Ao vivo", fim: "Fim"};
 const cpTeam = t => COPA_TEAMS.find(x => x[1] === t);
-const tch = t => t ? `<span class="tch" data-t="${esc(t)}"><span aria-hidden="true">${cpTeam(t)?.[0] || "⚽"}</span>${esc(t)}</span>` : '<span class="tch tbd">a definir</span>';
+const tch = t => t ? `<span class="tch" data-t="${esc(t)}"><span aria-hidden="true">${cpTeam(t)?.[0] || HX_EMO[t] || "⚽"}</span>${esc(t)}</span>` : '<span class="tch tbd">a definir</span>';
 const cpMin = s => s == null ? "" : `${Math.floor(s / 60) + 1}'`;
 const cpClock = j => { const s = Math.max(0, Math.floor((j.fim || Date.now() / 1000 + CPskew) - j.inicio)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
 const cpYt = l => l ? `<a class="yt" href="${esc(l)}" target="_blank" rel="noopener" aria-label="Ver no YouTube">▶</a>` : "";
@@ -1928,7 +2089,7 @@ function render() {
   const pages = {
     "": [pageHome, () => bindMatches(app)], jogo: [pageJogo, bindJogo], tabela: [pageTabela, bindTabela], jogos: [() => pageJogos(name), () => bindJogos(name)],
     cartas: [pageCartas, () => document.querySelectorAll("#tiers button").forEach(b => b.onclick = () => { ui.tier = b.dataset.t; render(); })],
-    jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa, bindCopa],
+    jogador: [() => pagePlayer(name), () => bindPlayer(name)], biobet: [pageBioBet, bindBioBet], resenha: [pageResenha, bindResenha], apoie: [pageApoie, bindApoie], copa: [pageCopa, bindCopa], historia: [pageHistoria, bindHistoria],
     planilha: [pagePlanilha, bindPlanilha], radio: [pageRadio, bindRadio], duelo: [() => pageDuelo(name), bindDuelo], deck: [pageDeck, bindDeck], eu: [pageEu, bindEu], truco: [pageTruco, bindTruco], corre: [pageCorre, bindCorre],
   };
   const [view, bind] = pages[page ?? ""] || pages[""];
@@ -1937,7 +2098,7 @@ function render() {
   bind && bind();
   bindPush();
   const r = $("#radio"); r.hidden = page !== "radio" && !r.dataset.played; r.classList.toggle("mini", page !== "radio");
-  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco", corre: "Corre, Saul!"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
+  document.title = [{jogador: name, jogo: "Jogo da semana", tabela: "Tabela", jogos: "Jogos", cartas: "Cartas", biobet: "BioBet", resenha: "Resenha", apoie: "Apoie", copa: "Copa", historia: "História das copas", planilha: "Planilha", radio: "Rádio", duelo: "Duelo", deck: "Meu deck", eu: "Sua página", truco: "BioTruco", corre: "Corre, Saul!"}[page], "BioFut"].filter(Boolean).join(" · ");  // unknown route: plain BioFut
   if (same) scrollTo(0, y); else scrollTo(0, 0);
 }
 addEventListener("hashchange", render);
