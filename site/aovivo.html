@@ -19,7 +19,7 @@ main.live h1 { font: 800 clamp(32px, 8vw, 52px)/1 var(--cond); text-transform: u
 #grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
 figure { margin: 0; position: relative; }
 #ytf { margin-bottom: 12px; }
-#yt { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; display: block; background: #000; }
+#yt, figure iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; display: block; background: #000; }
 video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; display: block; }
 figcaption { position: absolute; right: 10px; top: 8px; font: 700 14px var(--cond); letter-spacing: .1em; text-transform: uppercase;
              color: #fff; background: #0009; padding: 3px 8px; border-radius: 999px; pointer-events: none; }
@@ -53,17 +53,22 @@ figcaption::before { content: "● "; color: #e33; }
 </main>
 <script>
 const players = new Map();  // cam -> {fig, pc}
+// The unlisted YouTube broadcast of each camera, so its viewers do not load this server. A camera with no entry plays from here.
+const YT = { 'cam-biofut-2': 'fSzZsIbfAO4', 'cam-biofut-3': 'KxTr_ioHnxg', 'cam-biofut-4': 'l07R8YLlmNA' };
 
 async function watch(cam) {
   const fig = document.createElement('figure');
-  const v = Object.assign(document.createElement('video'), { autoplay: true, muted: true, playsInline: true });
-  v.onclick = () => { v.muted = !v.muted; v.play(); };
+  const v = YT[cam]
+    ? Object.assign(document.createElement('iframe'), { src: `https://www.youtube.com/embed/${YT[cam]}?autoplay=1&mute=1`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowFullscreen: true, title: cam })
+    : Object.assign(document.createElement('video'), { autoplay: true, muted: true, playsInline: true });
+  if (!YT[cam]) v.onclick = () => { v.muted = !v.muted; v.play(); };
   const cap = document.createElement('figcaption');
   cap.textContent = cam.replace(/^cam-/, '');
   fig.append(v, cap, Object.assign(document.createElement('div'), { className: 'pl', hidden: !bar, innerHTML: bar }));
   document.getElementById('grid').append(fig);
   const p = { fig, pc: null };
   players.set(cam, p);
+  if (YT[cam]) return;
   const pc = p.pc = new RTCPeerConnection();
   pc.addTransceiver('video', { direction: 'recvonly' });
   pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -88,7 +93,7 @@ function drop(cam) {
   p.pc?.close(); p.fig.remove(); players.delete(cam);
 }
 
-// The main camera plays from YouTube (it carries the viewers, not this server); the other cameras play from here.
+// The main camera plays from YouTube (it carries the viewers, not this server); the other cameras play from their own YouTube broadcast (YT above).
 let yt = '', ytSince = 0;
 fetch('/api/stream').then((r) => r.json()).then((s) => {
   yt = s.yt || '';
