@@ -242,6 +242,7 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 .sc-gl{display:grid;grid-template-columns:1fr 44px;gap:6px}
 .sc-evs{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .sc-evs button{font-size:.8125rem}
+.sc-evs [data-ev=falta]{grid-column:1/-1}
 .sc-pen{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .sc-ctl details summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font:700 .875rem var(--sai)}
 #golDlg{width:min(420px,100% - 32px);padding:18px;border:0;border-radius:8px}
@@ -293,7 +294,7 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 .sc-art2{width:100%;border-collapse:collapse;background:#fff;font:600 .9375rem var(--sai)}
 .sc-art2 td,.sc-art2 th{height:44px;padding:0 8px;border-bottom:1px solid var(--line);text-align:left}
 .sc-art2 th{font-size:.6875rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
-.sc-art2 td:last-child,.sc-art2 th:last-child{text-align:right;font-weight:800}
+.sc-art2 td:nth-child(n+4),.sc-art2 th:nth-child(n+4){text-align:right;font-weight:800}
 .sc-pp{display:grid;gap:10px}
 .sc-pp article{padding:12px 14px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .sc-pp .vs{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -1221,7 +1222,8 @@ async function bindCopa() {
 // ---------- #/copa live: from 08:00 on the cup day (or #/copa?live=1), the page follows /api/copa every 15 s while it is visible ----------
 const copaLive = () => /[?&]live=1\b/.test(location.hash) || Date.now() >= Date.parse(COPA_DAY + "T08:00:00-03:00");
 let CP = null, CPskew = 0;  // the last /api/copa view; server clock minus ours, in seconds
-const CP_EV = {gol: ["⚽", "Gol"], falta: ["🛑", "Falta"], escanteio: ["🚩", "Escanteio"], lateral: ["↔️", "Lateral"], cartao: ["🟨", "Cartão"], lance: ["🎥", "Lance"]};
+const CP_EV = {gol: ["⚽", "Gol"], falta: ["🛑", "Falta"], escanteio: ["🚩", "Escanteio"], lateral: ["↔️", "Lateral"], cartao: ["🟨", "Cartão"], amarelo: ["🟨", "Amarelo"], vermelho: ["🟥", "Vermelho"], lance: ["🎥", "Lance"]};
+const CP_CARD = ["cartao", "amarelo", "vermelho"];  // the highlights list cards with the fouls
 const CP_CHIPS = [["gol", "Gols"], ["falta", "Faltas"], ["escanteio", "Escanteios"], ["lateral", "Laterais"], ["lance", "Lances"]];
 const CP_FASE = {grupo: "Grupo", "3o": "3º lugar", final: "Final"};
 const CP_ST = {agendado: "Agendado", ao_vivo: "Ao vivo", fim: "Fim"};
@@ -1235,7 +1237,8 @@ function cpCur() {  // the game on the card: the staff's pick, else the live one
   return js.find(j => j.id === ui.copaSel) || js.find(j => j.status === "ao_vivo") || js.find(j => j.status === "agendado") || js[js.length - 1];
 }
 function cpFeed(j) {  // the staff's events and the /transmitir marks, newest first
-  const ev = j.eventos.map((e, i) => ({...e, kind: e.tipo, i, txt: [e.jogador, e.time && j[e.time], e.texto].filter(Boolean).join(" · ")}));
+  const quem = e => [e.jogador || (e.sofreu || e.assist) && "?", e.sofreu && "em " + e.sofreu, e.assist && `(assist. ${e.assist})`].filter(Boolean).join(" ");
+  const ev = j.eventos.map((e, i) => ({...e, kind: e.tipo, i, txt: [quem(e), e.time && j[e.time], e.texto].filter(Boolean).join(" · ")}));
   const ln = j.lances.map(l => ({...l, txt: [l.who, l.text].filter(Boolean).join(" · ") || "marcado na transmissão"}));
   return [...ev, ...ln].sort((a, b) => b.ts - a.ts);
 }
@@ -1253,7 +1256,7 @@ function cpCard() {
 }
 function cpCtl(j) {  // the staff's buttons for the game on the card (server: POST /api/copa {op})
   const side = s => `<div class="sc-side">${tch(j[s])}<div class="sc-gl"><button class="gol" data-gol="${s}">+ Gol</button><button data-menos="${s}" aria-label="Tirar um gol de ${esc(j[s] || "")}">−</button></div>
-    <div class="sc-evs">${["falta", "escanteio", "lateral", "cartao"].map(k => `<button data-ev="${k}" data-s="${s}">${CP_EV[k][0]} ${CP_EV[k][1]}</button>`).join("")}</div></div>`;
+    <div class="sc-evs">${["falta", "amarelo", "vermelho", "escanteio", "lateral"].map(k => `<button data-ev="${k}" data-s="${s}">${CP_EV[k][0]} ${CP_EV[k][1]}</button>`).join("")}</div></div>`;
   return `<div class="sc-ctl" aria-label="Controle da comissão">
     <select id="cpSel" aria-label="Jogo no cartão">${CP.jogos.map(x => `<option value="${x.id}"${x.id === j.id ? " selected" : ""}>${esc(x.hora || "")} ${CP_FASE[x.fase] || ""}: ${esc(x.a || "?")} × ${esc(x.b || "?")}</option>`).join("")}</select>
     ${j.status === "ao_vivo" ? '<button class="go" data-st="fim">■ Encerrar o jogo</button>' : j.status === "agendado" ? '<button class="go" data-st="ao_vivo">▶ Começar o jogo</button>' : '<button data-st="ao_vivo">↺ Reabrir o jogo</button>'}
@@ -1282,7 +1285,7 @@ function cpGames() {
 }
 function cpHigh() {  // every event and mark of the cup, filtered by kind; a cartão counts with the fouls
   const f = ui.copaF || "gol", all = CP.jogos.flatMap(j => cpFeed(j).map(e => ({...e, j})))
-    .filter(e => (e.kind === "cartao" ? "falta" : e.kind) === f).sort((a, b) => b.ts - a.ts);
+    .filter(e => (CP_CARD.includes(e.kind) ? "falta" : e.kind) === f).sort((a, b) => b.ts - a.ts);
   return `<div class="sc-chips" role="group" aria-label="Filtrar destaques">${CP_CHIPS.map(([k, l]) => `<button data-f="${k}" aria-pressed="${k === f}" class="${k === f ? "on" : ""}">${l}</button>`).join("")}</div>
     ${all.length ? `<ul class="sc-strip">${all.slice(0, 40).map(e => `<li><span>${CP_EV[e.kind]?.[0] || "🎥"} <b>${CP_EV[e.kind]?.[1] || "Lance"}</b> ${cpMin(e.seg)}</span>
       <span>${esc(e.j.a || "?")} × ${esc(e.j.b || "?")}</span>${e.txt ? `<span class="sc-note">${esc(e.txt)}</span>` : ""}${e.link ? `<a class="yt" href="${esc(e.link)}" target="_blank" rel="noopener">▶ Ver no YouTube</a>` : ""}</li>`).join("")}</ul>`
@@ -1290,8 +1293,8 @@ function cpHigh() {  // every event and mark of the cup, filtered by kind; a car
 }
 function cpScorers() {
   const a = CP.artilharia;
-  return a.length ? `<table class="sc-art2"><thead><tr><th>#</th><th>Jogador</th><th>Time</th><th>Gols</th></tr></thead><tbody>${a.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jogador)}</td><td>${r.time ? tch(r.time) : ""}</td><td class="num">${r.gols}</td></tr>`).join("")}</tbody></table>`
-    : '<p class="sc-empty">Nenhum gol com nome ainda.</p>';
+  return a.length ? `<table class="sc-art2"><thead><tr><th>#</th><th>Jogador</th><th>Time</th><th>Gols</th><th>Assist.</th></tr></thead><tbody>${a.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jogador)}</td><td>${r.time ? tch(r.time) : ""}</td><td class="num">${r.gols}</td><td class="num">${r.assist ?? 0}</td></tr>`).join("")}</tbody></table>`
+    : '<p class="sc-empty">Nenhum gol ou assistência com nome ainda.</p>';
 }
 function cpPalpite() {
   const js = CP.jogos.filter(j => j.palpite).slice(0, 3), pc = x => Math.round(100 * x) + "%";
@@ -1332,6 +1335,17 @@ function cpSet(j) {
   const box = $("#cpLive"), typing = ["INPUT", "SELECT"].includes(document.activeElement?.tagName) || $("#golDlg")?.open;
   if (box && !typing) { const y = scrollY; box.innerHTML = cpBody(); scrollTo(0, y); }
 }
+const cpPs = t => (cpTeam(t)?.[2] || []).map(p => p.replace(/ \(GK\)$/, ""));
+function cpPick(h, ps, none = "Sem nome") {  // the staff's player dialog: resolves a name, "" for no name, "-" for cancel
+  return new Promise(res => {
+    const d = $("#golDlg"), done = v => { d.close(); res(v); };
+    $("#golH").textContent = h;
+    $("#golL").innerHTML = ps.map(p => `<button value="${esc(p)}">${esc(p)}</button>`).join("") + `<button value="">${none}</button><button class="x" value="-">Cancelar</button>`;
+    $("#golL").onclick = e => { const p = e.target.closest("button"); if (p) done(p.value); };
+    d.oncancel = () => res("-");  // Esc; a close() from a button fires no cancel, so the next pick is safe
+    d.showModal();
+  });
+}
 async function cpDo(body) {  // one staff op; the reply is the new view
   const j = await post("copa", body);
   if (j) cpSet(j);
@@ -1349,13 +1363,14 @@ function bindCopaLive() {
       if (b.dataset.st === "fim" && !confirm(`Encerrar ${j.a} × ${j.b}?`)) return;
       ui.copaSel = j.id; return cpDo({op: "status", id: j.id, status: b.dataset.st});
     }
-    if (b.dataset.gol) {
-      const s = b.dataset.gol, ps = (cpTeam(j[s])?.[2] || []).map(p => p.replace(/ \(GK\)$/, ""));
-      $("#golH").textContent = `Gol de quem? ${j[s] || ""}`;
-      $("#golL").innerHTML = ps.map(p => `<button value="${esc(p)}">${esc(p)}</button>`).join("") + '<button value="">Sem nome</button><button class="x" value="-">Cancelar</button>';
-      $("#golL").onclick = async ev => { const p = ev.target.closest("button"); if (!p) return;
-        $("#golDlg").close(); if (p.value !== "-") await cpDo({op: "evento", id: j.id, tipo: "gol", time: s, jogador: p.value || null}); };
-      return $("#golDlg").showModal();
+    const k = b.dataset.gol ? "gol" : b.dataset.ev;
+    if (k && !["escanteio", "lateral"].includes(k)) {  // who did it, then who assisted or who was fouled; each step has a no-name way out
+      const s = b.dataset.gol || b.dataset.s, o = s === "a" ? "b" : "a", ev = {op: "evento", id: j.id, tipo: k, time: s};
+      const q = {gol: "Gol de quem?", falta: "Falta de quem?", amarelo: "🟨 Amarelo para quem?", vermelho: "🟥 Vermelho para quem?"}[k];
+      if ((ev.jogador = await cpPick(`${q} ${j[s] || ""}`, cpPs(j[s]))) === "-") return;
+      if (k === "gol" && (ev.assist = await cpPick("Assistência de quem?", cpPs(j[s]).filter(p => p !== ev.jogador), "Sem assistência")) === "-") return;
+      if (k === "falta" && (ev.sofreu = await cpPick(`Falta em quem? ${j[o] || ""}`, cpPs(j[o]))) === "-") return;
+      return cpDo(ev).then(r => r && k !== "gol" && toast(CP_EV[k][1] + (k === "falta" ? " marcada" : " marcado")));
     }
     if (b.dataset.menos) {  // the last goal of that side goes, its scorer too; a score typed without events just drops one
       const s = b.dataset.menos, i = j.eventos.map(e => e.tipo === "gol" && e.time === s).lastIndexOf(true);
@@ -1363,7 +1378,7 @@ function bindCopaLive() {
       if (j["gols_" + s] > 0) return cpDo({op: "placar", id: j.id, gols_a: j.gols_a - (s === "a"), gols_b: j.gols_b - (s === "b")});
       return toast("Esse time está sem gols", true);
     }
-    if (b.dataset.ev) return cpDo({op: "evento", id: j.id, tipo: b.dataset.ev, time: b.dataset.s}).then(r => r && toast(CP_EV[b.dataset.ev][1] + " marcada"));
+    if (b.dataset.ev) return cpDo({op: "evento", id: j.id, tipo: k, time: b.dataset.s}).then(r => r && toast(CP_EV[k][1] + " marcado"));
     if ("undo" in b.dataset) {
       const e = j.eventos[j.eventos.length - 1]; if (!e) return;
       if (confirm(`Desfazer ${CP_EV[e.tipo][1].toLowerCase()}${e.jogador ? " de " + e.jogador : ""}?`)) cpDo({op: "del_evento", id: j.id, idx: -1});
