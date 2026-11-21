@@ -205,6 +205,7 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 .sc26>.sc-lh{display:flex;align-items:center;gap:14px;padding-top:20px}
 .sc-lh img{width:56px;height:auto}
 .sc-lh p{margin:2px 0 0;font-size:.8125rem;color:var(--mut)}
+.sc-lh .sc-tv{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin-top:8px}
 .sc-live .sc-ls{padding:clamp(36px,6vw,72px) var(--gut) 0}  /* inside #cpLive, so not a direct .sc26>section */
 .sc-ls>h2{margin:0 0 16px;font-weight:800;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem);line-height:1}
 .sc-ls>.sc-note{margin:-8px 0 14px}
@@ -1310,7 +1311,8 @@ function cpBody() {
 function pageCopaLive() {
   return `<div class="sc26 sc-live">
   <section class="sc-lh"><img src="/copa_logo.webp" alt="" width="678" height="804"><div><h1 class="sc-h" style="margin:0;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem)">SuperCopa BioFut</h1>
-    <p>Sábado 21/11 · Planet Ball, quadra 6 · 8:30 às 14:30</p></div></section>
+    <p>Sábado 21/11 · Planet Ball, quadra 6 · 8:30 às 14:30</p>
+    <a class="btn pri sc-tv" id="cpTv" href="/aovivo" target="_blank" rel="noopener"><span aria-hidden="true">🔴</span> Transmissão oficial</a></div></section>
   <div id="cpLive">${cpBody()}</div>
   ${copaTimes()}
   ${copaHist()}</div>
@@ -1322,6 +1324,7 @@ async function cpLoad() {
 }
 function cpSet(j) {
   CP = j; CPskew = j.agora - Date.now() / 1000;
+  const tv = $("#cpTv"); if (tv && j.yt) tv.href = `https://www.youtube.com/channel/${encodeURIComponent(j.yt)}/live`;  // the official stream; /aovivo when no channel is set
   const box = $("#cpLive"), typing = ["INPUT", "SELECT"].includes(document.activeElement?.tagName) || $("#golDlg")?.open;
   if (box && !typing) { const y = scrollY; box.innerHTML = cpBody(); scrollTo(0, y); }
 }

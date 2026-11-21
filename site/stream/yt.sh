@@ -1,5 +1,5 @@
 #!/bin/bash
-# mediamtx runOnReady for every camera: the video goes to YouTube Live as is (no re-encode, the server has 1 CPU).
+# mediamtx runOnAvailable for every camera: the video goes to YouTube Live as is (no re-encode, the server has 1 CPU).
 # Keys come from /etc/biofut-stream.env: YT_KEY for cam-principal, YT_KEY_GOL_NORTE for cam-gol-norte, and so on.
 # One YouTube stream key per camera. No key for this camera: wait (the recording still runs).
 v=YT_KEY_$(printf %s "${MTX_PATH#cam-}" | tr a-z- A-Z_)

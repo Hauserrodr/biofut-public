@@ -38,5 +38,5 @@ pathDefaults:
 
 paths:
   "~^cam-[a-z0-9-]{1,24}$":  # yt.sh sends a camera to YouTube when /etc/biofut-stream.env has its key
-    runOnReady: /usr/local/bin/biofut-yt.sh
-    runOnReadyRestart: yes
+    runOnAvailable: /usr/local/bin/biofut-yt.sh
+    runOnAvailableRestart: yes
