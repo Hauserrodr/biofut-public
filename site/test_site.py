@@ -1359,11 +1359,59 @@ assert call("/api/copa", {"action": "copa", "op": "placar", "id": "j1", "gols_a"
 s, b = call("/api/copa", {"action": "copa", "op": "status", "id": "j1", "status": "ao_vivo"}, cookie=me)
 assert s == 200 and json.loads(b)["jogos"][0]["status"] == "ao_vivo" and json.loads(server.COPA.read_text(encoding="utf-8"))["jogos"][0]["inicio"]
 server.LANCES.parent.mkdir(exist_ok=True)
-with server.LANCES.open("a", encoding="utf-8") as fh:
-    fh.write(json.dumps({"t": time.time(), "kind": "falta", "who": "beira"}) + "\n")
+with server.LANCES.open("w", encoding="utf-8") as fh:
+    fh.write(json.dumps({"t": json.loads(server.COPA.read_text(encoding="utf-8"))["jogos"][0]["inicio"], "kind": "falta", "who": "beira"}) + "\n")
+time.sleep(.06)  # inicio is rounded to 0.1 s: the lance goes on it, the view comes after it, and "w" drops the earlier lances that can fall in the rounded window
 o = staff("/api/copa", {"action": "copa", "op": "evento", "id": "j1", "tipo": "gol", "time": "b", "jogador": "Fulano"})
 assert o["jogos"][0]["gols_b"] == 1 and o["artilharia"][0]["time"] == "Pavões" and [r["kind"] for r in o["jogos"][0]["lances"]] == ["falta"]
 server.COPA, server.ADMIN = copa0, ""
+# #/historia: GET is public ({"copas": []} with no file), the facts carry their sources; only the staff change a status or a text
+server.HISTORIA, hist0, server.ADMIN = tmp / "historia.json", server.HISTORIA, "adm"
+assert json.loads(call("/api/historia")[1]) == {"copas": []}, "no file yet: an empty history, not a 404"
+fone = "tel " + "9" * 11  # built here: no phone number in the repo
+server.HISTORIA.write_text(json.dumps({
+    "copas": [{"ano": 2023, "campeao": "Bagres", "vice": "Pavões", "final": {"a": "Bagres", "b": "Pavões", "gols_a": 1, "gols_b": 1, "nota": "planilha"},
+               "artilheiro": {"nome": "Fulano", "gols": 3}, "melhor_jogador": "Beltrano", "melhor_goleiro": None, "local": None,
+               "fontes": [{"campo": "jogos, placares, artilheiro", "data": None, "autor": None, "trecho": "planilha"},
+                          {"campo": "campeao (capitao)", "data": "2026-10-03", "autor": "Ciclano", "trecho": "Bagres campeões " + fone}]},
+              {"ano": 2022, "campeao": "Axolotes", "final": None, "artilheiro": None, "fontes": []}],
+    "conflitos": [{"tema": "2023 melhor jogador", "site": "Beltrano", "fonte": "Ciclano diz Fulano"}, {"tema": "2026 capitaes", "site": "x", "fonte": "y"}, {"tema": "2023 melhor goleiro", "site": "a", "fonte": "b", "decisao": "a, decidido em 2026-11-20"}],
+    "sem_fonte": ["2023: melhor goleiro"]}), encoding="utf-8")
+s, b = call("/api/historia")
+h = json.loads(b)
+assert s == 200 and [c["ano"] for c in h["copas"]] == [2022, 2023] and "9" * 10 not in b.decode(), "sorted by year, phones cut"
+f = {x["campo"]: x for x in h["copas"][1]["fatos"]}
+assert f["campeao"]["status"] == "com_fonte" and f["campeao"]["fontes"][0]["autor"] == "Ciclano" and f["campeao"]["fontes"][0]["trecho"].endswith("…")
+assert f["final"]["valor"] == "Bagres 1×1 Pavões" and f["final"]["nota"] == "planilha" and f["artilheiro"]["valor"] == "Fulano · 3 gols"
+assert f["melhor_jogador"]["status"] == "em_disputa" and f["melhor_jogador"]["disputa"] == {"site": "Beltrano", "fonte": "Ciclano diz Fulano", "decisao": None}
+assert f["melhor_goleiro"]["status"] != "em_disputa" and not f["melhor_goleiro"]["disputa"] and f["melhor_goleiro"]["decisao"] == "a, decidido em 2026-11-20", "decisao = settled"
+assert f["melhor_goleiro"]["status"] == "sem_registro" and "nota" not in f
+assert {x["campo"]: x["status"] for x in h["copas"][0]["fatos"]}["campeao"] == "sem_fonte"
+ano = {"action": "historia", "op": "status", "ano": 2023, "campo": "melhor_jogador", "status": "confirmado"}
+assert call("/api/historia", ano)[0] == 403, "anon"
+assert call("/api/historia", ano, cookie=eve)[0] == 403, "membro"
+for bad in ({"op": "x", "ano": 2023, "campo": "final"}, {"op": "status", "ano": 1999, "campo": "final", "status": "confirmado"},
+            {"op": "status", "ano": "2023", "campo": "final", "status": "confirmado"}, {"op": "status", "ano": 2023, "campo": "vice", "status": "confirmado"},
+            {"op": "status", "ano": 2023, "campo": "final", "status": "talvez"}, {"op": "status", "ano": 2023, "campo": "nota", "status": "confirmado"},
+            {"op": "texto", "ano": 2023, "campo": "final", "texto": "x" * 161}, {"op": "texto", "ano": 2023, "campo": "final", "texto": 3}):
+    assert call("/api/historia", {"action": "historia", **bad}, cookie=me)[0] == 400, bad
+s, b = call("/api/historia", ano, cookie=me)
+f = {x["campo"]: x for x in json.loads(b)["copas"][1]["fatos"]}
+assert s == 200 and f["melhor_jogador"]["status"] == "confirmado" and f["melhor_jogador"]["staff"]["por"] == "Dan" and f["melhor_jogador"]["disputa"]
+o = staff("/api/historia", {"action": "historia", "op": "texto", "ano": 2023, "campo": "melhor_goleiro", "texto": " Fulano "})
+f = {x["campo"]: x for x in o["copas"][1]["fatos"]}
+assert f["melhor_goleiro"]["valor"] == "Fulano" and f["melhor_goleiro"]["status"] == "com_fonte" and f["melhor_goleiro"]["fontes"][0]["autor"] == "admin"
+o = staff("/api/historia", {"action": "historia", "op": "texto", "ano": 2023, "campo": "nota", "texto": "Final na chuva."})
+assert [x["valor"] for x in o["copas"][1]["fatos"] if x["campo"] == "nota"] == ["Final na chuva."]
+disk = json.loads(server.HISTORIA.read_text(encoding="utf-8"))
+assert disk["copas"][0]["melhor_goleiro"] is None and disk["copas"][0]["staff"]["melhor_goleiro"]["texto"] == "Fulano", "the mined value stays, the staff text lies over it"
+assert json.loads(call("/api/historia")[1]) == o, "the GET sees the write at once"
+staff("/api/historia", {"action": "historia", "op": "texto", "ano": 2023, "campo": "melhor_goleiro", "texto": ""})
+staff("/api/historia", {"action": "historia", "op": "status", "ano": 2023, "campo": "melhor_jogador", "status": None})
+f = {x["campo"]: x for x in json.loads(call("/api/historia")[1])["copas"][1]["fatos"]}
+assert f["melhor_goleiro"]["status"] == "sem_registro" and f["melhor_jogador"]["status"] == "em_disputa" and f["melhor_jogador"]["staff"] is None, "undo = back to the data"
+assert "melhor_goleiro" not in json.loads(server.HISTORIA.read_text(encoding="utf-8"))["copas"][0]["staff"]
+server.HISTORIA, server.ADMIN = hist0, ""
 server.STREAM_PIN, server.LANCES = "", lances0
 server.FAILS.clear()
 httpd.shutdown()
