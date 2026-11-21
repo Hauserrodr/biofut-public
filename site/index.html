@@ -1062,7 +1062,7 @@ function pageCopa() {
     <p class="sc-coin"><b>🪙 Jogou a Copa, ganhou 50 moedas.</b> Depois da Copa, a lista de quem jogou vem da comissão e as moedas caem no seu saldo.</p>
   </section>
   ${copaTimes()}
-  <section class="sc-votes" aria-labelledby="scVotos">
+  <section class="sc-votes" aria-labelledby="scVotos" hidden>
     <div class="sc-headc"><p class="sc-eng">Ideias em estudo</p><h2 class="sc-h" id="scVotos">O que o site pode fazer na Copa</h2>
       <p class="sc-intro">Vote em cada uma: o que vale a pena e o que é viagem. O voto é anônimo: só a contagem aparece, ninguém vê quem votou em quê.</p></div>
     <div class="sc-feats">${feats.map(([i, t, d], n) => `<article class="sc-feat"><div class="sc-fh"><span class="sc-n" aria-hidden="true">${String(n + 1).padStart(2, "0")}</span><span class="sc-ico" aria-hidden="true">${i}</span></div><h3>${t}</h3><p>${d}</p>
