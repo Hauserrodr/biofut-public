@@ -1316,8 +1316,8 @@ f = cp["jogos"][7]
 server.copa_act(cp, {"op": "jogo", "id": "j8", "yt_video": "https://www.youtube.com/live/abcdefghijk?si=x", "yt_inicio": t0 + 2000, "duracao": 30, "hora": "14:10"}, t0)
 assert (f["yt_video"], f["duracao"], f["hora"]) == ("abcdefghijk", 30, "14:10")
 server.copa_act(cp, {"op": "status", "id": "j8", "status": "ao_vivo"}, t0 + 2100)
-for lado, quem in (("a", "Fulano"), ("a", "Fulano"), ("b", None)):
-    server.copa_act(cp, {"op": "evento", "id": "j8", "tipo": "gol", "time": lado, "jogador": quem}, t0 + 2200)
+for i, (lado, quem) in enumerate((("a", "Fulano"), ("a", "Fulano"), ("b", None))):  # 10 s apart: the same goal twice within 5 s is one double tap
+    server.copa_act(cp, {"op": "evento", "id": "j8", "tipo": "gol", "time": lado, "jogador": quem}, t0 + 2200 + 10 * i)
 server.copa_act(cp, {"op": "evento", "id": "j8", "tipo": "gol", "time": "b", "jogador": "Ciclano"}, t0 + 2300)
 server.copa_act(cp, {"op": "del_evento", "id": "j8", "idx": -1}, t0 + 2310)
 assert (f["gols_a"], f["gols_b"], len(f["eventos"])) == (2, 1, 3), "undo takes the goal back"
@@ -1366,6 +1366,9 @@ assert jr["inicio"] == T + 120, "no events yet: a mis-start resets the clock"
 server.copa_act(cr, {"op": "evento", "id": jr["id"], "tipo": "gol", "time": "a"}, T + 200)
 for st, dt in (("agendado", 300), ("ao_vivo", 360)): server.copa_act(cr, {"op": "status", "id": jr["id"], "status": st}, T + dt)
 assert jr["inicio"] == T + 120 and jr["gols_a"] == 1, "a game with a goal keeps its clock after agendado and ao vivo again"
+for dt in (400, 401, 420): server.copa_act(cr, {"op": "evento", "id": jr["id"], "tipo": "escanteio", "time": "b"}, T + dt)
+for dt in (500, 503): server.copa_act(cr, {"op": "evento", "id": jr["id"], "tipo": "gol", "time": "a", "jogador": "Fulano", "ts": T + 499}, T + dt)
+assert [e["tipo"] for e in jr["eventos"]].count("escanteio") == 2 and jr["gols_a"] == 2, "a double tap or a resent goal counts once; a corner 20 s later is a new one"
 try: server.copa_act(server.copa_default(), {"op": "status", "id": "j7", "status": "ao_vivo"}, t0); raise AssertionError("no teams yet")
 except ValueError: pass
 server.COPA, copa0, server.ADMIN = tmp / "copa.json", server.COPA, "adm"
