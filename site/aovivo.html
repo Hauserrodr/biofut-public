@@ -32,6 +32,7 @@ figcaption::before { content: "● "; color: #e33; }
 .pl span:first-child, .pl small:first-of-type { text-align: right; }
 .pl b { font-size: 22px; letter-spacing: .04em; white-space: nowrap; }
 .pl small { font: 600 12px var(--cond); opacity: .85; white-space: nowrap; }
+.pl .clk { text-align: center; font-variant-numeric: tabular-nums; opacity: 1; }
 .meta { color: var(--mut); font-size: 14px; }
 </style>
 </head>
@@ -112,19 +113,22 @@ async function poll() {
 setInterval(poll, 10000);
 
 // The score bar over each player: the live Copa game from /api/copa (the staff's buttons on #/copa). It hides between games.
-let bar = '';
+let bar = '', ini = 0, skew = 0;  // the live game's start and the server clock minus ours, in seconds
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+const clk = () => { const s = Math.max(0, Math.floor(Date.now() / 1000 + skew - ini)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 async function placar() {
   try {
-    const j = (await (await fetch('/api/copa')).json()).jogos.find((x) => x.status === 'ao_vivo');
+    const c = await (await fetch('/api/copa')).json(), j = c.jogos.find((x) => x.status === 'ao_vivo');
+    skew = c.agora - Date.now() / 1000; ini = j?.inicio || 0;
     const n = (s, t) => j.eventos.filter((e) => e.time === s && e.tipo === t).length;
     const lado = (s) => [`Faltas ${n(s, 'falta')}`, n(s, 'amarelo') && `🟨 ${n(s, 'amarelo')}`, n(s, 'vermelho') && `🟥 ${n(s, 'vermelho')}`].filter(Boolean).join(' · ');
-    bar = j ? `<span>${esc(j.a)}</span><b>${j.gols_a} × ${j.gols_b}</b><span>${esc(j.b)}</span><small>${lado('a')}</small><small></small><small>${lado('b')}</small>` : '';
+    bar = j ? `<span>${esc(j.a)}</span><b>${j.gols_a} × ${j.gols_b}</b><span>${esc(j.b)}</span><small>${lado('a')}</small><small class="clk">${ini ? clk() : ''}</small><small>${lado('b')}</small>` : '';
   } catch {}  // keep the last bar until the next poll
   document.querySelectorAll('figure .pl').forEach((d) => { d.innerHTML = bar; d.hidden = !bar; });
 }
 placar();
 setInterval(placar, 15000);
+setInterval(() => ini && document.querySelectorAll('.pl .clk').forEach((d) => { d.textContent = clk(); }), 1000);
 </script>
 </body>
 </html>
