@@ -36,8 +36,13 @@ video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px
   <form id="setup">
     <label for="pin">PIN de transmissão</label>
     <input id="pin" inputmode="numeric" autocomplete="off" required>
-    <label for="name">Nome da câmera (ou o seu)</label>
-    <input id="name" placeholder="gol-norte" pattern="[a-zA-Z0-9 -]{1,24}" maxlength="24" required>
+    <label for="name">Câmera</label>
+    <select id="name">
+      <option value="principal">Câmera 1 · principal</option>
+      <option value="biofut-2">Câmera 2</option>
+      <option value="biofut-3">Câmera 3</option>
+      <option value="biofut-4">Câmera 4</option>
+    </select>
     <label for="q">Qualidade</label>
     <select id="q">
       <option value="480,800">Baixa · 480p</option>
@@ -46,7 +51,7 @@ video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px
       <option value="1080,4000">Máxima · 1080p</option>
     </select>
     <p class="meta" id="gb"></p>
-    <p class="meta">Use <b>principal</b> para a câmera que vai pro YouTube. Celular na horizontal, no tripé, carregador ligado.</p>
+    <p class="meta">Cada câmera vai para a sua transmissão no YouTube. Use o número do tripé. Celular na horizontal, carregador ligado.</p>
     <button class="btn">Começar a transmitir</button>
     <button class="btn" type="button" id="only">Só marcar lances (sem câmera)</button>
     <div class="err" id="err"></div>
@@ -71,7 +76,9 @@ video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px
 const $ = (id) => document.getElementById(id);
 const store = { get: (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
                 set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-$('pin').value = store.get('cam_pin'); $('name').value = store.get('cam_name');
+$('pin').value = store.get('cam_pin');
+$('name').value = new URLSearchParams(location.search).get('cam') || store.get('cam_name') || 'principal';  // the tripod QR opens ?cam=<its camera>
+if (!$('name').value) $('name').value = 'principal';  // an old saved name that is not on the list
 $('q').value = store.get('cam_q') || $('q').value;
 let media, pc, slug, pin, wake, running = false, retry, off = 0, synced = false;
 
