@@ -18,11 +18,20 @@ main.live { max-width: 1200px; margin: 0 auto; padding: 16px; }
 main.live h1 { font: 800 clamp(32px, 8vw, 52px)/1 var(--cond); text-transform: uppercase; margin: 6px 0 14px; }
 #grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
 figure { margin: 0; position: relative; }
-#yt { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; display: block; margin-bottom: 12px; background: #000; }
+#ytf { margin-bottom: 12px; }
+#yt { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; display: block; background: #000; }
 video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; display: block; }
-figcaption { position: absolute; left: 10px; top: 8px; font: 700 14px var(--cond); letter-spacing: .1em; text-transform: uppercase;
+figcaption { position: absolute; right: 10px; top: 8px; font: 700 14px var(--cond); letter-spacing: .1em; text-transform: uppercase;
              color: #fff; background: #0009; padding: 3px 8px; border-radius: 999px; pointer-events: none; }
 figcaption::before { content: "● "; color: #e33; }
+.pl { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 70px); box-shadow: 0 0 0 1px #fff3; display: grid; grid-template-columns: 1fr auto 1fr;
+      column-gap: 10px; align-items: center; background: #000c; color: #fff; padding: 4px 14px 5px; border-radius: 12px;
+      font: 700 16px/1.15 var(--cond); text-transform: uppercase; pointer-events: none; }
+.pl[hidden] { display: none; }
+.pl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl span:first-child, .pl small:first-of-type { text-align: right; }
+.pl b { font-size: 22px; letter-spacing: .04em; white-space: nowrap; }
+.pl small { font: 600 12px var(--cond); opacity: .85; white-space: nowrap; }
 .meta { color: var(--mut); font-size: 14px; }
 </style>
 </head>
@@ -31,9 +40,9 @@ figcaption::before { content: "● "; color: #e33; }
   <div class="kicker">Copa BioFut</div>
   <h1>Ao vivo</h1>
   <p class="meta" id="none">Nenhuma câmera no ar agora. A página atualiza sozinha.</p>
-  <iframe id="yt" hidden allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Câmera principal no YouTube"></iframe>
+  <figure id="ytf" hidden><iframe id="yt" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Câmera principal no YouTube"></iframe><div class="pl" hidden></div></figure>
   <div id="grid"></div>
-  <p class="meta">Toque no vídeo para ligar o som.</p>
+  <p class="meta">Toque no vídeo para ligar o som. <a id="ytl" hidden target="_blank" rel="noopener">Abrir no YouTube</a></p>
 </main>
 <script>
 const players = new Map();  // cam -> {fig, pc}
@@ -44,7 +53,7 @@ async function watch(cam) {
   v.onclick = () => { v.muted = !v.muted; v.play(); };
   const cap = document.createElement('figcaption');
   cap.textContent = cam.replace(/^cam-/, '');
-  fig.append(v, cap);
+  fig.append(v, cap, Object.assign(document.createElement('div'), { className: 'pl', hidden: !bar, innerHTML: bar }));
   document.getElementById('grid').append(fig);
   const p = { fig, pc: null };
   players.set(cam, p);
@@ -74,15 +83,19 @@ function drop(cam) {
 
 // The main camera plays from YouTube (it carries the viewers, not this server); the other cameras play from here.
 let yt = '', ytSince = 0;
-fetch('/api/stream').then((r) => r.json()).then((s) => { yt = s.yt || ''; poll(); }).catch(() => {});
+fetch('/api/stream').then((r) => r.json()).then((s) => {
+  yt = s.yt || '';
+  if (yt) Object.assign(document.getElementById('ytl'), { href: `https://www.youtube.com/channel/${encodeURIComponent(yt)}/live`, hidden: false });
+  poll();
+}).catch(() => {});
 
 function youtube(on) {
-  const f = document.getElementById('yt');
-  if (!on) { ytSince = 0; f.hidden = true; f.removeAttribute('src'); return; }
+  const f = document.getElementById('yt'), box = f.parentNode;
+  if (!on) { ytSince = 0; box.hidden = true; f.removeAttribute('src'); return; }
   ytSince ||= Date.now();
-  if (f.hidden && Date.now() - ytSince > 20000) {  // YouTube needs a few seconds after the push starts to go live
+  if (box.hidden && Date.now() - ytSince > 20000) {  // YouTube needs a few seconds after the push starts to go live
     f.src = `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(yt)}&autoplay=1&mute=1`;
-    f.hidden = false;
+    box.hidden = false;
   }
 }
 
@@ -97,6 +110,21 @@ async function poll() {
   } catch {}
 }
 setInterval(poll, 10000);
+
+// The score bar over each player: the live Copa game from /api/copa (the staff's buttons on #/copa). It hides between games.
+let bar = '';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+async function placar() {
+  try {
+    const j = (await (await fetch('/api/copa')).json()).jogos.find((x) => x.status === 'ao_vivo');
+    const n = (s, t) => j.eventos.filter((e) => e.time === s && e.tipo === t).length;
+    const lado = (s) => [`Faltas ${n(s, 'falta')}`, n(s, 'amarelo') && `🟨 ${n(s, 'amarelo')}`, n(s, 'vermelho') && `🟥 ${n(s, 'vermelho')}`].filter(Boolean).join(' · ');
+    bar = j ? `<span>${esc(j.a)}</span><b>${j.gols_a} × ${j.gols_b}</b><span>${esc(j.b)}</span><small>${lado('a')}</small><small></small><small>${lado('b')}</small>` : '';
+  } catch {}  // keep the last bar until the next poll
+  document.querySelectorAll('figure .pl').forEach((d) => { d.innerHTML = bar; d.hidden = !bar; });
+}
+placar();
+setInterval(placar, 15000);
 </script>
 </body>
 </html>

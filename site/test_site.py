@@ -1514,6 +1514,8 @@ assert sent[n:] == [("/group", {"text": server.ANUNCIO[1].replace("{pin}", serve
 assert "PIN {pin}" in server.ANUNCIO[1], "the PIN is filled at send time, never written in the repo"
 assert (server.HERE / "copa_art.jpg").exists() and "copa_art.jpg" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8")
 assert 'data-mark="gol"' in (server.HERE / "index.html").read_text(encoding="utf-8"), "members mark goals and lances on #/copa"
+av = (server.HERE / "aovivo.html").read_text(encoding="utf-8")
+assert "fetch('/api/copa')" in av and 'class="pl"' in av and "tvHref" not in (server.HERE / "index.html").read_text(encoding="utf-8"), "/aovivo shows the score bar and the Copa button opens it"
 del sent[n:]
 # The bot's health (2026-10-30, it sat logged out for 3 days): checked every 10 min, down 20 min -> one push to Gab, back -> one more
 pushed, health, saved = [], {"ok": True, "up": False}, (server.push_to, server.bot_post, server.BOT_URL)
