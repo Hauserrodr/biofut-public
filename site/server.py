@@ -2849,7 +2849,7 @@ COPA = HERE / "data" / "copa.json"
 COPA_TIMES = ("Pavões", "Bagres", "Babuínos", "Axolotes")  # index.html COPA_TEAMS
 FASES = ("grupo", "semi", "3o", "final")
 COPA_STATUS = ("agendado", "ao_vivo", "fim")
-COPA_EV = ("gol", "falta", "escanteio", "lateral", "cartao", "lance")
+COPA_EV = ("gol", "falta", "escanteio", "lateral", "cartao", "amarelo", "vermelho", "lance")  # cartao = an old card with no colour
 COPA_PRIOR, COPA_PRIOR_W = 1.5, 2  # palpite: 1.5 goals per game per team before any game, worth 2 games of evidence
 COPA_LEAD = 10  # a YouTube link opens this many seconds before the mark: the tap comes after the play
 
@@ -2916,13 +2916,17 @@ def copa_tabela(c):
 
 
 def copa_artilharia(c):
-    gols = {}
+    """Goals and assists per (player, team): most goals first, then most assists."""
+    st = {}
     for j in c["jogos"]:
         for e in j["eventos"]:
-            if e["tipo"] == "gol" and e.get("jogador"):
-                k = (e["jogador"], j.get(e["time"]) if e.get("time") in ("a", "b") else None)
-                gols[k] = gols.get(k, 0) + 1
-    return [{"jogador": n, "time": t, "gols": g} for (n, t), g in sorted(gols.items(), key=lambda x: (-x[1], x[0][0]))]
+            if e["tipo"] != "gol":
+                continue
+            t = j.get(e["time"]) if e.get("time") in ("a", "b") else None
+            for quem, i in ((e.get("jogador"), 0), (e.get("assist"), 1)):
+                if quem:
+                    st.setdefault((quem, t), [0, 0])[i] += 1
+    return [{"jogador": n, "time": t, "gols": g, "assist": a} for (n, t), (g, a) in sorted(st.items(), key=lambda x: (-x[1][0], -x[1][1], x[0][0]))]
 
 
 def copa_vencedor(j):
@@ -3087,6 +3091,8 @@ def copa_act(c, body, now=None):
         ts = body.get("ts")
         ts = round(ts, 1) if type(ts) in (int, float) and now - 12 * 3600 < ts <= now + 60 else now
         j["eventos"].append({"ts": ts, "tipo": tipo, "time": lado, "jogador": copa_txt(body.get("jogador"), 40, "jogador"),
+                             "assist": copa_txt(body.get("assist"), 40, "assist") if tipo == "gol" else None,
+                             "sofreu": copa_txt(body.get("sofreu"), 40, "sofreu") if tipo == "falta" else None,
                              "texto": copa_txt(body.get("texto"), 120, "texto")})
         j["eventos"].sort(key=lambda e: e["ts"])
         if tipo == "gol":

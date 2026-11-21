@@ -1321,7 +1321,17 @@ for lado, quem in (("a", "Fulano"), ("a", "Fulano"), ("b", None)):
 server.copa_act(cp, {"op": "evento", "id": "j8", "tipo": "gol", "time": "b", "jogador": "Ciclano"}, t0 + 2300)
 server.copa_act(cp, {"op": "del_evento", "id": "j8", "idx": -1}, t0 + 2310)
 assert (f["gols_a"], f["gols_b"], len(f["eventos"])) == (2, 1, 3), "undo takes the goal back"
-assert server.copa_artilharia(cp) == [{"jogador": "Fulano", "time": "Bagres", "gols": 2}]
+assert server.copa_artilharia(cp) == [{"jogador": "Fulano", "time": "Bagres", "gols": 2, "assist": 0}]
+for ev in ({"tipo": "gol", "time": "b", "jogador": "Beltrano", "assist": "Fulano", "sofreu": "x"}, {"tipo": "falta", "time": "a", "jogador": "Fulano", "sofreu": "Beltrano", "assist": "x"},
+           {"tipo": "amarelo", "time": "a", "jogador": "Fulano"}, {"tipo": "vermelho", "time": "b"}):
+    server.copa_act(cp, {"op": "evento", "id": "j8", **ev}, t0 + 2320)
+g, fa, am, vm = f["eventos"][-4:]
+assert (g["assist"], g["sofreu"], fa["sofreu"], fa["assist"], am["tipo"], vm["jogador"]) == ("Fulano", None, "Beltrano", None, "amarelo", None), "assist only on goals, fouled only on fouls"
+assert server.copa_artilharia(cp)[:2] == [{"jogador": "Fulano", "time": "Bagres", "gols": 2, "assist": 0}, {"jogador": "Beltrano", "time": "Babuínos", "gols": 1, "assist": 0}]
+assert {"jogador": "Fulano", "time": "Babuínos", "gols": 0, "assist": 1} in server.copa_artilharia(cp), "an assist counts for the scoring side"
+for _ in range(4):
+    server.copa_act(cp, {"op": "del_evento", "id": "j8", "idx": -1}, t0 + 2325)
+assert server.copa_artilharia(cp) == [{"jogador": "Fulano", "time": "Bagres", "gols": 2, "assist": 0}]
 lances = [{"t": t0 + 2330, "kind": "escanteio", "who": "beira"}, {"t": None, "ts": t0 + 2340, "kind": "zzz"}, {"t": t0 + 50, "kind": "gol"}, "x"]
 v = server.copa_view(cp, [r for r in lances if isinstance(r, dict)], t0 + 2400)
 vf = v["jogos"][7]
