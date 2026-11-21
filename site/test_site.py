@@ -1359,6 +1359,13 @@ c5 = server.copa_act(server.copa_default(), {"op": "times", "times": ["A", "B", 
 assert sum(j["fase"] == "grupo" for j in c5["jogos"]) == 10 and c5["jogos"][-1]["fase"] == "final"
 server.copa_act(c5, {"op": "jogo", "fase": "grupo", "a": "A", "b": "B"}, t0)
 assert c5["jogos"][-1]["id"] == "j13" and server.copa_act(c5, {"op": "jogo", "id": "j13", "remover": True}, t0)["jogos"][-1]["id"] == "j12"
+cr, T = server.copa_default(), 1_800_000_000.0
+jr = cr["jogos"][0]  # j1 has both teams
+for st, dt in (("ao_vivo", 0), ("agendado", 60), ("ao_vivo", 120)): server.copa_act(cr, {"op": "status", "id": jr["id"], "status": st}, T + dt)
+assert jr["inicio"] == T + 120, "no events yet: a mis-start resets the clock"
+server.copa_act(cr, {"op": "evento", "id": jr["id"], "tipo": "gol", "time": "a"}, T + 200)
+for st, dt in (("agendado", 300), ("ao_vivo", 360)): server.copa_act(cr, {"op": "status", "id": jr["id"], "status": st}, T + dt)
+assert jr["inicio"] == T + 120 and jr["gols_a"] == 1, "a game with a goal keeps its clock after agendado and ao vivo again"
 try: server.copa_act(server.copa_default(), {"op": "status", "id": "j7", "status": "ao_vivo"}, t0); raise AssertionError("no teams yet")
 except ValueError: pass
 server.COPA, copa0, server.ADMIN = tmp / "copa.json", server.COPA, "adm"

@@ -3073,7 +3073,9 @@ def copa_act(c, body, now=None):
         if s != "agendado" and not (j["a"] and j["b"]):
             raise ValueError("defina os dois times antes")
         if s == "agendado":
-            j["inicio"] = j["fim"] = None
+            j["fim"] = None
+            if not j["eventos"]:  # a game with goals or cards keeps its clock: a mis-tap back to agendado and on again does not restart it at 00:00
+                j["inicio"] = None
         else:
             j["inicio"] = j["inicio"] or now
             j["fim"] = now if s == "fim" else None
