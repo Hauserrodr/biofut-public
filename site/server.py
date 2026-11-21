@@ -511,7 +511,7 @@ TRUCO_BLEFE = .1  # how often it says truco on a weak hand, so a call does not a
 TRUCO_ESPERA = 1800  # online: after 30 min without the other's move, you may end the match and win (W.O.)
 TRUCO_DESAFIO = 86400  # an online challenge nobody answered drops after a day
 TRUCO_NEWS = 3  # the BioTruco popup comes back once for members who saw an older one (tour_truco[user]["v"] < this)
-ANUNCIO = ("truco-v03", '🤖 Chegou o BioTruco v0.3! Agora dá pra desafiar alguém do grupo: online, ao vivo, ou contra a máquina jogando com o deck da pessoa. Escolhe o rival e manda o desafio: https://biofut.h-brain.org/#/truco', "truco-v03.jpg")  # one-time group post: id, text, image at the site root
+ANUNCIO = ("copa-2026-11-20", "🤖 🏆 *SuperCopa amanhã!* Sábado 21/11, 08:30, Planet Ball, quadra 6.\n\nLeve:\n👕 Todos os uniformes BioFut que você tiver (Bagres, Babuínos, Pavões e Axolotes). Tem gente sem uniforme, então leve os extras para emprestar.\n👟 Chuteira e caneleira\n📱 Tripé de celular (vamos transmitir 4 câmeras ao vivo no YouTube)\n🔌 Carregador e power bank\n🧴 Desodorante\n🩹 Primeiros socorros: curativo, esparadrapo, gelo ou spray\n💧 Água\n\n⚽ *Marque os lances!* Saiu gol ou jogada bonita? Entre no site e toque em *⚽ Foi gol!* ou *⭐ Lance bom!* na página da Copa, ou mande *!gol* ou *!lance* aqui no grupo. Cada marca vira um clipe do YouTube nos destaques.\n\n🎥 Quem levar tripé: chegue 15 min antes. Leia o QR do tripé, digite o PIN {pin} e toque em *Começar a transmitir*.\n\nTabela, jogos e placar ao vivo: https://biofut.h-brain.org/#/copa", "copa_art.jpg")  # one-time group post: id, text ({pin} = the stream PIN, filled only in the group post), image at the site root
 TRUCO_EV = 60  # online: the last events kept, so the other side replays the moves it has not seen
 
 
@@ -1788,7 +1788,7 @@ def anuncio_tick(now=None):
             return []
         st["anuncio"] = key
         save_state(st)
-    bot_post("/group", {"text": text, "image": f"{SITE}/{img}"})
+    bot_post("/group", {"text": text.replace("{pin}", STREAM_PIN), "image": f"{SITE}/{img}"})  # the PIN goes to the group only, never to notify
     notify(f"📣 Anúncio no grupo: {text}", post=False)
     return []
 

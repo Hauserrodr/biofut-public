@@ -1504,14 +1504,16 @@ assert len(sent) == 4 and sent[-1][1]["text"].startswith("🤖 É hoje"), sent[-
 server.copa_tick(k("2026-11-22", "12:00")); server.copa_tick(k("2026-11-30", "12:00"))
 assert len(sent) == 4, "nothing after the Copa"
 server.copa_day = COPA_DAY0
-# The one-time BioTruco v0.3 post: once ever, with its banner, never at night, never muted
+# The one-time group post: once ever, with its banner, never at night, never muted
 n = len(sent); cst = server.load_state(); cst["silencio"] = k("2026-11-12", "13:00"); server.save_state(cst)
 for t in (k("2026-11-12", "07:59"), k("2026-11-12", "12:00"), k("2026-11-12", "23:00")):
     server.anuncio_tick(t)
 assert len(sent) == n and "anuncio" not in server.load_state(), "night or muted: nothing, still owed"
 server.anuncio_tick(k("2026-11-12", "13:01")); server.anuncio_tick(k("2026-11-13", "13:01"))
-assert sent[n:] == [("/group", {"text": server.ANUNCIO[1], "image": f"{server.SITE}/truco-v03.jpg"})] and server.load_state()["anuncio"] == "truco-v03", sent
-assert (server.HERE / "truco-v03.jpg").exists() and "truco-v03.jpg" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8")
+assert sent[n:] == [("/group", {"text": server.ANUNCIO[1].replace("{pin}", server.STREAM_PIN), "image": f"{server.SITE}/copa_art.jpg"})] and server.load_state()["anuncio"] == "copa-2026-11-20", sent
+assert "PIN {pin}" in server.ANUNCIO[1], "the PIN is filled at send time, never written in the repo"
+assert (server.HERE / "copa_art.jpg").exists() and "copa_art.jpg" in (server.HERE / "deploy.ps1").read_text(encoding="utf-8")
+assert 'data-mark="gol"' in (server.HERE / "index.html").read_text(encoding="utf-8"), "members mark goals and lances on #/copa"
 del sent[n:]
 # The bot's health (2026-10-30, it sat logged out for 3 days): checked every 10 min, down 20 min -> one push to Gab, back -> one more
 pushed, health, saved = [], {"ok": True, "up": False}, (server.push_to, server.bot_post, server.BOT_URL)

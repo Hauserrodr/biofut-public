@@ -206,6 +206,7 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 .sc-lh img{width:56px;height:auto}
 .sc-lh p{margin:2px 0 0;font-size:.8125rem;color:var(--mut)}
 .sc26 .sc-tv{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin-top:8px}
+.sc-mark{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.sc-mark .btn{justify-content:center;min-height:52px;font-size:1.05rem}
 .sc-live .sc-ls{padding:clamp(36px,6vw,72px) var(--gut) 0}  /* inside #cpLive, so not a direct .sc26>section */
 .sc-ls>h2{margin:0 0 16px;font-weight:800;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem);line-height:1}
 .sc-ls>.sc-note{margin:-8px 0 14px}
@@ -1303,9 +1304,14 @@ function cpPalpite() {
     <p>${esc(j.a)} ${pc(p.v)} · empate ${pc(p.e)} · ${esc(j.b)} ${pc(p.d)} · gols esperados ${String(p.xa).replace(".", ",")} × ${String(p.xb).replace(".", ",")}</p></article>`; }).join("")}</div>`
     : '<p class="sc-empty">Sem jogo marcado com os dois times.</p>';
 }
+function cpMark() {  // any member marks the moment; it becomes a YouTube clip in Destaques (server.py /api/lance, src "site")
+  return ME ? `<div class="sc-mark"><button class="btn pri" data-mark="gol">⚽ Foi gol!</button><button class="btn" data-mark="lance">⭐ Lance bom!</button></div>
+    <p class="sc-note">Toque na hora do lance: vira um clipe do YouTube nos destaques.</p>`
+    : '<p class="sc-note">Entre no site para marcar gols e lances na hora.</p>';
+}
 function cpBody() {
   if (!CP) return '<section class="sc-ls"><p class="sc-empty">Carregando a Copa…</p></section>';
-  return `<section class="sc-ls" aria-labelledby="cpAgora"><h2 id="cpAgora">Agora</h2>${cpCard()}</section>
+  return `<section class="sc-ls" aria-labelledby="cpAgora"><h2 id="cpAgora">Agora</h2>${cpCard()}${cpMark()}</section>
   <section class="sc-ls" aria-labelledby="cpChave"><h2 id="cpChave">A chave</h2><p class="sc-note">1º e 2º do grupo vão para a final, 3º e 4º disputam o 3º lugar. Empate em pontos: saldo, gols pró, confronto direto.</p>${cpBracket()}</section>
   <section class="sc-ls" aria-labelledby="cpJogos"><h2 id="cpJogos">Os jogos</h2>${cpGames()}</section>
   <section class="sc-ls" aria-labelledby="cpDest"><h2 id="cpDest">Destaques</h2>${cpHigh()}</section>
@@ -1356,6 +1362,10 @@ function bindCopaLive() {
   const box = $("#cpLive");
   box.onclick = async e => {
     const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.mark) {  // before the game check: a mark needs no game on the card
+      b.disabled = true; setTimeout(() => b.disabled = false, 3000);
+      return post("lance", {kind: b.dataset.mark, cam: "site"}).then(r => r && (toast(b.dataset.mark === "gol" ? "Gol marcado! ⚽" : "Lance marcado! ⭐"), cpLoad()));
+    }
     const j = CP && cpCur(); if (!j) return;
     if (b.dataset.f) { ui.copaF = b.dataset.f; return cpSet(CP); }
     if (b.dataset.sel) { ui.copaSel = b.dataset.sel; return cpSet(CP); }
