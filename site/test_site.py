@@ -1359,9 +1359,9 @@ assert call("/api/copa", {"action": "copa", "op": "placar", "id": "j1", "gols_a"
 s, b = call("/api/copa", {"action": "copa", "op": "status", "id": "j1", "status": "ao_vivo"}, cookie=me)
 assert s == 200 and json.loads(b)["jogos"][0]["status"] == "ao_vivo" and json.loads(server.COPA.read_text(encoding="utf-8"))["jogos"][0]["inicio"]
 server.LANCES.parent.mkdir(exist_ok=True)
-with server.LANCES.open("a", encoding="utf-8") as fh:
+with server.LANCES.open("w", encoding="utf-8") as fh:
     fh.write(json.dumps({"t": json.loads(server.COPA.read_text(encoding="utf-8"))["jogos"][0]["inicio"], "kind": "falta", "who": "beira"}) + "\n")
-time.sleep(.06)  # inicio is rounded to 0.1 s and can sit a hair ahead of the clock: the lance goes on it, the view comes after it
+time.sleep(.06)  # inicio is rounded to 0.1 s: the lance goes on it, the view comes after it, and "w" drops the earlier lances that can fall in the rounded window
 o = staff("/api/copa", {"action": "copa", "op": "evento", "id": "j1", "tipo": "gol", "time": "b", "jogador": "Fulano"})
 assert o["jogos"][0]["gols_b"] == 1 and o["artilharia"][0]["time"] == "Pavões" and [r["kind"] for r in o["jogos"][0]["lances"]] == ["falta"]
 server.COPA, server.ADMIN = copa0, ""
