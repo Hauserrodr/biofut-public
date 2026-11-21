@@ -205,7 +205,7 @@ main:has(>#app>.sc26)>#radio:not(.mini){width:min(1148px,100% - 32px);margin:32p
 .sc26>.sc-lh{display:flex;align-items:center;gap:14px;padding-top:20px}
 .sc-lh img{width:56px;height:auto}
 .sc-lh p{margin:2px 0 0;font-size:.8125rem;color:var(--mut)}
-.sc-lh .sc-tv{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin-top:8px}
+.sc26 .sc-tv{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin-top:8px}
 .sc-live .sc-ls{padding:clamp(36px,6vw,72px) var(--gut) 0}  /* inside #cpLive, so not a direct .sc26>section */
 .sc-ls>h2{margin:0 0 16px;font-weight:800;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem);line-height:1}
 .sc-ls>.sc-note{margin:-8px 0 14px}
@@ -1056,6 +1056,7 @@ function pageCopa() {
     <p class="sc-lede">Pavões, Bagres, Babuínos e Axolotes, todos convocados para o caos. Comissão organizadora: Andrei, Dan, Edu, Canova, Bruno M, Matte e Gab (só a parte tech).</p>
     <div class="sc-clock"><p class="sc-eng">Começa em</p><div class="cd" id="cd">${copaClock()}</div></div>
     <div class="sc-go">${COPA_FORM && !copaOpen() ? '<span class="pill g">Inscrições encerradas em 05/11</span>' : COPA_FORM ? `<a class="btn pri pulse big" href="${esc(COPA_FORM)}" target="_blank" rel="noopener">Quero jogar a Copa →</a><p class="sc-note">Formulário da comissão: garanta a vaga até 05/11.</p>` : '<span class="pill g">Formulário em breve no grupo</span>'}</div>
+    <p class="sc-go">${TV_BTN}</p>
     <p class="sc-coin"><b>🪙 Jogou a Copa, ganhou 50 moedas.</b> Depois da Copa, a lista de quem jogou vem da comissão e as moedas caem no seu saldo.</p>
   </section>
   ${copaTimes()}
@@ -1194,6 +1195,7 @@ setInterval(() => { const c = $("#cd"); if (c) c.innerHTML = copaClock();
 async function bindCopa() {
   hxLoad().then(() => { const h = $(".sc-hist"); if (h && HX?.copas?.length) h.outerHTML = copaHist(); });  // the history section, from the server once it has it
   if (copaLive()) return bindCopaLive();
+  fetch("/api/stream").then(r => r.json()).then(j => tvHref(j.yt)).catch(() => {});
   const show = votes => {
     document.querySelectorAll("[data-cv]").forEach(b => { const x = votes[b.dataset.cv] || [0, 0, 0, 0], v = +b.dataset.v;
       b.querySelector("b").textContent = x[v - 1] || ""; b.classList.toggle("on", x[3] === v); });
@@ -1308,11 +1310,13 @@ function cpBody() {
   <section class="sc-ls" aria-labelledby="cpIa"><h2 id="cpIa">Palpite da IA<span class="sc-ia">palpite estatístico, não é aposta</span></h2>
     <p class="sc-note">Modelo de Poisson com os gols de cada time na Copa, puxados para 1,5 gol por jogo enquanto há poucos jogos.</p>${cpPalpite()}</section>`;
 }
+const TV_BTN = '<a class="btn pri sc-tv" id="cpTv" href="/aovivo" target="_blank" rel="noopener"><span aria-hidden="true">🔴</span> Transmissão oficial</a>';  // the official stream; tvHref points it at the YouTube live once the channel id arrives
+const tvHref = yt => { const a = $("#cpTv"); if (a && yt) a.href = `https://www.youtube.com/channel/${encodeURIComponent(yt)}/live`; };
 function pageCopaLive() {
   return `<div class="sc26 sc-live">
   <section class="sc-lh"><img src="/copa_logo.webp" alt="" width="678" height="804"><div><h1 class="sc-h" style="margin:0;font-size:clamp(1.75rem,1.3rem + 2vw,2.75rem)">SuperCopa BioFut</h1>
     <p>Sábado 21/11 · Planet Ball, quadra 6 · 8:30 às 14:30</p>
-    <a class="btn pri sc-tv" id="cpTv" href="/aovivo" target="_blank" rel="noopener"><span aria-hidden="true">🔴</span> Transmissão oficial</a></div></section>
+    ${TV_BTN}</div></section>
   <div id="cpLive">${cpBody()}</div>
   ${copaTimes()}
   ${copaHist()}</div>
@@ -1324,7 +1328,7 @@ async function cpLoad() {
 }
 function cpSet(j) {
   CP = j; CPskew = j.agora - Date.now() / 1000;
-  const tv = $("#cpTv"); if (tv && j.yt) tv.href = `https://www.youtube.com/channel/${encodeURIComponent(j.yt)}/live`;  // the official stream; /aovivo when no channel is set
+  tvHref(j.yt);
   const box = $("#cpLive"), typing = ["INPUT", "SELECT"].includes(document.activeElement?.tagName) || $("#golDlg")?.open;
   if (box && !typing) { const y = scrollY; box.innerHTML = cpBody(); scrollTo(0, y); }
 }
